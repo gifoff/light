@@ -13,7 +13,6 @@ fn button(key: &'static str) -> VElement {
     VElement::leaf(
         key,
         NodeKind::Button {
-            label: "OK".into(),
             disabled: false,
             button_type: ButtonType::Submit,
         },
@@ -24,7 +23,6 @@ fn disabled_button(key: &'static str) -> VElement {
     VElement::leaf(
         key,
         NodeKind::Button {
-            label: "OK".into(),
             disabled: true,
             button_type: ButtonType::Submit,
         },

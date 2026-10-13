@@ -12,13 +12,18 @@ fn text(key: &'static str, content: &str) -> VElement {
 }
 
 fn button(key: &'static str, label: &str, disabled: bool) -> VElement {
-    VElement::leaf(
+    VElement::container(
         key,
         NodeKind::Button {
-            label: label.to_owned(),
             disabled,
             button_type: relay::vdom::ButtonType::Submit,
         },
+        vec![VElement::leaf(
+            "t",
+            NodeKind::Text {
+                content: label.to_owned(),
+            },
+        )],
     )
 }
 
@@ -92,8 +97,14 @@ fn button_label_and_disabled_are_separate_ops() {
     let old = button("0", "Старо", false);
     let label_only = button("0", "Ново", false);
     let patch = diff(&old, &label_only);
-    assert_eq!(patch.ops.len(), 1);
-    assert!(matches!(patch.ops[0], Op::SetLabel { .. }));
+    assert_eq!(
+        patch.ops,
+        vec![Op::SetContent {
+            key: "t",
+            content: "Ново".to_owned(),
+        }],
+        "подпись кнопки хранится в текстовом ребёнке"
+    );
 
     let disabled_only = button("0", "Старо", true);
     let patch = diff(&old, &disabled_only);
@@ -170,7 +181,7 @@ fn descendants_walk_depth_first() {
         .into_iter()
         .map(|node| node.key)
         .collect();
-    assert_eq!(keys, vec!["", "0", "1"]);
+    assert_eq!(keys, vec!["", "0", "1", "t"]);
 }
 
 #[test]
@@ -197,13 +208,18 @@ fn finds_nodes_by_tag_attr_and_content() {
                 },
             )
             .with_tag("h2"),
-            VElement::leaf(
+            VElement::container(
                 "1",
                 NodeKind::Button {
-                    label: "Сохранить".to_owned(),
                     disabled: false,
                     button_type: relay::vdom::ButtonType::Submit,
                 },
+                vec![VElement::leaf(
+                    "1.0",
+                    NodeKind::Text {
+                        content: "Сохранить".to_owned(),
+                    },
+                )],
             )
             .with_tag("button")
             .with_attr("class", "primary"),
@@ -226,7 +242,8 @@ fn finds_nodes_by_tag_attr_and_content() {
 
     assert_eq!(
         tree.find_by_content("Сохранить").map(|node| node.key),
-        Some("1")
+        Some("1.0"),
+        "текст кнопки — отдельный текстовый узел"
     );
     assert_eq!(
         tree.find_containing("голов").map(|node| node.key),

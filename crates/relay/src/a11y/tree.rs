@@ -263,11 +263,7 @@ fn collect_text_into(element: &VElement, out: &mut String) {
 
 fn intrinsic_name(element: &VElement) -> Option<String> {
     match &element.kind {
-        NodeKind::Button { label, .. }
-        | NodeKind::Checkbox { label, .. }
-        | NodeKind::Radio { label, .. }
-            if !label.is_empty() =>
-        {
+        NodeKind::Checkbox { label, .. } | NodeKind::Radio { label, .. } if !label.is_empty() => {
             Some(label.clone())
         }
         NodeKind::Text { content } if !content.is_empty() => Some(content.clone()),
@@ -320,13 +316,13 @@ mod tests {
     }
 
     fn button(key: &'static str, label: &str) -> VElement {
-        VElement::leaf(
+        VElement::container(
             key,
             NodeKind::Button {
-                label: label.to_owned(),
                 disabled: false,
                 button_type: crate::vdom::ButtonType::Submit,
             },
+            vec![text("t", label)],
         )
         .with_tag("button")
     }
@@ -369,7 +365,7 @@ mod tests {
             VElement::container("", NodeKind::Column, vec![button("shown", "Shown"), hidden])
                 .with_tag("div");
         let update = build_update(&root, None);
-        assert_eq!(update.nodes.len(), 2);
+        assert_eq!(update.nodes.len(), 3);
         assert!(find(&update, Role::Button).is_some());
     }
 

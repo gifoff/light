@@ -24,13 +24,13 @@ fn text(key: &'static str, content: &str) -> VElement {
 }
 
 fn button(key: &'static str, label: &str, disabled: bool) -> VElement {
-    VElement::leaf(
+    VElement::container(
         key,
         NodeKind::Button {
-            label: label.to_owned(),
             disabled,
             button_type: relay::vdom::ButtonType::Submit,
         },
+        vec![text("t", label)],
     )
 }
 
@@ -233,8 +233,12 @@ fn hit_stack_orders_deepest_first() {
 
     assert_eq!(
         stack.first().map(|node| node.key),
-        Some("0"),
-        "глубокий узел"
+        Some("t"),
+        "текст кнопки — самый глубокий узел"
+    );
+    assert!(
+        stack.iter().any(|node| node.key == "0"),
+        "кнопка есть в стеке"
     );
     assert_eq!(stack.last().map(|node| node.key), Some(""), "корень");
 }

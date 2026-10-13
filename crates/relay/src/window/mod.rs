@@ -800,10 +800,16 @@ impl WindowState {
             return;
         }
 
-        let top = self
-            .layout
-            .as_ref()
-            .and_then(|layout| layout.hit_stack(self.cursor).first().map(|node| node.key));
+        let top = self.layout.as_ref().and_then(|layout| {
+            // Текстовые листья не несут обработчиков, поэтому курсор
+            // наведения относится к ближайшему элементу над ними (например,
+            // к кнопке-контейнеру с текстом внутри).
+            layout
+                .hit_stack(self.cursor)
+                .into_iter()
+                .find(|node| !matches!(node.kind, NodeKind::Text { .. }))
+                .map(|node| node.key)
+        });
         if top != self.hover_top {
             if let Some(old) = self.hover_top {
                 self.dispatch(old, DomEvent::Mouseleave);

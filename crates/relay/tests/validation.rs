@@ -65,8 +65,20 @@ fn field<'a>(tree: &'a VElement, placeholder: &str) -> &'a VElement {
 }
 
 fn submit_button(tree: &VElement) -> &VElement {
-    tree.find_by_content("Отправить")
-        .unwrap_or_else(|| panic!("кнопка отправки не найдена"))
+    find_button(tree, "Отправить")
+}
+
+/// Ищет кнопку-контейнер по тексту её прямого текстового ребёнка.
+fn find_button<'a>(tree: &'a VElement, label: &str) -> &'a VElement {
+    tree.descendants()
+        .into_iter()
+        .find(|node| {
+            matches!(node.kind, NodeKind::Button { .. })
+                && node.children.iter().any(
+                    |child| matches!(&child.kind, NodeKind::Text { content } if content == label),
+                )
+        })
+        .unwrap_or_else(|| panic!("кнопка `{label}` не найдена"))
 }
 
 #[test]
@@ -176,7 +188,7 @@ fn submit_and_plain_button_types_are_parsed() {
         }
     ));
 
-    let cancel = tree.find_by_content("Отмена").expect("кнопка отмены");
+    let cancel = find_button(&tree, "Отмена");
     assert!(matches!(
         cancel.kind,
         NodeKind::Button {

@@ -5,7 +5,7 @@ use ab_glyph::{Font, FontVec, PxScale, ScaleFont, point};
 
 use super::font::measure;
 use crate::layout::{
-    CHECKBOX_BOX, CHECKBOX_GAP, FIELD_PAD_X, FONT_SIZE, Layout, Rect, SELECT_PAD_X,
+    CHECKBOX_BOX, CHECKBOX_GAP, FIELD_PAD_X, FONT_SIZE, Layout, PlacedNode, Rect, SELECT_PAD_X,
 };
 
 /// Цвет в формате `0xRRGGBBAA`.
@@ -336,6 +336,20 @@ pub(crate) fn select_popup(rect: Rect, count: usize, scale: f32) -> Rect {
     )
 }
 
+/// Помечает узлы, находящиеся внутри заблокированной кнопки, чтобы их текст
+/// рисовался приглушённым цветом.
+fn mark_disabled_text(nodes: &[PlacedNode], index: usize, inherited: bool, out: &mut [bool]) {
+    let disabled = inherited
+        || matches!(
+            nodes[index].kind,
+            crate::vdom::NodeKind::Button { disabled: true, .. }
+        );
+    out[index] = disabled;
+    for &child in &nodes[index].children {
+        mark_disabled_text(nodes, child, disabled, out);
+    }
+}
+
 /// Отрисовывает разложенное дерево в область холста.
 ///
 /// Узлы идут в порядке раскладки (родители раньше детей, поздние соседи выше
@@ -360,7 +374,13 @@ pub fn render(
     } = interaction;
     canvas.clear(background);
     let border = scale.max(1.0);
-    for node in layout.nodes() {
+    let nodes = layout.nodes();
+    // Текст внутри заблокированной кнопки рисуется приглушённым цветом.
+    let mut dimmed = vec![false; nodes.len()];
+    if !nodes.is_empty() {
+        mark_disabled_text(nodes, 0, false, &mut dimmed);
+    }
+    for (index, node) in nodes.iter().enumerate() {
         let rect = node.rect;
         if !canvas.intersects(rect) {
             continue;
@@ -408,27 +428,15 @@ pub fn render(
                 }
             }
             crate::vdom::NodeKind::Text { content } => {
-                let color = style.font_color.unwrap_or(COLOR_TEXT);
-                canvas.draw_text(font, content, rect.x + inset, rect.y + inset, color, size);
-            }
-            crate::vdom::NodeKind::Button {
-                label, disabled, ..
-            } => {
-                let foreground = if *disabled {
+                let color = if style.font_color.is_none() && dimmed[index] {
                     BUTTON_LABEL_DISABLED
                 } else {
                     style.font_color.unwrap_or(COLOR_TEXT)
                 };
+                canvas.draw_text(font, content, rect.x + inset, rect.y + inset, color, size);
+            }
+            crate::vdom::NodeKind::Button { .. } => {
                 canvas.stroke_rect(style.border_color.unwrap_or(BUTTON_BORDER), rect, thickness);
-                let (label_w, label_h) = measure(font, label, size);
-                canvas.draw_text(
-                    font,
-                    label,
-                    rect.x + (rect.w - label_w) / 2.0,
-                    rect.y + (rect.h - label_h) / 2.0,
-                    foreground,
-                    size,
-                );
             }
             crate::vdom::NodeKind::TextField {
                 value,

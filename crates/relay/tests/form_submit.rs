@@ -27,7 +27,6 @@ fn button(key: &'static str, button_type: ButtonType, disabled: bool) -> VElemen
     VElement::leaf(
         key,
         NodeKind::Button {
-            label: key.to_owned(),
             disabled,
             button_type,
         },

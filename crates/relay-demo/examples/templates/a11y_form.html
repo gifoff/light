@@ -2,7 +2,9 @@
     <titlebar width="100%" background="#333333DD" border-color="#D5DAE3">
         <div font-size="20" font-color="#FFFFFF">Доступная форма</div>
         <div position-x="right" direction="horizontal">
-            <button type="button" @click="Dom::window().map(|window| window.close())">X</button>
+            <button position-x="center" position-y="center" type="button" @click="Dom::window().map(|window| window.close())">
+                x
+            </button>
         </div>
     </titlebar>
     <div direction="vertical" padding="12" role="form" aria-label="Регистрация">

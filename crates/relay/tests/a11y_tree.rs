@@ -6,13 +6,19 @@ use relay::a11y::tree::{build_update, find_key_for_node_id, node_id_for_key};
 use relay::vdom::{ButtonType, NodeKind, VElement};
 
 fn button(key: &'static str, label: &str) -> VElement {
-    VElement::leaf(
+    let child_key: &'static str = Box::leak(format!("{key}.t").into_boxed_str());
+    VElement::container(
         key,
         NodeKind::Button {
-            label: label.into(),
             disabled: false,
             button_type: ButtonType::Submit,
         },
+        vec![VElement::leaf(
+            child_key,
+            NodeKind::Text {
+                content: label.into(),
+            },
+        )],
     )
 }
 

@@ -340,13 +340,77 @@ impl Layout {
                 self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
                 (w, h)
             }
-            NodeKind::Button { label, .. } => {
-                let (label_w, label_h) = metrics.measure(label, font_size);
-                let content_w = label_w + 2.0 * BUTTON_PAD_X + 2.0 * inset;
-                let content_h = (label_h + 2.0 * BUTTON_PAD_Y).max(BUTTON_MIN_H) + 2.0 * inset;
-                let w = style.resolve_width(content_w, avail_w);
-                let h = style.resolve_height(content_h, avail_h);
-                self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
+            NodeKind::Button { .. } => {
+                let index = self.push(vnode, Rect::default(), parent);
+                // Внутренняя область кнопки с учётом её собственного паддинга;
+                // при `Auto` размер известен только после раскладки детей.
+                let box_w = style.resolve_width(avail_w, avail_w);
+                let box_h = style.resolve_height(avail_h, avail_h);
+                let inner_w = (box_w - 2.0 * (inset + BUTTON_PAD_X)).max(0.0);
+                let inner_h = (box_h - 2.0 * (inset + BUTTON_PAD_Y)).max(0.0);
+                let content = Rect::new(
+                    flow_x + inset + BUTTON_PAD_X,
+                    flow_y + inset + BUTTON_PAD_Y,
+                    inner_w,
+                    inner_h,
+                );
+                // Содержимое выкладывается горизонтально (как в `Row`).
+                let mut cursor_x = content.x;
+                let mut content_w = 0.0_f32;
+                let mut content_h = 0.0_f32;
+                let mut group_min_x = f32::INFINITY;
+                let mut group_min_y = f32::INFINITY;
+                let mut any_child = false;
+                for child in &vnode.children {
+                    if !child.style.visible {
+                        continue;
+                    }
+                    let child_start = self.nodes.len();
+                    let child_slot = Rect::new(cursor_x, content.y, inner_w, inner_h);
+                    let (child_w, child_h) = self.place(
+                        child,
+                        child_slot,
+                        content,
+                        Some(index),
+                        metrics,
+                        Inherited {
+                            size: font_size,
+                            color: font_color,
+                        },
+                    );
+                    group_min_x = group_min_x.min(self.nodes[child_start].rect.x);
+                    group_min_y = group_min_y.min(self.nodes[child_start].rect.y);
+                    cursor_x += child_w + SPACING;
+                    content_h = content_h.max(child_h);
+                    any_child = true;
+                }
+                if any_child {
+                    content_w = cursor_x - content.x - SPACING;
+                }
+                let w = style.resolve_width(content_w + 2.0 * (inset + BUTTON_PAD_X), avail_w);
+                let h = style.resolve_height(
+                    (content_h + 2.0 * (inset + BUTTON_PAD_Y)).max(BUTTON_MIN_H),
+                    avail_h,
+                );
+                let node = &mut self.nodes[index];
+                node.rect = Rect::new(flow_x, flow_y, w, h);
+                // Содержимое кнопки центрируется по обеим осям.
+                if any_child {
+                    let inner_box_w = (w - 2.0 * (inset + BUTTON_PAD_X)).max(0.0);
+                    let inner_box_h = (h - 2.0 * (inset + BUTTON_PAD_Y)).max(0.0);
+                    let target_x =
+                        flow_x + inset + BUTTON_PAD_X + ((inner_box_w - content_w) / 2.0).max(0.0);
+                    let target_y =
+                        flow_y + inset + BUTTON_PAD_Y + ((inner_box_h - content_h) / 2.0).max(0.0);
+                    let dx = target_x - group_min_x;
+                    let dy = target_y - group_min_y;
+                    if dx != 0.0 || dy != 0.0 {
+                        for child in &mut self.nodes[index + 1..] {
+                            child.rect.x += dx;
+                            child.rect.y += dy;
+                        }
+                    }
+                }
                 (w, h)
             }
             NodeKind::TextField { multiline, .. } => {

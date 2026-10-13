@@ -119,7 +119,6 @@ mod tests {
         VElement::leaf(
             key,
             NodeKind::Button {
-                label: key.to_owned(),
                 disabled,
                 button_type: ButtonType::Submit,
             },

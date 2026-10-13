@@ -421,10 +421,9 @@ pub enum NodeKind {
         /// Отображаемый текст.
         content: String,
     },
-    /// Кнопка.
+    /// Кнопка-контейнер: содержимое (`children`) выкладывается горизонтально и
+    /// центрируется по обеим осям. Подпись собирается из текста детей.
     Button {
-        /// Подпись кнопки.
-        label: String,
         /// Заблокирована ли кнопка (`:disabled`).
         disabled: bool,
         /// Тип кнопки (`type`): влияет на запуск валидации формы.
@@ -503,7 +502,7 @@ pub struct VElement {
     /// Настройки системного окна — только у корневого узла с типом
     /// [`NodeKind::Window`]; у остальных узлов — `None`.
     pub window: Option<WindowConfig>,
-    /// Дочерние узлы (пусто для текста, кнопки и поля).
+    /// Дочерние узлы (пусто для текста и поля).
     pub children: Vec<VElement>,
 }
 
@@ -615,11 +614,10 @@ impl VElement {
             .find_map(|child| child.get_mut(key))
     }
 
-    /// Текстовое содержимое узла для поиска: текст или подпись кнопки.
+    /// Текстовое содержимое узла для поиска (только у текстовых узлов).
     pub fn content(&self) -> Option<&str> {
         match &self.kind {
             NodeKind::Text { content } => Some(content),
-            NodeKind::Button { label, .. } => Some(label),
             _ => None,
         }
     }
@@ -641,7 +639,7 @@ impl VElement {
         }
     }
 
-    /// Ищет первый узел с заданным содержимым текста или подписью кнопки.
+    /// Ищет первый узел с заданным текстовым содержимым.
     pub fn find_by_content(&self, content: &str) -> Option<&VElement> {
         if self.content() == Some(content) {
             return Some(self);
@@ -1149,23 +1147,14 @@ fn diff_kind(old: &NodeKind, new: &NodeKind, key: &'static str, patch: &mut Patc
         }
         (
             NodeKind::Button {
-                label: label_a,
                 disabled: disabled_a,
                 button_type: type_a,
             },
             NodeKind::Button {
-                label: label_b,
                 disabled: disabled_b,
                 button_type: button_type_b,
             },
         ) => {
-            if label_a != label_b {
-                patch.ops.push(Op::SetLabel {
-                    key,
-                    label: label_b.clone(),
-                });
-                patch.changed.insert(key);
-            }
             if disabled_a != disabled_b {
                 patch.ops.push(Op::SetDisabled {
                     key,

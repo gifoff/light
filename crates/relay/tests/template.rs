@@ -30,10 +30,25 @@ impl CounterApp {
 }
 
 /// Ключ узла по отображаемому тексту или подписи.
+///
+/// Подпись кнопки-контейнера хранится в текстовом ребёнке, но события
+/// адресуются самой кнопке, поэтому для кнопок возвращается ключ контейнера.
 fn key_of(tree: &VElement, content: &str) -> &'static str {
-    tree.find_by_content(content)
+    fn find_button(node: &VElement, content: &str) -> Option<&'static str> {
+        if matches!(node.kind, NodeKind::Button { .. })
+            && node.children.iter().any(
+                |child| matches!(&child.kind, NodeKind::Text { content: text } if text == content),
+            )
+        {
+            return Some(node.key);
+        }
+        node.children
+            .iter()
+            .find_map(|child| find_button(child, content))
+    }
+    find_button(tree, content)
+        .or_else(|| tree.find_by_content(content).map(|node| node.key))
         .unwrap_or_else(|| panic!("узел «{content}» не найден"))
-        .key
 }
 
 /// Первое текстовое поле в дереве (обход в глубину).

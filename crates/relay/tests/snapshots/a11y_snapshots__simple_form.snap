@@ -21,6 +21,11 @@ expression: "summarize(&update, tree)"
       "role": "CheckBox"
     },
     {
+      "key": "0.3.t",
+      "label": "Отправить",
+      "role": "Label"
+    },
+    {
       "key": "0.3",
       "label": "Отправить",
       "role": "Button"

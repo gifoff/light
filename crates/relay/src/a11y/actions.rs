@@ -107,12 +107,10 @@ mod tests {
         VElement::leaf(
             "b",
             NodeKind::Button {
-                label: "OK".to_owned(),
                 disabled: false,
                 button_type: crate::vdom::ButtonType::Submit,
             },
         )
-        .with_tag("button")
     }
 
     fn text_field() -> VElement {

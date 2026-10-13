@@ -127,7 +127,6 @@ fn default_role_for_containers() {
 fn default_role_for_leaf_widgets() {
     assert_eq!(
         default_role(&NodeKind::Button {
-            label: "OK".into(),
             disabled: false,
             button_type: relay::vdom::ButtonType::Submit,
         }),

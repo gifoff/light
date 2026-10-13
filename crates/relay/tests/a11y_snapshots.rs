@@ -20,24 +20,27 @@ use serde_json::json;
 // ---------- Хелперы для сборки VElement ----------
 
 fn button(key: &'static str, label: &str) -> VElement {
-    VElement::leaf(
-        key,
-        NodeKind::Button {
-            label: label.into(),
-            disabled: false,
-            button_type: ButtonType::Submit,
-        },
-    )
+    button_with(key, label, false)
 }
 
 fn button_disabled(key: &'static str, label: &str) -> VElement {
-    VElement::leaf(
+    button_with(key, label, true)
+}
+
+fn button_with(key: &'static str, label: &str, disabled: bool) -> VElement {
+    let child_key: &'static str = Box::leak(format!("{key}.t").into_boxed_str());
+    VElement::container(
         key,
         NodeKind::Button {
-            label: label.into(),
-            disabled: true,
+            disabled,
             button_type: ButtonType::Submit,
         },
+        vec![VElement::leaf(
+            child_key,
+            NodeKind::Text {
+                content: label.into(),
+            },
+        )],
     )
 }
 

@@ -1015,8 +1015,6 @@ impl Generator {
                 "v-for",
             ],
         )?;
-        let segments = text_segments(&element.children, "button")?;
-        let label = self.content_expr(&segments)?;
         let disabled = match attr_value(&element.attrs, ":disabled") {
             Some(disabled) => {
                 let expr = self.path_expr(disabled)?;
@@ -1039,23 +1037,25 @@ impl Generator {
             }
         };
 
-        let key = key.token();
-        self.push_events(element, &key)?;
-
+        let pushes = self.gen_children(&element.children, Some(key))?;
         let style = style_token(element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;
-        Ok(quote! {
-            ::relay::vdom::VElement::leaf(
+        let key = key.token();
+        self.push_events(element, &key)?;
+        Ok(quote! {{
+            let mut __children = ::std::vec::Vec::new();
+            #(#pushes)*
+            ::relay::vdom::VElement::container(
                 #key,
                 ::relay::vdom::NodeKind::Button {
-                    label: #label,
                     disabled: #disabled,
                     button_type: #button_type,
                 },
+                __children,
             )
             .with_style(#style)
             #meta
-        })
+        }})
     }
 
     fn gen_text_field(
