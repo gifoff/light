@@ -1,11 +1,9 @@
 <window id="a11y-form" width="420" height="480" min-width="200" min-height="200" max-width="800" max-height="800" resizable="true">
     <titlebar width="100%" background="#333333DD" border-color="#D5DAE3">
         <div font-size="20" font-color="#FFFFFF">Доступная форма</div>
-        <div position-x="right" direction="horizontal">
-            <button position-x="center" position-y="center" type="button" @click="Dom::window().map(|window| window.close())">
-                x
-            </button>
-        </div>
+        <button position-x="right" position-y="center" type="button" @click="Dom::window().map(|window| window.close())">
+            x
+        </button>
     </titlebar>
     <div direction="vertical" padding="12" role="form" aria-label="Регистрация">
         <h1>Регистрация</h1>
