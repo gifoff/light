@@ -172,16 +172,154 @@ fn center_alignment_positions_node_in_container() {
 }
 
 #[test]
-fn auto_container_hugs_content() {
+fn auto_container_stretches_in_vertical_flow() {
     let frame = column("c", vec![text("0", "АБ"), text("1", "ВГ")]);
     let root = column("", vec![frame]);
     let layout = build(&root);
 
     assert_eq!(
         layout.rect_of("c").expect("рамка"),
-        Rect::new(0.0, 0.0, 16.0, 16.0 + SPACING + 16.0),
-        "контейнер без размера обнимает содержимое, а не окно"
+        Rect::new(0.0, 0.0, 400.0, 16.0 + SPACING + 16.0),
+        "в вертикальном потоке контейнер без width растягивается по ширине"
     );
+}
+
+#[test]
+fn auto_container_hugs_content_in_horizontal_flow() {
+    // В горизонтальном потоке ширина — главная ось: контейнер по содержимому.
+    let inner = column("inner", vec![text("0", "АБ"), text("1", "ВГ")]);
+    let row = VElement::container("row", NodeKind::Row, vec![inner]);
+    let root = column("", vec![row]);
+    let layout = build(&root);
+
+    assert_eq!(
+        layout.rect_of("inner").expect("рамка"),
+        Rect::new(0.0, 0.0, 16.0, 16.0 + SPACING + 16.0),
+        "в горизонтальном потоке ширина контейнера — по содержимому"
+    );
+}
+
+#[test]
+fn nested_auto_containers_stretch_recursively() {
+    let mut leaf = text("0.0.0", "А");
+    leaf.style = Style {
+        width: Size::Percent(100.0),
+        ..Style::default()
+    };
+    let mut inner = column("0.0", vec![leaf]);
+    inner.style = Style {
+        padding: 10.0,
+        ..Style::default()
+    };
+    let mut outer = column("0", vec![inner]);
+    outer.style = Style {
+        padding: 10.0,
+        ..Style::default()
+    };
+    let root = column("", vec![outer]);
+    let layout = build(&root);
+
+    // 400 → outer content 380 → inner content 360 → leaf 100% = 360.
+    assert_eq!(layout.rect_of("0").expect("внешний").w, 400.0);
+    assert_eq!(layout.rect_of("0.0").expect("внутренний").w, 380.0);
+    assert_eq!(layout.rect_of("0.0.0").expect("лист").w, 360.0);
+}
+
+#[test]
+fn percent_width_of_auto_vertical_container_resolves_to_parent_content() {
+    let mut field = text("0", "АБ");
+    field.style = Style {
+        width: Size::Percent(100.0),
+        ..Style::default()
+    };
+    let mut form = column("form", vec![field]);
+    form.style = Style {
+        padding: 12.0,
+        ..Style::default()
+    };
+    let root = column("", vec![form]);
+    let layout = build(&root);
+
+    assert_eq!(
+        layout.rect_of("form").expect("форма").w,
+        400.0,
+        "форма растягивается на ширину окна"
+    );
+    assert_eq!(
+        layout.rect_of("0").expect("поле").w,
+        376.0,
+        "100% от контентной ширины формы (400 - 2×12)"
+    );
+}
+
+#[test]
+fn percent_width_nested_three_levels() {
+    let mut level3 = column("0.0.0", vec![]);
+    level3.style = Style {
+        width: Size::Percent(100.0),
+        ..Style::default()
+    };
+    let mut level2 = column("0.0", vec![level3]);
+    level2.style = Style {
+        width: Size::Percent(100.0),
+        padding: 10.0,
+        ..Style::default()
+    };
+    let mut level1 = column("0", vec![level2]);
+    level1.style = Style {
+        width: Size::Px(400.0),
+        padding: 10.0,
+        ..Style::default()
+    };
+    let layout = build(&level1);
+
+    // 400 → content 380 → level2 = 380 → content 360 → level3 = 360.
+    assert_eq!(layout.rect_of("0.0.0").expect("третий").w, 360.0);
+}
+
+#[test]
+fn percent_width_button_stays_clickable() {
+    let mut btn = button("0", "OK", false);
+    btn.style = Style {
+        width: Size::Percent(100.0),
+        ..Style::default()
+    };
+    let mut frame = column("c", vec![btn]);
+    frame.style = Style {
+        width: Size::Px(200.0),
+        ..Style::default()
+    };
+    let root = column("", vec![frame]);
+    let layout = build(&root);
+
+    let rect = layout.rect_of("0").expect("кнопка");
+    assert_eq!(rect.w, 200.0, "100% от ширины родителя");
+    assert!(
+        layout
+            .hit_interactive(Point::new(100.0, rect.y + rect.h / 2.0))
+            .is_some(),
+        "кнопка остаётся кликабельной"
+    );
+}
+
+#[test]
+fn percent_height_does_not_collapse_with_auto_parent() {
+    let mut inner = column("0", vec![]);
+    inner.style = Style {
+        height: Size::Percent(50.0),
+        ..Style::default()
+    };
+    let mut frame = column("c", vec![inner]);
+    frame.style = Style {
+        width: Size::Px(200.0),
+        ..Style::default()
+    };
+    let root = column("", vec![frame]);
+    let layout = build(&root);
+
+    let rect = layout.rect_of("0").expect("внутренний");
+    assert!(rect.h.is_finite(), "высота не NaN/бесконечность");
+    assert_eq!(rect.h, 0.0, "50% от Auto-высоты родителя => 0");
 }
 
 #[test]
@@ -236,19 +374,22 @@ fn percentage_size_is_relative_to_parent_content_box() {
 }
 
 #[test]
-fn percentage_of_auto_parent_resolves_to_zero() {
+fn percentage_of_auto_parent_outside_flow_resolves_to_zero() {
     let mut child = text("0", "АБ");
     child.style = Style {
         width: Size::Percent(50.0),
         height: Size::Percent(50.0),
         ..Style::default()
     };
+    // Родитель без width в горизонтальном потоке — ширина по содержимому,
+    // базы для процента нет (документированное поведение).
     let frame = column("c", vec![child]);
-    let root = column("", vec![frame]);
+    let row = VElement::container("row", NodeKind::Row, vec![frame]);
+    let root = column("", vec![row]);
     let layout = build(&root);
 
     let rect = layout.rect_of("0").expect("узел");
-    assert_eq!(rect.w, 0.0, "50% от Auto-ширины => 0");
+    assert_eq!(rect.w, 0.0, "50% от Auto-ширины вне flow => 0");
     assert_eq!(rect.h, 0.0, "50% от Auto-высоты => 0");
 }
 

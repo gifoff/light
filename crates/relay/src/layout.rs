@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use crate::vdom::{Align, NodeKind, Offset, Resize, Style, VElement};
+use crate::vdom::{Align, NodeKind, Offset, Resize, Size, Style, VElement};
 
 /// Шрифт интерфейса по умолчанию (px).
 pub const FONT_SIZE: f32 = 16.0;
@@ -124,6 +124,32 @@ impl ContentBox {
     }
 }
 
+/// Ось `cross`-растяжения потомков в потоке родителя.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Axis {
+    /// Горизонтальная ось (растяжение по ширине).
+    Width,
+    /// Вертикальная ось (растяжение по высоте).
+    Height,
+}
+
+/// Контекст потока родителя для размещения ребёнка.
+///
+/// Содержит контентную область родителя (базу процентов), признак того, что
+/// размер родителя по оси определён (`Auto`-размер не даёт базы), и ось
+/// `cross`, по которой родитель растягивает потомков с `Auto` размером.
+#[derive(Debug, Clone, Copy)]
+struct FlowContext {
+    /// Контентная область родителя.
+    content: ContentBox,
+    /// Известна ли ширина контентной области (не `Auto`).
+    width_known: bool,
+    /// Известна ли высота контентной области (не `Auto`).
+    height_known: bool,
+    /// Ось, по которой родитель растягивает потомков с `Auto` размером.
+    stretch: Option<Axis>,
+}
+
 /// Метрики текста, необходимые для раскладки.
 ///
 /// Отрисовщик предоставляет реальные метрики шрифта; в тестах — заглушку
@@ -189,11 +215,16 @@ impl Layout {
         layout.place(
             root,
             Point::new(0.0, 0.0),
-            ContentBox {
-                left: 0.0,
-                top: 0.0,
-                width: viewport.0,
-                height: viewport.1,
+            FlowContext {
+                content: ContentBox {
+                    left: 0.0,
+                    top: 0.0,
+                    width: viewport.0,
+                    height: viewport.1,
+                },
+                width_known: true,
+                height_known: true,
+                stretch: Some(Axis::Width),
             },
             None,
             metrics,
@@ -330,23 +361,26 @@ impl Layout {
         }
     }
 
-    /// Помещает узел в поток в точке `(x, y)` и раскладывает его детей.
+    /// Помещает узел в поток в точке `(origin.x, origin.y)` и раскладывает его
+    /// детей.
     ///
-    /// `parent_content` — контентная область родителя: от неё отсчитываются
-    /// проценты размеров (`width`/`height`/`min-*`/`max-*`). `margin` даёт
-    /// внешний отступ узла, `padding`/`border-size` — внутренний.
+    /// `flow` — контекст потока родителя: контентная область (база процентов),
+    /// известность размеров и ось `cross`-растяжения. `margin` даёт внешний
+    /// отступ узла, `padding`/`border-size` — внутренний.
     ///
     /// `parent` — индекс родительского узла в плоском списке (`None` для корня).
     /// `inherited` — унаследованный размер и цвет шрифта.
     ///
-    /// Дети позиционируются относительно **итогового** content box узла (см.
-    /// [`Self::align_children`]), а не относительно окна или доступного слота.
+    /// Контейнер с `Auto` размером по `cross`-оси родителя **растягивается** на
+    /// доступную ширину/высоту (как block/`stretch` во flexbox); листья и кнопки
+    /// — по содержимому. Дети позиционируются относительно **итогового** content
+    /// box узла (см. [`Self::align_children`]), а не относительно окна.
     /// Возвращает внешний размер узла (вместе с `margin`) — шаг для соседей.
     fn place(
         &mut self,
         vnode: &VElement,
         origin: Point,
-        parent_content: ContentBox,
+        flow: FlowContext,
         parent: Option<usize>,
         metrics: &dyn TextMetrics,
         inherited: Inherited,
@@ -361,33 +395,64 @@ impl Layout {
         let flow_y = origin.y + margin;
         let font_size = style.font_size.unwrap_or(inherited.size);
         let font_color = style.font_color.or(inherited.color);
-        // Проценты размера отсчитываются от content box родителя.
-        let avail_w = parent_content.width;
-        let avail_h = parent_content.height;
+        // Проценты размера отсчитываются от контентной области родителя.
+        let avail_w = flow.content.width;
+        let avail_h = flow.content.height;
         // Полный шаг узла по осям (включая внешние отступы) — для родителей.
         let step = 2.0 * margin;
         // Поддерево узла занимает в плоском списке диапазон `[start, len)`.
         let start = self.nodes.len();
-        // Корень и окно занимают всю доступную область, поэтому их проценты
-        // отсчитываются от неё; остальные — от собственного размера (`Auto` по
-        // содержимому => 0, как у неопределённой высоты в CSS).
+        // Корень и окно занимают всю доступную область. Контейнер с `Auto`
+        // размером по `cross`-оси родителя растягивается на доступный размер;
+        // иначе `Auto` даёт базу `0` (как неопределённая высота в CSS).
         let root = parent.is_none() || matches!(vnode.kind, NodeKind::Window);
+        let is_container = matches!(
+            vnode.kind,
+            NodeKind::Column | NodeKind::Row | NodeKind::TitleBar | NodeKind::Window
+        );
+        let stretch_w = is_container && flow.stretch == Some(Axis::Width);
+        let stretch_h = is_container && flow.stretch == Some(Axis::Height);
         let definite_w = if root {
             avail_w
+        } else if matches!(style.width, Size::Auto) {
+            if stretch_w { avail_w } else { 0.0 }
         } else {
             style.resolve_width(0.0, avail_w)
         };
         let definite_h = if root {
             avail_h
+        } else if matches!(style.height, Size::Auto) {
+            if stretch_h { avail_h } else { 0.0 }
         } else {
             style.resolve_height(0.0, avail_h)
         };
+        // Определён ли размер узла по оси (для процентов его детей).
+        let width_known = root
+            || matches!(style.width, Size::Px(_))
+            || (matches!(style.width, Size::Percent(_)) && flow.width_known)
+            || (matches!(style.width, Size::Auto) && stretch_w);
+        let height_known = root
+            || matches!(style.height, Size::Px(_))
+            || (matches!(style.height, Size::Percent(_)) && flow.height_known)
+            || (matches!(style.height, Size::Auto) && stretch_h);
         // Контентная область, которую узел отдаёт детям под размеры-проценты.
         let child_content = ContentBox {
             left: flow_x + inset,
             top: flow_y + inset,
             width: (definite_w - 2.0 * inset).max(0.0),
             height: (definite_h - 2.0 * inset).max(0.0),
+        };
+        // Ось, по которой узел растягивает своих детей (если размер известен).
+        let child_stretch = match vnode.kind {
+            NodeKind::Row | NodeKind::TitleBar if height_known => Some(Axis::Height),
+            NodeKind::Column | NodeKind::Window if width_known => Some(Axis::Width),
+            _ => None,
+        };
+        let child_flow = FlowContext {
+            content: child_content,
+            width_known,
+            height_known,
+            stretch: child_stretch,
         };
 
         let (w, h) = match &vnode.kind {
@@ -424,7 +489,12 @@ impl Layout {
                     let (child_w, child_h) = self.place(
                         child,
                         Point::new(cursor_x, inner_top),
-                        content,
+                        FlowContext {
+                            content,
+                            width_known: inner_w > 0.0,
+                            height_known: inner_h > 0.0,
+                            stretch: None,
+                        },
                         Some(index),
                         metrics,
                         Inherited {
@@ -510,7 +580,7 @@ impl Layout {
                     let (child_w, child_h) = self.place(
                         child,
                         Point::new(cursor_x, cursor_y),
-                        child_content,
+                        child_flow,
                         Some(index),
                         metrics,
                         Inherited {
@@ -535,6 +605,16 @@ impl Layout {
                 }
                 let (w, h) = if root {
                     (avail_w, avail_h)
+                } else if stretch_w {
+                    (
+                        style.resolve_width(avail_w, avail_w),
+                        style.resolve_height(content_h + 2.0 * inset, avail_h),
+                    )
+                } else if stretch_h {
+                    (
+                        style.resolve_width(content_w + 2.0 * inset, avail_w),
+                        style.resolve_height(avail_h, avail_h),
+                    )
                 } else {
                     (
                         style.resolve_width(content_w + 2.0 * inset, avail_w),
