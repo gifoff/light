@@ -1737,8 +1737,29 @@ fn text_segments(children: &[Node], element: &str) -> syn::Result<Vec<Segment>> 
     Ok(segments)
 }
 
+/// Допустимые статические значения атрибута `cursor` (совпадают с
+/// [`relay::vdom::Cursor::from_name`]).
+const CURSOR_VALUES: &[&str] = &[
+    "default",
+    "pointer",
+    "text",
+    "not-allowed",
+    "wait",
+    "progress",
+    "help",
+    "crosshair",
+    "move",
+    "grab",
+    "grabbing",
+    "ew-resize",
+    "ns-resize",
+    "nesw-resize",
+    "nwse-resize",
+];
+
 /// Проверяет статические атрибуты доступности. `tabindex` должен быть целым
-/// числом; динамическая привязка `:tabindex="…"` проверяется во время выполнения.
+/// числом, `cursor` — одним из известных имён; динамические привязки
+/// `:tabindex="…"` и `:cursor="…"` проверяются во время выполнения.
 fn validate_a11y_attrs(element: &Element) -> syn::Result<()> {
     for attr in &element.attrs {
         if attr.name == "tabindex" && attr.value.trim().parse::<i64>().is_err() {
@@ -1747,6 +1768,17 @@ fn validate_a11y_attrs(element: &Element) -> syn::Result<()> {
                 format!(
                     "недопустимое значение tabindex=\"{}\" у <{}>; ожидается целое число",
                     attr.value, element.name
+                ),
+            ));
+        }
+        if attr.name == "cursor" && !CURSOR_VALUES.contains(&attr.value.trim()) {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                format!(
+                    "недопустимое значение cursor=\"{}\" у <{}>; ожидается одно из: {}",
+                    attr.value,
+                    element.name,
+                    CURSOR_VALUES.join(", ")
                 ),
             ));
         }
@@ -2024,6 +2056,30 @@ mod tests {
     #[test]
     fn dynamic_tabindex_is_not_checked_statically() {
         let element = element("div", &[(":tabindex", "state.order")]);
+        assert!(validate_a11y_attrs(&element).is_ok());
+    }
+
+    #[test]
+    fn cursor_accepts_known_values() {
+        for value in CURSOR_VALUES {
+            let element = element("div", &[("cursor", value)]);
+            assert!(
+                validate_a11y_attrs(&element).is_ok(),
+                "значение cursor=\"{value}\" должно приниматься"
+            );
+        }
+    }
+
+    #[test]
+    fn cursor_rejects_unknown_value() {
+        let element = element("div", &[("cursor", "hand")]);
+        let error = validate_a11y_attrs(&element).expect_err("неизвестное значение cursor");
+        assert!(error.to_string().contains("cursor"), "{}", error);
+    }
+
+    #[test]
+    fn dynamic_cursor_is_not_checked_statically() {
+        let element = element("div", &[(":cursor", "self.cursor")]);
         assert!(validate_a11y_attrs(&element).is_ok());
     }
 }
