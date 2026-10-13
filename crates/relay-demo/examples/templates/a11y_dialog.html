@@ -1,0 +1,17 @@
+<window id="a11y-dialog" width="420" height="320" resizable="true">
+    <titlebar background="#222222EE" border-color="#555555">
+        <div font-size="18" font-color="#FFFFFF">Подтверждение</div>
+        <div position-x="right" direction="horizontal">
+            <button @click="Dom::window().map(|window| window.close())">X</button>
+        </div>
+    </titlebar>
+    <div direction="vertical" padding="16" role="alertdialog" aria-labelledby="dlg-title" aria-describedby="dlg-desc">
+        <h2 id="dlg-title">Подтвердите действие</h2>
+        <div id="dlg-desc">Удалить выбранный элемент без возможности отмены?</div>
+        <div direction="horizontal" role="group" aria-label="Действия диалога">
+            <button @click="confirm" aria-label="Подтвердить удаление">Удалить</button>
+            <button @click="cancel" aria-label="Отменить">Отмена</button>
+        </div>
+        <div role="status" aria-live="assertive">{{ message }}</div>
+    </div>
+</window>

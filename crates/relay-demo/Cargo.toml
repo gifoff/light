@@ -9,3 +9,6 @@ description = "Демонстрационное приложение библи�
 
 [dependencies]
 relay.workspace = true
+
+[dev-dependencies]
+serde_json = "1"
