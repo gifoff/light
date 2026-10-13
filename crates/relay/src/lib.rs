@@ -80,6 +80,7 @@ pub mod error;
 pub mod layout;
 pub mod prelude;
 pub mod reactive;
+pub mod validation;
 pub mod vdom;
 
 #[cfg(feature = "window")]

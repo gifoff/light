@@ -5,7 +5,7 @@ use relay::a11y::focus::{
     first_tabbable, focus_order, is_disabled, is_focusable, is_hidden, is_tabbable, next_focus,
     tabindex,
 };
-use relay::vdom::{NodeKind, Resize, VElement};
+use relay::vdom::{ButtonType, NodeKind, Resize, VElement};
 
 // ---------- Хелперы ----------
 
@@ -15,6 +15,7 @@ fn button(key: &'static str) -> VElement {
         NodeKind::Button {
             label: "OK".into(),
             disabled: false,
+            button_type: ButtonType::Submit,
         },
     )
 }
@@ -25,6 +26,7 @@ fn disabled_button(key: &'static str) -> VElement {
         NodeKind::Button {
             label: "OK".into(),
             disabled: true,
+            button_type: ButtonType::Submit,
         },
     )
 }

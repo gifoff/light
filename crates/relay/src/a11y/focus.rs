@@ -125,7 +125,7 @@ pub fn next_focus<'a>(root: &'a VElement, current: &str, forward: bool) -> Optio
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vdom::{NodeKind, Style, VElement};
+    use crate::vdom::{ButtonType, NodeKind, Style, VElement};
 
     fn button(key: &'static str, disabled: bool) -> VElement {
         VElement::leaf(
@@ -133,6 +133,7 @@ mod tests {
             NodeKind::Button {
                 label: key.to_owned(),
                 disabled,
+                button_type: ButtonType::Submit,
             },
         )
         .with_tag("button")

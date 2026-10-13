@@ -150,7 +150,51 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         None => &nodes,
     };
     let pushes = generator.gen_children(content, None)?;
-    let arms = generator.arms;
+    let Generator {
+        arms,
+        field_validators,
+        form_validators,
+        ..
+    } = generator;
+
+    // Пользовательские проверки полей (`:validator`) и форм (`@validate`).
+    let field_validator_arms = field_validators
+        .iter()
+        .map(|(key, call)| quote!(#key => #call,));
+    let validate_field_method = quote! {
+        fn validate_field(
+            &self,
+            __field: &str,
+            __value: &str,
+        ) -> ::std::result::Result<(), ::std::string::String> {
+            match __field {
+                #(#field_validator_arms)*
+                _ => ::std::result::Result::Ok(()),
+            }
+        }
+    };
+    let form_validator_arms = form_validators.iter().map(|(key, call)| {
+        quote! {
+            #key => ::std::option::Option::Some(match #call {
+                ::std::result::Result::Ok(()) => ::std::vec::Vec::new(),
+                ::std::result::Result::Err(__errors) => __errors,
+            }),
+        }
+    });
+    let validate_form_method = quote! {
+        #[allow(clippy::type_complexity)]
+        fn validate_form(
+            &self,
+            __form: &str,
+        ) -> ::std::option::Option<
+            ::std::vec::Vec<(::std::string::String, ::std::string::String)>,
+        > {
+            match __form {
+                #(#form_validator_arms)*
+                _ => ::std::option::Option::None,
+            }
+        }
+    };
 
     // Дочерний модальный компонент задаётся аргументом `modal = Компонент`.
     let modal_method = match &args.modal {
@@ -231,6 +275,8 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             #modal_method
             #window_factory_method
             #windows_method
+            #validate_field_method
+            #validate_form_method
         }
     })
 }
@@ -367,6 +413,10 @@ struct Generator {
     arms: Vec<TokenStream>,
     /// РРјРµРЅР° локальных переменных `v-for`, видимых в текущей вложенности.
     scopes: Vec<String>,
+    /// Пользовательские проверки полей: `(ключ узла, вызов метода)`.
+    field_validators: Vec<(String, TokenStream)>,
+    /// Пользовательские проверки форм: `(ключ формы, вызов метода)`.
+    form_validators: Vec<(String, TokenStream)>,
 }
 
 /// Ключ узла: известный на этапе компиляции либо вычисляемый во время работы
@@ -509,6 +559,58 @@ impl Generator {
             None => true,
         };
         Ok(quote!(#visible))
+    }
+
+    /// Регистрирует пользовательскую проверку поля (`:validator="метод"`).
+    fn record_field_validator(&mut self, element: &Element, key: &KeyExpr) -> syn::Result<()> {
+        let Some(name) = attr_value(&element.attrs, ":validator") else {
+            return Ok(());
+        };
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                format!("пустое значение :validator у <{}>", element.name),
+            ));
+        }
+        let key_string = match key {
+            KeyExpr::Lit(value) => value.clone(),
+            KeyExpr::Dyn(_) => {
+                return Err(syn::Error::new(
+                    Span::call_site(),
+                    ":validator не поддерживается внутри v-for",
+                ));
+            }
+        };
+        let call = self.handler_call(name, Some(quote!(__value)))?;
+        self.field_validators.push((key_string, call));
+        Ok(())
+    }
+
+    /// Регистрирует пользовательскую проверку формы (`@validate="метод"`).
+    fn record_form_validator(&mut self, element: &Element, key: &KeyExpr) -> syn::Result<()> {
+        let Some(name) = attr_value(&element.attrs, "@validate") else {
+            return Ok(());
+        };
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                format!("пустое значение @validate у <{}>", element.name),
+            ));
+        }
+        let key_string = match key {
+            KeyExpr::Lit(value) => value.clone(),
+            KeyExpr::Dyn(_) => {
+                return Err(syn::Error::new(
+                    Span::call_site(),
+                    "@validate не поддерживается внутри v-for",
+                ));
+            }
+        };
+        let call = self.handler_call(name, None)?;
+        self.form_validators.push((key_string, call));
+        Ok(())
     }
 
     /// Собирает содержимое текстового узла с учётом локальных переменных.
@@ -814,7 +916,11 @@ impl Generator {
         let mut pairs = Vec::new();
         for attr in &element.attrs {
             let name = attr.name.as_str();
-            if name.starts_with('@') || name.starts_with("v-") {
+            if name.starts_with('@')
+                || name.starts_with("v-")
+                || name == ":validator"
+                || name == "required-indicator"
+            {
                 continue;
             }
             if let Some(base) = name.strip_prefix(':') {
@@ -847,6 +953,7 @@ impl Generator {
         key: &KeyExpr,
         default_font: Option<f32>,
     ) -> syn::Result<TokenStream> {
+        self.record_form_validator(element, key)?;
         let meta = self.node_meta(element)?;
         let horizontal = match attr_value(&element.attrs, "direction").map(str::trim) {
             None | Some("vertical") => false,
@@ -879,7 +986,6 @@ impl Generator {
                 #meta
         }})
     }
-
     fn gen_titlebar(&mut self, element: &Element, key: &KeyExpr) -> syn::Result<TokenStream> {
         validate_attrs(&element.attrs, &["v-if", "v-else-if", "v-else", "v-for"])?;
         let meta = self.node_meta(element)?;
@@ -902,6 +1008,7 @@ impl Generator {
             &[
                 "@click",
                 ":disabled",
+                "type",
                 "v-if",
                 "v-else-if",
                 "v-else",
@@ -917,6 +1024,20 @@ impl Generator {
             }
             None => quote!(false),
         };
+        let button_type = match attr_value(&element.attrs, "type").map(str::trim) {
+            None | Some("") | Some("submit") => quote!(::relay::vdom::ButtonType::Submit),
+            Some("button") => quote!(::relay::vdom::ButtonType::Button),
+            Some("reset") => quote!(::relay::vdom::ButtonType::Reset),
+            Some(other) => {
+                return Err(syn::Error::new(
+                    Span::call_site(),
+                    format!(
+                        "invalid type=\"{other}\" on <button>: expected \"submit\", \"button\" \
+                         or \"reset\""
+                    ),
+                ));
+            }
+        };
 
         let key = key.token();
         self.push_events(element, &key)?;
@@ -929,6 +1050,7 @@ impl Generator {
                 ::relay::vdom::NodeKind::Button {
                     label: #label,
                     disabled: #disabled,
+                    button_type: #button_type,
                 },
             )
             .with_style(#style)
@@ -965,6 +1087,7 @@ impl Generator {
                 ),
             ));
         }
+        self.record_field_validator(element, key)?;
         let model = attr_value(&element.attrs, "v-model").ok_or_else(|| {
             syn::Error::new(
                 Span::call_site(),
@@ -1070,6 +1193,7 @@ impl Generator {
                 "<checkbox> требует двустороннюю привязку: v-model=\"свойство\"",
             )
         })?;
+        self.record_field_validator(element, key)?;
         let read = self.path_expr(model)?;
         let write = setter_expr(model, &quote!(!(#read)))?;
         let label = self.content_expr(&text_segments(&element.children, "checkbox")?)?;
@@ -1122,6 +1246,7 @@ impl Generator {
                 "<radio> требует двустороннюю привязку: v-model=\"свойство\"",
             )
         })?;
+        self.record_field_validator(element, key)?;
         let value = attr_value(&element.attrs, "value").ok_or_else(|| {
             syn::Error::new(
                 Span::call_site(),
@@ -1180,6 +1305,7 @@ impl Generator {
                 "<select> требует двустороннюю привязку: v-model=\"свойство\"",
             )
         })?;
+        self.record_field_validator(element, key)?;
         let read = self.path_expr(model)?;
         let write = setter_expr(model, &quote!(__value.clone()))?;
         let disabled = self.disabled_token(element)?;
@@ -1329,6 +1455,8 @@ fn style_token(
             None => quote!(::std::option::Option::None),
         },
     };
+    let required = required_token(element);
+    let required_indicator = required_indicator_token(element)?;
     let background = color_token(parse_color_attr(element, "background")?);
     let font_color = color_token(parse_color_attr(element, "font-color")?);
     let border_color = color_token(parse_color_attr(element, "border-color")?);
@@ -1351,6 +1479,9 @@ fn style_token(
         border_color: #border_color,
         border_size: #border_size,
         visible: #visible,
+        required: #required,
+        invalid: false,
+        required_indicator: #required_indicator,
     }))
 }
 
@@ -1464,6 +1595,43 @@ fn parse_color_attr(element: &Element, name: &str) -> syn::Result<Option<u32>> {
             ),
         )
     })
+}
+
+/// Выражение флага `required`: наличие атрибута означает обязательность.
+fn required_token(element: &Element) -> TokenStream {
+    match attr_value(&element.attrs, "required").map(str::trim) {
+        None | Some("false") | Some("0") | Some("no") => quote!(false),
+        Some(_) => quote!(true),
+    }
+}
+
+/// Выражение индикатора обязательности (`required-indicator`).
+///
+/// `none` — без индикатора, `*` (по умолчанию) — звёздочка, цвет
+/// (`#RRGGBB`/`#RRGGBBAA`) — акцентная полоса заданного цвета.
+fn required_indicator_token(element: &Element) -> syn::Result<TokenStream> {
+    let Some(value) = attr_value(&element.attrs, "required-indicator") else {
+        return Ok(quote!(::relay::vdom::RequiredIndicator::Asterisk));
+    };
+    let value = value.trim();
+    let token = match value {
+        "" | "*" => quote!(::relay::vdom::RequiredIndicator::Asterisk),
+        "none" => quote!(::relay::vdom::RequiredIndicator::None),
+        other => {
+            let color = parse_hex_color(other).map_err(|_| {
+                syn::Error::new(
+                    Span::call_site(),
+                    format!(
+                        "invalid required-indicator=\"{other}\" on <{}>: expected \"none\", \"*\" \
+                         or a color (#RRGGBB)",
+                        element.name
+                    ),
+                )
+            })?;
+            quote!(::relay::vdom::RequiredIndicator::Accent(#color))
+        }
+    };
+    Ok(token)
 }
 
 /// `state.name` в†’ `self.state().set_name(__value)`

@@ -185,6 +185,31 @@ pub enum Resize {
     Both,
 }
 
+/// Тип кнопки (`type`) и её поведение при клике внутри формы.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ButtonType {
+    /// Отправка формы (по умолчанию): запускает валидацию `required`.
+    #[default]
+    Submit,
+    /// Обычная кнопка: валидация не запускается.
+    Button,
+    /// Сброс формы: валидация не запускается.
+    Reset,
+}
+
+/// Визуальный индикатор обязательного поля (`required-indicator`).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum RequiredIndicator {
+    /// Красная звёздочка `*` (по умолчанию): после подписи у флажка/радио/списка
+    /// или в правом верхнем углу текстового поля.
+    #[default]
+    Asterisk,
+    /// Индикатор не рисуется — разработчик добавляет пометку сам.
+    None,
+    /// Акцентная полоса слева от поля заданным цветом (`0xRRGGBBAA`).
+    Accent(u32),
+}
+
 /// Стиль узла: размеры, выравнивание, отступы, цвета и рамка.
 ///
 /// Все размеры — в логических пикселях; `width`/`height` и смещения можно
@@ -230,6 +255,14 @@ pub struct Style {
     /// Видимость узла (`visible`): скрытые узлы не занимают места в раскладке
     /// и не получают событий.
     pub visible: bool,
+    /// Обязательное поле (`required`): рисуется индикатор и запускается
+    /// проверка при отправке формы.
+    pub required: bool,
+    /// Поле не прошло валидацию (`invalid`): рисуется красная рамка,
+    /// в дерево доступности попадает `aria-invalid`.
+    pub invalid: bool,
+    /// Как показывать обязательность поля (`required-indicator`).
+    pub required_indicator: RequiredIndicator,
 }
 
 impl Default for Style {
@@ -253,6 +286,9 @@ impl Default for Style {
             border_color: None,
             border_size: 0.0,
             visible: true,
+            required: false,
+            invalid: false,
+            required_indicator: RequiredIndicator::Asterisk,
         }
     }
 }
@@ -324,6 +360,8 @@ pub enum NodeKind {
         label: String,
         /// Заблокирована ли кнопка (`:disabled`).
         disabled: bool,
+        /// Тип кнопки (`type`): влияет на запуск валидации формы.
+        button_type: ButtonType,
     },
     /// Текстовое поле (`<text>`); при `multiline` — многострочное
     /// (аналог HTML `<textarea>`).
@@ -1007,6 +1045,9 @@ fn diff_node(old: &VElement, new: &VElement, patch: &mut Patch) {
         patch.changed.insert(new.key);
         return;
     }
+    if old.style != new.style {
+        patch.changed.insert(new.key);
+    }
     diff_kind(&old.kind, &new.kind, new.key, patch);
     diff_children(old, new, patch);
 }
@@ -1043,10 +1084,12 @@ fn diff_kind(old: &NodeKind, new: &NodeKind, key: &'static str, patch: &mut Patc
             NodeKind::Button {
                 label: label_a,
                 disabled: disabled_a,
+                button_type: type_a,
             },
             NodeKind::Button {
                 label: label_b,
                 disabled: disabled_b,
+                button_type: button_type_b,
             },
         ) => {
             if label_a != label_b {
@@ -1061,6 +1104,9 @@ fn diff_kind(old: &NodeKind, new: &NodeKind, key: &'static str, patch: &mut Patc
                     key,
                     disabled: *disabled_b,
                 });
+                patch.changed.insert(key);
+            }
+            if type_a != button_type_b {
                 patch.changed.insert(key);
             }
         }

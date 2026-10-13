@@ -17,6 +17,7 @@ fn button(key: &'static str, label: &str, disabled: bool) -> VElement {
         NodeKind::Button {
             label: label.to_owned(),
             disabled,
+            button_type: relay::vdom::ButtonType::Submit,
         },
     )
 }
@@ -201,6 +202,7 @@ fn finds_nodes_by_tag_attr_and_content() {
                 NodeKind::Button {
                     label: "Сохранить".to_owned(),
                     disabled: false,
+                    button_type: relay::vdom::ButtonType::Submit,
                 },
             )
             .with_tag("button")

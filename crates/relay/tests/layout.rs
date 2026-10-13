@@ -29,6 +29,7 @@ fn button(key: &'static str, label: &str, disabled: bool) -> VElement {
         NodeKind::Button {
             label: label.to_owned(),
             disabled,
+            button_type: relay::vdom::ButtonType::Submit,
         },
     )
 }

@@ -35,7 +35,8 @@ use crate::layout::{
 };
 use crate::reactive::set_repaint_requester;
 use crate::vdom::{
-    Event as DomEvent, KeyInfo, MouseButton as DomButton, NodeKind, Resize, VElement, diff,
+    ButtonType, Event as DomEvent, KeyInfo, MouseButton as DomButton, NodeKind, Resize, VElement,
+    diff,
 };
 
 use font::FontMetrics;
@@ -165,6 +166,9 @@ struct WindowState {
     dragging: bool,
     resizing: Option<&'static str>,
     resized: HashMap<&'static str, (f32, f32)>,
+    /// Сообщения об ошибках валидации: ключ поля → текст (перерисовка поверх
+    /// дерева компонента, как и `resized`).
+    validation: HashMap<String, String>,
     modifiers: ModifiersState,
     cursor: Point,
     hover: Option<&'static str>,
@@ -197,6 +201,7 @@ impl WindowState {
 
         let mut tree = self.component.render();
         apply_overrides(&mut tree, &self.resized);
+        apply_validation(&mut tree, &self.validation);
         self.update_title(&tree);
         let metrics = ScaledMetrics {
             inner: self.font.as_ref(),
@@ -385,12 +390,104 @@ impl WindowState {
         self.component.dispatch(key, event)
     }
 
+    /// Отключён ли узел с ключом `key` в текущем дереве.
+    ///
+    /// Учитывает как встроенный флаг `disabled`, так и `aria-disabled` —
+    /// через единую проверку [`crate::a11y::is_disabled`].
+    fn node_disabled(&self, key: &str) -> bool {
+        self.tree
+            .as_ref()
+            .and_then(|tree| tree.get(key))
+            .is_some_and(crate::a11y::is_disabled)
+    }
+
+    /// Доставляет событие компоненту, перехватывая отправку формы.
+    ///
+    /// Клик по кнопке `type="submit"` внутри `role="form"` сначала запускает
+    /// валидацию: при ошибках событие поглощается (фокус — на первом
+    /// невалидном поле), при успехе передаётся компоненту как обычно. Ввод в
+    /// поле или переключение контрола сбрасывает ошибку этого поля.
+    fn dispatch_checked(&mut self, key: &str, event: DomEvent) -> bool {
+        if self.node_disabled(key) {
+            return true;
+        }
+        match &event {
+            DomEvent::Click => {
+                if self.handle_submit(key) {
+                    return true;
+                }
+                self.clear_field_error(key);
+            }
+            DomEvent::TextChange(_) => self.clear_field_error(key),
+            _ => {}
+        }
+        self.dispatch(key, event)
+    }
+
+    /// Сбрасывает ошибку валидации поля `key`, если она была.
+    fn clear_field_error(&mut self, key: &str) {
+        if self.validation.remove(key).is_some() {
+            self.invalidate();
+        }
+    }
+
+    /// Проверяет форму при нажатии кнопки отправки.
+    ///
+    /// Возвращает `true`, если форма невалидна и событие нужно поглотить.
+    fn handle_submit(&mut self, key: &str) -> bool {
+        let Some(tree) = self.tree.clone() else {
+            return false;
+        };
+        let is_submit = tree.get(key).is_some_and(|node| {
+            matches!(
+                node.kind,
+                NodeKind::Button {
+                    disabled: false,
+                    button_type: ButtonType::Submit,
+                    ..
+                }
+            )
+        });
+        if !is_submit {
+            return false;
+        }
+        let Some(form) = crate::validation::form_ancestor(&tree, key) else {
+            return false;
+        };
+        let form_key = form.key;
+        let result = crate::validation::validate_form(form, self.component.as_ref(), form_key);
+        self.validation.clear();
+        if result.is_valid() {
+            self.invalidate();
+            return false;
+        }
+        for error in &result.errors {
+            self.validation
+                .insert(error.key.clone(), error.message.clone());
+        }
+        if let Some(first) = result.first() {
+            let field = first.key.clone();
+            let message = first.message.clone();
+            self.focused = Some(field.clone());
+            #[cfg(feature = "a11y-winit")]
+            {
+                self.a11y_focus = Some(field);
+            }
+            crate::a11y::announce(message, crate::a11y::Politeness::Assertive);
+        }
+        self.invalidate();
+        true
+    }
+
     /// Доставляет событие узлам под курсором от глубокого к корню.
     fn deliver(&self, event: DomEvent) -> bool {
         let Some(layout) = self.layout.as_ref() else {
             return false;
         };
         for node in layout.hit_stack(self.cursor) {
+            if self.node_disabled(node.key) {
+                return true;
+            }
             if self.dispatch(node.key, event.clone()) {
                 return true;
             }
@@ -529,7 +626,7 @@ impl WindowState {
         }
         match self.click_action() {
             Some(ClickAction::Click(key)) => {
-                self.dispatch(key, DomEvent::Click);
+                self.dispatch_checked(key, DomEvent::Click);
             }
             Some(ClickAction::FocusField { key, value, caret }) => {
                 self.focused = Some(key.to_owned());
@@ -581,7 +678,7 @@ impl WindowState {
             self.open_select = None;
             self.select_hover = None;
             if let Some(value) = value {
-                self.dispatch(key, DomEvent::TextChange(value));
+                self.dispatch_checked(key, DomEvent::TextChange(value));
             }
             self.invalidate();
             return true;
@@ -908,7 +1005,7 @@ impl WindowState {
 
     fn commit_text(&mut self) {
         if let Some(key) = self.focused.clone() {
-            self.dispatch(&key, DomEvent::TextChange(self.editing.clone()));
+            self.dispatch_checked(&key, DomEvent::TextChange(self.editing.clone()));
         }
         self.invalidate();
     }
@@ -1198,7 +1295,7 @@ impl WindowState {
             if self.editing != before {
                 self.snapshot_before_edit(&before);
             }
-            self.dispatch(&focused, DomEvent::TextChange(self.editing.clone()));
+            self.dispatch_checked(&focused, DomEvent::TextChange(self.editing.clone()));
         }
         // Перемещение каретки не меняет значение поля, поэтому реактивная
         // перерисовка не сработает — запрашиваем её вручную.
@@ -1274,12 +1371,12 @@ impl WindowState {
         match translated {
             crate::a11y::actions::A11yRequest::Click => {
                 if let Some(key) = &key {
-                    self.dispatch(key, DomEvent::Click);
+                    self.dispatch_checked(key, DomEvent::Click);
                 }
             }
             crate::a11y::actions::A11yRequest::SetValue(value) => {
                 if let Some(key) = &key {
-                    self.dispatch(key, DomEvent::TextChange(value));
+                    self.dispatch_checked(key, DomEvent::TextChange(value));
                 }
             }
             crate::a11y::actions::A11yRequest::Focus => self.set_a11y_focus(key),
@@ -1349,7 +1446,7 @@ impl WindowState {
         if is_text {
             return false;
         }
-        self.dispatch(&key, DomEvent::Click);
+        self.dispatch_checked(&key, DomEvent::Click);
         self.invalidate();
         true
     }
@@ -1673,6 +1770,7 @@ impl App {
             dragging: false,
             resizing: None,
             resized: HashMap::new(),
+            validation: HashMap::new(),
             modifiers: ModifiersState::empty(),
             cursor: Point::new(0.0, 0.0),
             hover: None,
@@ -1967,6 +2065,28 @@ fn apply_overrides(tree: &mut VElement, resized: &HashMap<&'static str, (f32, f3
             node.style.width = crate::vdom::Size::Px(width);
             node.style.height = crate::vdom::Size::Px(height);
         }
+    }
+}
+
+/// Помечает невалидные поля красной рамкой и добавляет текст ошибки для
+/// диктора (`aria-invalid`/`aria-description`) поверх дерева компонента.
+fn apply_validation(tree: &mut VElement, validation: &HashMap<String, String>) {
+    for (key, message) in validation {
+        let Some(node) = tree.get_mut(key) else {
+            continue;
+        };
+        node.style.invalid = true;
+        upsert_attr(node, "invalid", "true".to_owned());
+        upsert_attr(node, "aria-description", message.clone());
+    }
+}
+
+/// Записывает атрибут, заменяя прежнее значение с тем же именем.
+fn upsert_attr(node: &mut VElement, name: &'static str, value: String) {
+    if let Some(entry) = node.attrs.iter_mut().find(|(key, _)| *key == name) {
+        entry.1 = value;
+    } else {
+        node.attrs.push((name, value));
     }
 }
 

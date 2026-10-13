@@ -1,9 +1,9 @@
 //! Тесты построения дерева доступности.
 #![cfg(feature = "a11y")]
 
-use accesskit::Role;
+use accesskit::{Invalid, Role};
 use relay::a11y::tree::{build_update, find_key_for_node_id, node_id_for_key};
-use relay::vdom::{NodeKind, VElement};
+use relay::vdom::{ButtonType, NodeKind, VElement};
 
 fn button(key: &'static str, label: &str) -> VElement {
     VElement::leaf(
@@ -11,6 +11,7 @@ fn button(key: &'static str, label: &str) -> VElement {
         NodeKind::Button {
             label: label.into(),
             disabled: false,
+            button_type: ButtonType::Submit,
         },
     )
 }
@@ -173,4 +174,62 @@ fn container_with_aria_label_has_label() {
     );
     let update = build_update(&tree, None);
     assert_eq!(node_label(&update, &tree, "0").as_deref(), Some("Форма"));
+}
+
+fn node_for<'a>(
+    update: &'a accesskit::TreeUpdate,
+    root: &VElement,
+    key: &str,
+) -> &'a accesskit::Node {
+    update
+        .nodes
+        .iter()
+        .find(|(id, _)| find_key_for_node_id(root, *id) == Some(key))
+        .map(|(_, node)| node)
+        .unwrap_or_else(|| panic!("узел `{key}` не найден"))
+}
+
+#[test]
+fn required_and_invalid_attrs_reach_accesskit() {
+    let field = with_attr(
+        with_attr(button("0", "Поле"), "required", ""),
+        "invalid",
+        "true",
+    );
+    let tree = window("", vec![field]);
+    let update = build_update(&tree, None);
+    let node = node_for(&update, &tree, "0");
+    assert!(node.is_required());
+    assert_eq!(node.invalid(), Some(Invalid::True));
+}
+
+#[test]
+fn aria_required_and_aria_invalid_variants() {
+    let field = with_attr(
+        with_attr(button("0", "Поле"), "aria-required", "true"),
+        "aria-invalid",
+        "true",
+    );
+    let tree = window("", vec![field]);
+    let update = build_update(&tree, None);
+    let node = node_for(&update, &tree, "0");
+    assert!(node.is_required());
+    assert_eq!(node.invalid(), Some(Invalid::True));
+}
+
+#[test]
+fn aria_description_reaches_accesskit() {
+    let tree = window(
+        "",
+        vec![with_attr(
+            button("0", "Поле"),
+            "aria-description",
+            "Укажите имя",
+        )],
+    );
+    let update = build_update(&tree, None);
+    assert_eq!(
+        node_for(&update, &tree, "0").description(),
+        Some("Укажите имя")
+    );
 }

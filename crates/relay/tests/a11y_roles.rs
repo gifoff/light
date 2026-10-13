@@ -128,7 +128,8 @@ fn default_role_for_leaf_widgets() {
     assert_eq!(
         default_role(&NodeKind::Button {
             label: "OK".into(),
-            disabled: false
+            disabled: false,
+            button_type: relay::vdom::ButtonType::Submit,
         }),
         Role::Button
     );

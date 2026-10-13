@@ -325,6 +325,7 @@ mod tests {
             NodeKind::Button {
                 label: label.to_owned(),
                 disabled: false,
+                button_type: crate::vdom::ButtonType::Submit,
             },
         )
         .with_tag("button")

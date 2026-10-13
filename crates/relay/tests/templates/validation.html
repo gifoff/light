@@ -1,0 +1,11 @@
+<div role="form" aria-label="Анкета">
+    <text v-model="name" placeholder="Имя" required :validator="check_name" />
+    <text v-model="email" placeholder="Почта" required :validator="check_email" />
+    <checkbox v-model="agree" required>Согласен</checkbox>
+    <select v-model="city" required>
+        <option value="">—</option>
+        <option value="msk">Москва</option>
+    </select>
+    <button type="submit">Отправить</button>
+    <button type="button">Отмена</button>
+</div>

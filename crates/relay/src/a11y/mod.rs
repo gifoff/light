@@ -65,6 +65,36 @@ pub mod fallback {
     }
 }
 
+/// Разбирает булев атрибут (`true`/`false`; пустое значение — `true`).
+pub fn parse_bool(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "true" | "1" | "yes" => Some(true),
+        "false" | "0" | "no" => Some(false),
+        _ => None,
+    }
+}
+
+/// Отключён ли узел для взаимодействия (`disabled` / `aria-disabled`).
+///
+/// Единый источник истины для блокировки кликов, клавиатурной активации и
+/// курсора. Атрибут `aria-disabled` имеет приоритет; иначе смотрится
+/// встроенный флаг `disabled` у интерактивных узлов. Доступна независимо от
+/// фичи `a11y`, поэтому проверку можно использовать в оконной логике.
+pub fn is_disabled(element: &crate::vdom::VElement) -> bool {
+    use crate::vdom::NodeKind;
+    if element.attr("aria-disabled").and_then(parse_bool) == Some(true) {
+        return true;
+    }
+    match &element.kind {
+        NodeKind::Button { disabled, .. }
+        | NodeKind::TextField { disabled, .. }
+        | NodeKind::Checkbox { disabled, .. }
+        | NodeKind::Radio { disabled, .. }
+        | NodeKind::Select { disabled, .. } => *disabled,
+        _ => false,
+    }
+}
+
 /// Срочность объявления изменений live-региона (`aria-live`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Politeness {

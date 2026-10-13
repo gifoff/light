@@ -14,7 +14,7 @@
 
 use accesskit::TreeUpdate;
 use relay::a11y::tree::{build_update, find_key_for_node_id};
-use relay::vdom::{NodeKind, Resize, SelectOption, VElement};
+use relay::vdom::{ButtonType, NodeKind, Resize, SelectOption, VElement};
 use serde_json::json;
 
 // ---------- Хелперы для сборки VElement ----------
@@ -25,6 +25,7 @@ fn button(key: &'static str, label: &str) -> VElement {
         NodeKind::Button {
             label: label.into(),
             disabled: false,
+            button_type: ButtonType::Submit,
         },
     )
 }
@@ -35,6 +36,7 @@ fn button_disabled(key: &'static str, label: &str) -> VElement {
         NodeKind::Button {
             label: label.into(),
             disabled: true,
+            button_type: ButtonType::Submit,
         },
     )
 }

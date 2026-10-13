@@ -52,6 +52,10 @@ pub const RESIZE_GRIP: u32 = rgb(0x9A, 0xA2, 0xAE);
 pub const FORM_BG: u32 = rgb(0xFF, 0xFF, 0xFF);
 /// Акцент флажка/переключателя/списка.
 pub const FORM_ACCENT: u32 = rgb(0x3B, 0x82, 0xF6);
+/// Рамка поля, не прошедшего валидацию.
+pub const FIELD_INVALID: u32 = rgb(0xD9, 0x53, 0x4F);
+/// Цвет индикатора обязательного поля (`*`).
+pub const REQUIRED_COLOR: u32 = rgb(0xD9, 0x53, 0x4F);
 
 /// Ширина контекстного меню.
 pub(crate) const MENU_W: f32 = 160.0;
@@ -407,7 +411,9 @@ pub fn render(
                 let color = style.font_color.unwrap_or(COLOR_TEXT);
                 canvas.draw_text(font, content, rect.x + inset, rect.y + inset, color, size);
             }
-            crate::vdom::NodeKind::Button { label, disabled } => {
+            crate::vdom::NodeKind::Button {
+                label, disabled, ..
+            } => {
                 let foreground = if *disabled {
                     BUTTON_LABEL_DISABLED
                 } else {
@@ -432,12 +438,19 @@ pub fn render(
                 resize,
                 masked,
             } => {
-                let frame = if focused == Some(node.key) {
+                let frame = if style.invalid {
+                    FIELD_INVALID
+                } else if focused == Some(node.key) {
                     FIELD_BORDER_FOCUS
                 } else {
                     style.border_color.unwrap_or(FIELD_BORDER)
                 };
-                canvas.stroke_rect(frame, rect, thickness);
+                let frame_thickness = if style.invalid {
+                    (2.0 * scale).max(thickness)
+                } else {
+                    thickness
+                };
+                canvas.stroke_rect(frame, rect, frame_thickness);
                 let display;
                 let (text, color) = if value.is_empty() {
                     (placeholder.as_str(), COLOR_MUTED)
@@ -466,6 +479,9 @@ pub fn render(
                 if *resize != crate::vdom::Resize::None {
                     draw_grip(canvas, rect, scale);
                 }
+                if style.required {
+                    draw_field_required(canvas, font, rect, scale, size, style.required_indicator);
+                }
             }
             crate::vdom::NodeKind::Checkbox {
                 label,
@@ -475,6 +491,22 @@ pub fn render(
                 draw_checkbox(
                     canvas, font, rect, inset, scale, size, label, *checked, *disabled, style,
                 );
+                if style.required {
+                    let end = rect.x
+                        + inset
+                        + CHECKBOX_BOX * scale
+                        + CHECKBOX_GAP * scale
+                        + measure(font, label, size).0;
+                    draw_inline_required(
+                        canvas,
+                        font,
+                        end,
+                        rect,
+                        scale,
+                        size,
+                        style.required_indicator,
+                    );
+                }
             }
             crate::vdom::NodeKind::Radio {
                 label,
@@ -485,6 +517,22 @@ pub fn render(
                 draw_radio(
                     canvas, font, rect, inset, scale, size, label, *selected, *disabled, style,
                 );
+                if style.required {
+                    let end = rect.x
+                        + inset
+                        + CHECKBOX_BOX * scale
+                        + CHECKBOX_GAP * scale
+                        + measure(font, label, size).0;
+                    draw_inline_required(
+                        canvas,
+                        font,
+                        end,
+                        rect,
+                        scale,
+                        size,
+                        style.required_indicator,
+                    );
+                }
             }
             crate::vdom::NodeKind::Select {
                 value,
@@ -505,6 +553,9 @@ pub fn render(
                     style,
                     open_select == Some(node.key),
                 );
+                if style.required {
+                    draw_field_required(canvas, font, rect, scale, size, style.required_indicator);
+                }
             }
         }
     }
@@ -525,6 +576,65 @@ pub fn render(
             scale,
             size,
         );
+    }
+}
+
+/// Рисует индикатор обязательности текстового поля/списка в правом верхнем углу.
+fn draw_field_required(
+    canvas: &mut Canvas,
+    font: &FontVec,
+    rect: Rect,
+    scale: f32,
+    size: f32,
+    indicator: crate::vdom::RequiredIndicator,
+) {
+    match indicator {
+        crate::vdom::RequiredIndicator::None => {}
+        crate::vdom::RequiredIndicator::Asterisk => {
+            let (width, _) = measure(font, "*", size);
+            canvas.draw_text(
+                font,
+                "*",
+                rect.x + rect.w - width - 4.0 * scale,
+                rect.y + 1.0 * scale,
+                REQUIRED_COLOR,
+                size,
+            );
+        }
+        crate::vdom::RequiredIndicator::Accent(color) => {
+            let width = (2.0 * scale).max(2.0);
+            canvas.fill_rect(color, Rect::new(rect.x, rect.y, width, rect.h));
+        }
+    }
+}
+
+/// Рисует индикатор обязательности флажка/переключателя после подписи.
+fn draw_inline_required(
+    canvas: &mut Canvas,
+    font: &FontVec,
+    text_end_x: f32,
+    rect: Rect,
+    scale: f32,
+    size: f32,
+    indicator: crate::vdom::RequiredIndicator,
+) {
+    match indicator {
+        crate::vdom::RequiredIndicator::None => {}
+        crate::vdom::RequiredIndicator::Asterisk => {
+            let (_, text_h) = measure(font, "*", size);
+            canvas.draw_text(
+                font,
+                "*",
+                text_end_x + 4.0 * scale,
+                rect.y + (rect.h - text_h) / 2.0,
+                REQUIRED_COLOR,
+                size,
+            );
+        }
+        crate::vdom::RequiredIndicator::Accent(color) => {
+            let width = (2.0 * scale).max(2.0);
+            canvas.fill_rect(color, Rect::new(rect.x, rect.y, width, rect.h));
+        }
     }
 }
 
@@ -632,10 +742,17 @@ fn draw_select(
     style: crate::vdom::Style,
     open: bool,
 ) {
-    let frame = if open {
+    let frame = if style.invalid {
+        FIELD_INVALID
+    } else if open {
         FORM_ACCENT
     } else {
         style.border_color.unwrap_or(FIELD_BORDER)
+    };
+    let thickness = if style.invalid {
+        (2.0 * scale).max(thickness)
+    } else {
+        thickness
     };
     canvas.stroke_rect(frame, rect, thickness);
     let label = options
