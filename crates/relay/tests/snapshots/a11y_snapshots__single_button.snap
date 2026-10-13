@@ -1,0 +1,20 @@
+---
+source: crates/relay/tests/a11y_snapshots.rs
+expression: "summarize(&update, tree)"
+---
+{
+  "focus": "0",
+  "nodes": [
+    {
+      "key": "0",
+      "label": "OK",
+      "role": "Button"
+    },
+    {
+      "key": "",
+      "label": null,
+      "role": "Window"
+    }
+  ],
+  "root": ""
+}

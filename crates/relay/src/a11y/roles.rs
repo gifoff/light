@@ -12,7 +12,8 @@ use crate::vdom::{NodeKind, VElement};
 ///
 /// Возвращает `None`, если значение неизвестно.
 pub fn role_from_name(name: &str) -> Option<Role> {
-    let role = match name.trim() {
+    let name = name.trim().to_ascii_lowercase();
+    let role = match name.as_str() {
         "window" => Role::Window,
         "titlebar" | "title-bar" => Role::TitleBar,
         "button" => Role::Button,
@@ -271,6 +272,144 @@ mod tests {
         assert_eq!(parse_bool("maybe"), None);
         assert_eq!(parse_tristate("mixed"), Some(Toggled::Mixed));
         assert_eq!(parse_tristate("true"), Some(Toggled::True));
-        assert_eq!(parse_tristate("nope"), None);
+        assert_eq!(parse_tristate("false"), Some(Toggled::False));
+        assert_eq!(parse_tristate("TRUE"), Some(Toggled::True));
+        assert_eq!(parse_tristate("loud"), None);
+    }
+
+    #[test]
+    fn role_from_name_covers_all_mappings() {
+        let cases = [
+            ("window", Role::Window),
+            ("titlebar", Role::TitleBar),
+            ("title-bar", Role::TitleBar),
+            ("button", Role::Button),
+            ("checkbox", Role::CheckBox),
+            ("check-box", Role::CheckBox),
+            ("radio", Role::RadioButton),
+            ("radio-group", Role::RadioGroup),
+            ("textbox", Role::TextInput),
+            ("text-input", Role::TextInput),
+            ("textarea", Role::MultilineTextInput),
+            ("password", Role::PasswordInput),
+            ("select", Role::ComboBox),
+            ("listbox", Role::ListBox),
+            ("list-item", Role::ListItem),
+            ("listitem", Role::ListItem),
+            ("tab", Role::Tab),
+            ("tabpanel", Role::TabPanel),
+            ("switch", Role::Switch),
+            ("link", Role::Link),
+            ("slider", Role::Slider),
+            ("spinbutton", Role::SpinButton),
+            ("progressbar", Role::ProgressIndicator),
+            ("menuitem", Role::MenuItem),
+            ("treeitem", Role::TreeItem),
+            ("heading", Role::Heading),
+            ("paragraph", Role::Paragraph),
+            ("label", Role::Label),
+            ("image", Role::Image),
+            ("img", Role::Image),
+            ("group", Role::Group),
+            ("region", Role::Region),
+            ("alert", Role::Alert),
+            ("dialog", Role::Dialog),
+            ("alertdialog", Role::AlertDialog),
+            ("tooltip", Role::Tooltip),
+            ("status", Role::Status),
+            ("note", Role::Note),
+            ("form", Role::Form),
+            ("figure", Role::Figure),
+            ("term", Role::Term),
+            ("definition", Role::Definition),
+            ("article", Role::Article),
+            ("main", Role::Main),
+            ("navigation", Role::Navigation),
+            ("banner", Role::Banner),
+            ("contentinfo", Role::ContentInfo),
+            ("complementary", Role::Complementary),
+            ("presentation", Role::GenericContainer),
+            ("none", Role::GenericContainer),
+            ("generic", Role::GenericContainer),
+        ];
+        for (name, expected) in cases {
+            assert_eq!(role_from_name(name), Some(expected), "роль `{name}`");
+        }
+    }
+
+    #[test]
+    fn unknown_and_empty_names_are_rejected() {
+        assert_eq!(role_from_name(""), None);
+        assert_eq!(role_from_name("   "), None);
+        assert_eq!(role_from_name("not-a-role"), None);
+        assert_eq!(role_from_name("heading-2"), None);
+    }
+
+    #[test]
+    fn role_names_are_case_insensitive() {
+        assert_eq!(role_from_name("ListBox"), Some(Role::ListBox));
+        assert_eq!(role_from_name("RADIO-GROUP"), Some(Role::RadioGroup));
+    }
+
+    #[test]
+    fn role_for_prefers_explicit_role_over_kind() {
+        let field = element(
+            "text",
+            NodeKind::TextField {
+                value: String::new(),
+                placeholder: String::new(),
+                disabled: false,
+                multiline: false,
+                resize: crate::vdom::Resize::None,
+                masked: true,
+            },
+            &[("role", "combobox")],
+        );
+        assert_eq!(role_for(&field), Role::ComboBox);
+    }
+
+    #[test]
+    fn role_for_derives_from_kind_without_tag() {
+        let masked = element(
+            "text",
+            NodeKind::TextField {
+                value: String::new(),
+                placeholder: String::new(),
+                disabled: false,
+                multiline: false,
+                resize: crate::vdom::Resize::None,
+                masked: true,
+            },
+            &[],
+        );
+        assert_eq!(role_for(&masked), Role::PasswordInput);
+    }
+
+    #[test]
+    fn whitespace_in_role_name_is_trimmed() {
+        let node = element("div", NodeKind::Column, &[("role", "  tab  ")]);
+        assert_eq!(role_for(&node), Role::Tab);
+    }
+
+    #[test]
+    fn non_focusable_roles_are_rejected() {
+        for role in [
+            Role::GenericContainer,
+            Role::Heading,
+            Role::Paragraph,
+            Role::Label,
+            Role::Image,
+            Role::Region,
+            Role::ListItem,
+            Role::Alert,
+            Role::Dialog,
+            Role::Window,
+            Role::TitleBar,
+        ] {
+            assert!(
+                !is_focusable_by_role(role),
+                "роль {role:?} не должна быть фокусируемой"
+            );
+        }
     }
 }

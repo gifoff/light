@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-use accesskit::{Invalid, Node, NodeId, Toggled, TreeId, TreeInfo, TreeUpdate};
+use accesskit::{Invalid, Node, NodeId, Role, Toggled, TreeId, TreeInfo, TreeUpdate};
 
 use super::Politeness;
 use super::focus;
@@ -42,10 +42,24 @@ struct Pool {
     next: u64,
 }
 
+/// Ключ узла по идентификатору AccessKit (обратный поиск).
+///
+/// Используется оконным бэкендом, чтобы сопоставить [`ActionRequest`]
+/// с узлом виртуального дерева. Возвращает `None`, если узел не найден.
+pub fn find_key_for_node_id(root: &VElement, id: NodeId) -> Option<&'static str> {
+    if node_id_for_key(root.key) == id {
+        return Some(root.key);
+    }
+    root.children
+        .iter()
+        .find_map(|child| find_key_for_node_id(child, id))
+}
+
 /// Строит [`TreeUpdate`] для поддерева `root`.
 ///
 /// `focused_key` — путь узла, который должен быть помечен как находящийся
-/// в фокусе; если `None` или узел не найден, фокус получает корень.
+/// в фокусе. Если ключ не задан или узел не найден, фокус получает первый
+/// tabbable-узел (по порядку обхода), а при его отсутствии — корень.
 pub fn build_update(root: &VElement, focused_key: Option<&str>) -> TreeUpdate {
     let mut id_map: HashMap<&str, NodeId> = HashMap::new();
     collect_ids(root, &mut id_map);
@@ -55,6 +69,11 @@ pub fn build_update(root: &VElement, focused_key: Option<&str>) -> TreeUpdate {
     let focus = focused_key
         .map(node_id_for_key)
         .filter(|id| nodes.iter().any(|(node, _)| node == id))
+        .or_else(|| {
+            focus::first_tabbable(root)
+                .map(|element| node_id_for_key(element.key))
+                .filter(|id| nodes.iter().any(|(node, _)| node == id))
+        })
         .unwrap_or(root_id);
 
     TreeUpdate {
@@ -253,18 +272,43 @@ fn intrinsic_name(element: &VElement) -> Option<String> {
         }
         NodeKind::Text { content } if !content.is_empty() => Some(content.clone()),
         NodeKind::Window => element.titlebar_text(),
+        NodeKind::TextField { placeholder, .. } if !placeholder.is_empty() => {
+            Some(placeholder.clone())
+        }
         _ => {
-            let text = collected_text(element);
-            (!text.is_empty()).then_some(text)
+            if should_derive_label_from_children(roles::role_for(element)) {
+                let text = collected_text(element);
+                (!text.is_empty()).then_some(text)
+            } else {
+                None
+            }
         }
     }
+}
+
+/// Роли, для которых подпись из текста детей является частью семантики.
+///
+/// Для контейнеров (`GenericContainer`, `Window`, `Group`, `List` и т. п.)
+/// имя заполняется только явным `aria-label`/`aria-labelledby`, иначе
+/// скринридер дублировал бы содержимое всего поддерева.
+fn should_derive_label_from_children(role: Role) -> bool {
+    matches!(
+        role,
+        Role::Button
+            | Role::Label
+            | Role::Link
+            | Role::Heading
+            | Role::CheckBox
+            | Role::RadioButton
+            | Role::MenuItem
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::vdom::{NodeKind, VElement};
-    use accesskit::Role;
+    use accesskit::{NodeId, Role};
 
     fn text(key: &'static str, content: &str) -> VElement {
         VElement::leaf(
@@ -421,5 +465,13 @@ mod tests {
         let first = build_update(&root, None);
         let second = build_update(&root, None);
         assert_eq!(first.nodes, second.nodes);
+    }
+
+    #[test]
+    fn reverse_lookup_finds_key_by_node_id() {
+        let root =
+            VElement::container("", NodeKind::Column, vec![button("b", "OK")]).with_tag("div");
+        assert_eq!(find_key_for_node_id(&root, node_id_for_key("b")), Some("b"));
+        assert_eq!(find_key_for_node_id(&root, NodeId(9_999_999)), None);
     }
 }

@@ -12,9 +12,15 @@ thiserror = "2"
 winit = { workspace = true, optional = true }
 pixels = { workspace = true, optional = true }
 ab_glyph = { workspace = true, optional = true }
-accesskit = { version = "0.25", optional = true }
+accesskit = { version = "0.25", optional = true, features = ["serde"] }
+accesskit_winit = { version = "0.34", optional = true }
 
 [features]
-default = ["window", "a11y"]
+default = ["a11y-winit"]
 window = ["dep:winit", "dep:pixels", "dep:ab_glyph"]
 a11y = ["dep:accesskit"]
+a11y-winit = ["a11y", "window", "dep:accesskit_winit"]
+
+[dev-dependencies]
+insta = { version = "1", features = ["json"] }
+serde_json = "1"
