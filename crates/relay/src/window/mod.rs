@@ -1152,12 +1152,57 @@ impl WindowState {
         self.move_caret(to, extend);
     }
 
+    /// Отправляет форму по `Enter` из однострочного поля ввода.
+    ///
+    /// Срабатывает, только если фокус — на включённом однострочном `<text>`
+    /// внутри `role="form"`, нет модификаторов (`Shift`/`Ctrl`/`Alt`) и в форме
+    /// есть включённая кнопка отправки. Многострочные поля вставляют перевод
+    /// строки, поэтому `Enter` в них форму не отправляет. Возвращает `true`,
+    /// если нажатие обработано и не должно попадать в логику редактирования.
+    fn try_submit_on_enter(&mut self, event: &KeyEvent) -> bool {
+        if event.state != ElementState::Pressed
+            || !matches!(&event.logical_key, Key::Named(NamedKey::Enter))
+            || self.modifiers.shift_key()
+            || self.modifiers.control_key()
+            || self.modifiers.alt_key()
+        {
+            return false;
+        }
+        let Some(tree) = self.tree.clone() else {
+            return false;
+        };
+        let Some(key) = self.focused.clone() else {
+            return false;
+        };
+        let is_single_line = matches!(
+            tree.get(&key).map(|node| &node.kind),
+            Some(NodeKind::TextField {
+                multiline: false,
+                disabled: false,
+                ..
+            })
+        );
+        if !is_single_line {
+            return false;
+        }
+        let Some(button) = crate::validation::find_submit_button(&tree, &key) else {
+            return false;
+        };
+        let button_key = button.key.to_owned();
+        self.dispatch_checked(&button_key, DomEvent::Click);
+        self.invalidate();
+        true
+    }
+
     fn on_key(&mut self, event: &KeyEvent) {
         if self.open_select.is_some() && matches!(&event.logical_key, Key::Named(NamedKey::Escape))
         {
             self.open_select = None;
             self.select_hover = None;
             self.invalidate();
+            return;
+        }
+        if self.try_submit_on_enter(event) {
             return;
         }
         let info = key_info(event, self.modifiers);

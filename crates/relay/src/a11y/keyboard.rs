@@ -9,6 +9,9 @@
 //! * `Escape` — закрытие модального окна или раскрытого списка;
 //! * стрелки — навигация внутри группы переключателей и списка.
 
+/// Кнопка отправки ближайшей формы — см. [`crate::validation::find_submit_button`].
+pub use crate::validation::find_submit_button;
+
 /// Встроенное действие, соответствующее нажатой клавише.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyAction {
