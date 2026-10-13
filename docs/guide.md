@@ -685,6 +685,50 @@ fn main() -> relay::Result<()> {
 </window>
 ```
 
+## Доступность
+
+Relay строит дерево доступности [AccessKit](https://accesskit.dev/), которое читают экранные дикторы (NVDA, Narrator, VoiceOver, Orca). Дерево собирается из того же виртуального дерева, что и отрисовка, поэтому семантика всегда совпадает с картинкой.
+
+### Семантика из разметки
+
+Роль узла выводится из тега и типа (`button` → `Button`, `text` → `TextInput`, `checkbox` → `CheckBox`, `h1`…`h5` → `Heading`), а точную роль можно задать атрибутом `role` (значения в kebab-case):
+
+```html
+<div role="alertdialog" aria-labelledby="dlg-title" aria-describedby="dlg-desc">
+    <h2 id="dlg-title">Подтвердите действие</h2>
+    <div id="dlg-desc">Удалить элемент без возможности отмены?</div>
+    <button aria-label="Подтвердить удаление">Удалить</button>
+    <button aria-label="Отменить">Отмена</button>
+</div>
+```
+
+Поддерживаются `aria-label`, `aria-labelledby`, `aria-describedby`, `aria-hidden`, `aria-expanded`, `aria-selected`, `aria-checked` (`true`/`false`/`mixed`), `aria-live` (`off`/`polite`/`assertive`), `aria-valuemin`/`aria-valuemax`/`aria-valuenow`, а также `required` и `aria-disabled`. Значения можно привязывать к свойствам через `:` — `:aria-hidden="hidden"`, `:required="needed"`.
+
+### Фокус и клавиатура
+
+* `Tab` / `Shift+Tab` — обход фокусируемых узлов: положительный `tabindex` идёт первым по возрастанию, затем — DOM-порядок; `tabindex="-1"` доступен программно, но пропускается при обходе;
+* `Enter` / `Space` — активация кнопки, флажка или переключателя в фокусе;
+* `Escape` — закрытие раскрытого списка.
+
+Фокусируемость определяется ролью либо атрибутами `tabindex` и `focusable`.
+
+### Включение и выключение
+
+Поддержка включена по умолчанию (фича `a11y-winit`). Её можно выключить во время исполнения переменной окружения `RELAY_A11Y=0` или программно — `relay::a11y::set_enabled(false)`. При сборке без фичи `a11y` атрибуты разметки просто игнорируются, а функции-аксессоры возвращают `None`.
+
+### Управление фокусом и объявлениями
+
+```rust
+use relay::a11y::{self, Politeness};
+
+a11y::announce("Файл сохранён", Politeness::Polite);
+if let Some(window) = a11y::active_window() {
+    window.focus(node_id);
+}
+```
+
+Готовые примеры — `cargo run --example a11y_form` и `cargo run --example a11y_dialog`.
+
 ---
 
 **Итого.** Relay закрывает нишу «нативные десктопные приложения на Rust с HTML-подобной разметкой и реактивной моделью». Он сочетает простоту веб-фреймворков (декларативные шаблоны, `v-if`/`v-for`/`v-model`, обработчики `@click`), строгость Rust (типизированные компоненты, ошибки сборки вместо ошибок рантайма) и нативность окон (безрамочные окна, модальные диалоги, общее состояние между окнами, доступ к виртуальному DOM). Это даёт удобный инструмент для создания утилит, панелей управления, инспекторов и небольших приложений без Electron и без веб-стека.
