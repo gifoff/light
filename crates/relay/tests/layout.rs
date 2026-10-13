@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use relay::layout::{Layout, Point, Rect, SPACING, TextMetrics, damage_regions, snapshot_rects};
-use relay::vdom::{NodeKind, Size, Style, VElement, diff};
+use relay::vdom::{Align, NodeKind, Size, Style, VElement, diff};
 
 /// Метрики заглушка: знак шириной 8px, высота строки 16px.
 struct StubMetrics;
@@ -117,6 +117,58 @@ fn row_places_children_side_by_side() {
     let right = layout.rect_of("0.1").expect("правый");
     assert_eq!(left.y, right.y, "в одной строке");
     assert_eq!(right.x, left.x + left.w + SPACING, "справа с отступом");
+}
+
+#[test]
+fn button_centers_label_within_fixed_size() {
+    let mut btn = button("0", "АБ", false);
+    btn.style = Style {
+        width: Size::Px(200.0),
+        height: Size::Px(100.0),
+        ..Style::default()
+    };
+    let root = column("", vec![btn]);
+    let layout = build(&root);
+
+    let button_rect = layout.rect_of("0").expect("кнопка");
+    assert_eq!(
+        button_rect,
+        Rect::new(0.0, 0.0, 200.0, 100.0),
+        "размер задан"
+    );
+    let label = layout.rect_of("t").expect("подпись");
+    assert!(
+        (label.x + label.w / 2.0 - 100.0).abs() < 0.01,
+        "подпись по центру по X"
+    );
+    assert!(
+        (label.y + label.h / 2.0 - 50.0).abs() < 0.01,
+        "подпись по центру по Y"
+    );
+}
+
+#[test]
+fn center_alignment_positions_node_in_container() {
+    let mut child = text("0", "АБ");
+    child.style = Style {
+        align_x: Align::Center,
+        align_y: Align::Center,
+        ..Style::default()
+    };
+    let mut frame = column("c", vec![child]);
+    frame.style = Style {
+        width: Size::Px(400.0),
+        height: Size::Px(200.0),
+        ..Style::default()
+    };
+    let root = column("", vec![frame]);
+    let layout = build(&root);
+
+    assert_eq!(
+        layout.rect_of("0").expect("узел"),
+        Rect::new(192.0, 92.0, 16.0, 16.0),
+        "position-x/y=center выравнивает по обеим осям"
+    );
 }
 
 #[test]
