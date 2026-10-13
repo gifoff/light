@@ -197,6 +197,73 @@ pub enum ButtonType {
     Reset,
 }
 
+/// Форма указателя мыши (`cursor`).
+///
+/// Используется как значение атрибута `cursor`/`:cursor` и как результат
+/// автоматического выбора курсора для узла (см. `relay::window`). Имена
+/// соответствуют CSS-значениям: `pointer`, `not-allowed`, `ew-resize` и т. д.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Cursor {
+    /// Системный курсор по умолчанию (`default`).
+    #[default]
+    Default,
+    /// Указатель на ссылку или кнопку (`pointer`) — «рука».
+    Pointer,
+    /// Ввод текста (`text`) — I-beam.
+    Text,
+    /// Действие запрещено (`not-allowed`).
+    NotAllowed,
+    /// Ожидание (`wait`).
+    Wait,
+    /// Идёт фоновая работа, но взаимодействие доступно (`progress`).
+    Progress,
+    /// Доступна справка (`help`).
+    Help,
+    /// Перекрестие для выбора области (`crosshair`).
+    Crosshair,
+    /// Объект можно перемещать (`move`).
+    Move,
+    /// Объект можно захватить (`grab`).
+    Grab,
+    /// Объект захвачен (`grabbing`).
+    Grabbing,
+    /// Изменение ширины (`ew-resize`).
+    EwResize,
+    /// Изменение высоты (`ns-resize`).
+    NsResize,
+    /// Изменение по диагонали ↗↙ (`nesw-resize`).
+    NeswResize,
+    /// Изменение по диагонали ↘↖ (`nwse-resize`).
+    NwseResize,
+}
+
+impl Cursor {
+    /// Разбирает значение атрибута `cursor` (регистр не важен).
+    ///
+    /// Неизвестное значение возвращает `None` — вызывающая сторона сама решает,
+    /// использовать ли курсор по роли элемента.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "default" => Some(Self::Default),
+            "pointer" => Some(Self::Pointer),
+            "text" => Some(Self::Text),
+            "not-allowed" => Some(Self::NotAllowed),
+            "wait" => Some(Self::Wait),
+            "progress" => Some(Self::Progress),
+            "help" => Some(Self::Help),
+            "crosshair" => Some(Self::Crosshair),
+            "move" => Some(Self::Move),
+            "grab" => Some(Self::Grab),
+            "grabbing" => Some(Self::Grabbing),
+            "ew-resize" => Some(Self::EwResize),
+            "ns-resize" => Some(Self::NsResize),
+            "nesw-resize" => Some(Self::NeswResize),
+            "nwse-resize" => Some(Self::NwseResize),
+            _ => None,
+        }
+    }
+}
+
 /// Визуальный индикатор обязательного поля (`required-indicator`).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum RequiredIndicator {
