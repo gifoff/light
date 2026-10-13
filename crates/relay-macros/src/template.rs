@@ -661,6 +661,7 @@ impl Generator {
 
     /// Строит выражение `VElement` для элемента (без учёта `v-if`).
     fn gen_element(&mut self, element: &Element, key: &KeyExpr) -> syn::Result<TokenStream> {
+        validate_a11y_attrs(element)?;
         match element.name.as_str() {
             "div" => self.gen_container(element, key, None),
             "span" => self.gen_container(element, key, None),
@@ -1568,6 +1569,23 @@ fn text_segments(children: &[Node], element: &str) -> syn::Result<Vec<Segment>> 
     Ok(segments)
 }
 
+/// Проверяет статические атрибуты доступности. `tabindex` должен быть целым
+/// числом; динамическая привязка `:tabindex="…"` проверяется во время выполнения.
+fn validate_a11y_attrs(element: &Element) -> syn::Result<()> {
+    for attr in &element.attrs {
+        if attr.name == "tabindex" && attr.value.trim().parse::<i64>().is_err() {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                format!(
+                    "недопустимое значение tabindex=\"{}\" у <{}>; ожидается целое число",
+                    attr.value, element.name
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_attrs(attrs: &[Attr], known: &[&str]) -> syn::Result<()> {
     for attr in attrs {
         if !known.contains(&attr.name.as_str()) {
@@ -1791,4 +1809,53 @@ fn window_tokens(spec: &WindowSpec) -> syn::Result<TokenStream> {
             cfg
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn element(name: &str, attrs: &[(&str, &str)]) -> Element {
+        Element {
+            name: name.to_string(),
+            attrs: attrs
+                .iter()
+                .map(|(name, value)| Attr {
+                    name: name.to_string(),
+                    value: value.to_string(),
+                })
+                .collect(),
+            children: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn tabindex_accepts_integers() {
+        for value in ["0", "-1", "3", " 2 "] {
+            let element = element("div", &[("tabindex", value)]);
+            assert!(
+                validate_a11y_attrs(&element).is_ok(),
+                "значение tabindex=\"{value}\" должно приниматься"
+            );
+        }
+    }
+
+    #[test]
+    fn tabindex_rejects_non_numeric_values() {
+        for value in ["abc", "1.5", "", "0x10", "first"] {
+            let element = element("button", &[("tabindex", value)]);
+            let error = validate_a11y_attrs(&element).expect_err("должна быть ошибка");
+            let message = error.to_string();
+            assert!(
+                message.contains("tabindex"),
+                "сообщение должно упоминать tabindex, получено: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn dynamic_tabindex_is_not_checked_statically() {
+        let element = element("div", &[(":tabindex", "state.order")]);
+        assert!(validate_a11y_attrs(&element).is_ok());
+    }
 }

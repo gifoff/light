@@ -573,6 +573,51 @@ mod tests {
         let error = parse("<div direction=vertical></div>").expect_err("должна быть ошибка");
         assert!(error.contains("кавычках"), "неожиданное сообщение: {error}");
     }
+
+    fn root_element(node: &Node) -> &Element {
+        match node {
+            Node::Element(element) => element,
+            Node::Text(_) => panic!("ожидался элемент"),
+        }
+    }
+
+    fn attr_value<'a>(element: &'a Element, name: &str) -> Option<&'a str> {
+        element
+            .attrs
+            .iter()
+            .find(|attr| attr.name == name)
+            .map(|attr| attr.value.as_str())
+    }
+
+    #[test]
+    fn parses_static_a11y_attrs() {
+        let nodes = parse(
+            "<div role=\"tab\" aria-label=\"Вкладка\" aria-selected=\"true\" tabindex=\"0\">x</div>",
+        )
+        .expect("должен разобраться");
+        let element = root_element(&nodes[0]);
+        assert_eq!(attr_value(element, "role"), Some("tab"));
+        assert_eq!(attr_value(element, "aria-label"), Some("Вкладка"));
+        assert_eq!(attr_value(element, "aria-selected"), Some("true"));
+        assert_eq!(attr_value(element, "tabindex"), Some("0"));
+    }
+
+    #[test]
+    fn parses_dynamic_aria_binding() {
+        let nodes = parse("<div :aria-expanded=\"state.open\" tabindex=\"-1\">x</div>")
+            .expect("должен разобраться");
+        let element = root_element(&nodes[0]);
+        assert_eq!(attr_value(element, ":aria-expanded"), Some("state.open"));
+        assert_eq!(attr_value(element, "aria-expanded"), None);
+        assert_eq!(attr_value(element, "tabindex"), Some("-1"));
+    }
+
+    #[test]
+    fn parses_boolean_a11y_attr() {
+        let nodes = parse("<button required>Ок</button>").expect("должен разобраться");
+        let element = root_element(&nodes[0]);
+        assert_eq!(attr_value(element, "required"), Some(""));
+    }
 }
 
 #[cfg(test)]

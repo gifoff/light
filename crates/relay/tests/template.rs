@@ -849,3 +849,100 @@ fn open_id_handler_parses_string_argument() {
         "обработчик open('settings') вызывается без паники"
     );
 }
+
+/// Компонент из `templates/a11y.html` с атрибутами доступности.
+#[template("tests/templates/a11y.html")]
+#[proxy]
+struct A11yApp {
+    name: String,
+    agree: bool,
+    hidden: bool,
+}
+
+#[test]
+fn aria_attributes_are_compiled_into_nodes() {
+    let app = A11yApp::new();
+    let tree = app.render();
+
+    let heading = tree.find_by_tag("h1").expect("заголовок отрисован");
+    assert_eq!(heading.attr("aria-label"), Some("Заголовок формы"));
+
+    let field = find_kind(&tree, &|kind| matches!(kind, NodeKind::TextField { .. }))
+        .expect("текстовое поле отрисовано");
+    assert_eq!(field.attr("aria-label"), Some("Имя пользователя"));
+    assert_eq!(field.attr("aria-describedby"), Some("hint"));
+    assert_eq!(
+        field.attr("required"),
+        Some(""),
+        "булев атрибут хранится пустой строкой"
+    );
+    assert!(
+        tree.find_by_attr("id", "hint").is_some(),
+        "узел-описание доступен по id"
+    );
+
+    let item = tree
+        .find_by_attr("role", "list-item")
+        .expect("явная роль сохранена");
+    assert_eq!(item.tag, "div", "роль не подменяет тег");
+}
+
+#[test]
+fn dynamic_aria_binding_reflects_property() {
+    let app = A11yApp::new();
+    let before = app.render();
+    let span = before
+        .find_by_attr("id", "secret")
+        .expect("узел с id=secret");
+    assert_eq!(
+        span.attr("aria-hidden"),
+        Some("false"),
+        "динамический aria-hidden вычисляется"
+    );
+
+    app.set_hidden(true);
+    let after = app.render();
+    let span = after
+        .find_by_attr("id", "secret")
+        .expect("узел с id=secret");
+    assert_eq!(span.attr("aria-hidden"), Some("true"));
+}
+
+/// Проверяет, что готовое дерево доступности содержит ожидаемую семантику.
+#[cfg(feature = "a11y")]
+#[test]
+fn accessibility_tree_from_template() {
+    use relay::a11y::tree::build_update;
+    use relay::prelude::AriaRole;
+
+    let app = A11yApp::new();
+    let tree = app.render();
+    let update = build_update(&tree, None);
+
+    let find = |role: AriaRole| {
+        update
+            .nodes
+            .iter()
+            .find(|(_, node)| node.role() == role)
+            .map(|(_, node)| node)
+    };
+
+    let heading = find(AriaRole::Heading).expect("заголовок в дереве доступности");
+    assert_eq!(heading.label(), Some("Заголовок формы"));
+    assert_eq!(heading.level(), Some(1));
+
+    let field = find(AriaRole::TextInput).expect("поле ввода в дереве доступности");
+    assert_eq!(field.label(), Some("Имя пользователя"));
+    assert!(field.is_required());
+    assert!(
+        !field.described_by().is_empty(),
+        "описание связано через aria-describedby"
+    );
+
+    assert!(find(AriaRole::CheckBox).is_some());
+    assert!(find(AriaRole::ListItem).is_some());
+    assert!(
+        find(AriaRole::Button).expect("кнопка").is_disabled(),
+        "aria-disabled отражается как Disabled"
+    );
+}
