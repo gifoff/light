@@ -93,6 +93,37 @@ impl Rect {
     }
 }
 
+/// Контентная область элемента — единая точка отсчёта для детей.
+///
+/// Это прямоугольник внутри `padding` и рамки родителя: границы минус
+/// `padding` и `border-size`. Относительно него разрешаются проценты
+/// (`width`/`height`/`min-*`/`max-*`, `position-offset-*`) и выполняется
+/// выравнивание `position-x`/`position-y` детей.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ContentBox {
+    /// Левая граница контентной области.
+    pub left: f32,
+    /// Верхняя граница.
+    pub top: f32,
+    /// Ширина.
+    pub width: f32,
+    /// Высота.
+    pub height: f32,
+}
+
+impl ContentBox {
+    /// Контентная область элемента с заданным прямоугольником и внутренним
+    /// отступом (`padding` + толщина рамки).
+    pub fn from_rect(rect: Rect, inset: f32) -> Self {
+        Self {
+            left: rect.x + inset,
+            top: rect.y + inset,
+            width: (rect.w - 2.0 * inset).max(0.0),
+            height: (rect.h - 2.0 * inset).max(0.0),
+        }
+    }
+}
+
 /// Метрики текста, необходимые для раскладки.
 ///
 /// Отрисовщик предоставляет реальные метрики шрифта; в тестах — заглушку
@@ -157,8 +188,13 @@ impl Layout {
         let view = Rect::new(0.0, 0.0, viewport.0, viewport.1);
         layout.place(
             root,
-            view,
-            view,
+            Point::new(0.0, 0.0),
+            ContentBox {
+                left: 0.0,
+                top: 0.0,
+                width: viewport.0,
+                height: viewport.1,
+            },
             None,
             metrics,
             Inherited {
@@ -168,7 +204,7 @@ impl Layout {
         );
         // Корень занимает всё окно независимо от содержимого.
         if let Some(node) = layout.nodes.first_mut() {
-            node.rect = Rect::new(0.0, 0.0, viewport.0, viewport.1);
+            node.rect = view;
         }
         layout
     }
@@ -294,22 +330,23 @@ impl Layout {
         }
     }
 
-    /// Помещает узел в слот `slot`: левый верхний угол — `(slot.x, slot.y)`,
-    /// доступный размер — `(slot.w, slot.h)`. Относительные размеры
-    /// (проценты) разрешаются относительно доступного размера слота.
+    /// Помещает узел в поток в точке `(x, y)` и раскладывает его детей.
     ///
-    /// `bounds` — контентная область родителя: относительно неё работают
-    /// `position-x`/`position-y` и их смещения. `margin` даёт внешний отступ,
-    /// `padding`/`border-size` — внутренний.
+    /// `parent_content` — контентная область родителя: от неё отсчитываются
+    /// проценты размеров (`width`/`height`/`min-*`/`max-*`). `margin` даёт
+    /// внешний отступ узла, `padding`/`border-size` — внутренний.
     ///
     /// `parent` — индекс родительского узла в плоском списке (`None` для корня).
     /// `inherited` — унаследованный размер и цвет шрифта.
+    ///
+    /// Дети позиционируются относительно **итогового** content box узла (см.
+    /// [`Self::align_children`]), а не относительно окна или доступного слота.
     /// Возвращает внешний размер узла (вместе с `margin`) — шаг для соседей.
     fn place(
         &mut self,
         vnode: &VElement,
-        slot: Rect,
-        bounds: Rect,
+        origin: Point,
+        parent_content: ContentBox,
         parent: Option<usize>,
         metrics: &dyn TextMetrics,
         inherited: Inherited,
@@ -320,17 +357,38 @@ impl Layout {
         }
         let inset = style.inset();
         let margin = style.margin;
-        // Доступная область за вычетом внешних отступов узла.
-        let avail_w = (slot.w - 2.0 * margin).max(0.0);
-        let avail_h = (slot.h - 2.0 * margin).max(0.0);
-        let flow_x = slot.x + margin;
-        let flow_y = slot.y + margin;
+        let flow_x = origin.x + margin;
+        let flow_y = origin.y + margin;
         let font_size = style.font_size.unwrap_or(inherited.size);
         let font_color = style.font_color.or(inherited.color);
+        // Проценты размера отсчитываются от content box родителя.
+        let avail_w = parent_content.width;
+        let avail_h = parent_content.height;
         // Полный шаг узла по осям (включая внешние отступы) — для родителей.
         let step = 2.0 * margin;
         // Поддерево узла занимает в плоском списке диапазон `[start, len)`.
         let start = self.nodes.len();
+        // Корень и окно занимают всю доступную область, поэтому их проценты
+        // отсчитываются от неё; остальные — от собственного размера (`Auto` по
+        // содержимому => 0, как у неопределённой высоты в CSS).
+        let root = parent.is_none() || matches!(vnode.kind, NodeKind::Window);
+        let definite_w = if root {
+            avail_w
+        } else {
+            style.resolve_width(0.0, avail_w)
+        };
+        let definite_h = if root {
+            avail_h
+        } else {
+            style.resolve_height(0.0, avail_h)
+        };
+        // Контентная область, которую узел отдаёт детям под размеры-проценты.
+        let child_content = ContentBox {
+            left: flow_x + inset,
+            top: flow_y + inset,
+            width: (definite_w - 2.0 * inset).max(0.0),
+            height: (definite_h - 2.0 * inset).max(0.0),
+        };
 
         let (w, h) = match &vnode.kind {
             NodeKind::Text { content } => {
@@ -342,34 +400,30 @@ impl Layout {
             }
             NodeKind::Button { .. } => {
                 let index = self.push(vnode, Rect::default(), parent);
-                // Внутренняя область кнопки с учётом её собственного паддинга;
-                // при `Auto` размер известен только после раскладки детей.
-                let box_w = style.resolve_width(avail_w, avail_w);
-                let box_h = style.resolve_height(avail_h, avail_h);
-                let inner_w = (box_w - 2.0 * (inset + BUTTON_PAD_X)).max(0.0);
-                let inner_h = (box_h - 2.0 * (inset + BUTTON_PAD_Y)).max(0.0);
-                let content = Rect::new(
-                    flow_x + inset + BUTTON_PAD_X,
-                    flow_y + inset + BUTTON_PAD_Y,
-                    inner_w,
-                    inner_h,
-                );
+                // Внутренняя область кнопки: собственный `padding`/рамка плюс
+                // дефолтные отступы кнопки.
+                let inner_left = flow_x + inset + BUTTON_PAD_X;
+                let inner_top = flow_y + inset + BUTTON_PAD_Y;
+                let inner_w = (definite_w - 2.0 * (inset + BUTTON_PAD_X)).max(0.0);
+                let inner_h = (definite_h - 2.0 * (inset + BUTTON_PAD_Y)).max(0.0);
+                let content = ContentBox {
+                    left: inner_left,
+                    top: inner_top,
+                    width: inner_w,
+                    height: inner_h,
+                };
                 // Содержимое выкладывается горизонтально (как в `Row`).
-                let mut cursor_x = content.x;
+                let mut cursor_x = inner_left;
                 let mut content_w = 0.0_f32;
                 let mut content_h = 0.0_f32;
-                let mut group_min_x = f32::INFINITY;
-                let mut group_min_y = f32::INFINITY;
                 let mut any_child = false;
                 for child in &vnode.children {
                     if !child.style.visible {
                         continue;
                     }
-                    let child_start = self.nodes.len();
-                    let child_slot = Rect::new(cursor_x, content.y, inner_w, inner_h);
                     let (child_w, child_h) = self.place(
                         child,
-                        child_slot,
+                        Point::new(cursor_x, inner_top),
                         content,
                         Some(index),
                         metrics,
@@ -378,14 +432,12 @@ impl Layout {
                             color: font_color,
                         },
                     );
-                    group_min_x = group_min_x.min(self.nodes[child_start].rect.x);
-                    group_min_y = group_min_y.min(self.nodes[child_start].rect.y);
                     cursor_x += child_w + SPACING;
                     content_h = content_h.max(child_h);
                     any_child = true;
                 }
                 if any_child {
-                    content_w = cursor_x - content.x - SPACING;
+                    content_w = cursor_x - inner_left - SPACING;
                 }
                 let w = style.resolve_width(content_w + 2.0 * (inset + BUTTON_PAD_X), avail_w);
                 let h = style.resolve_height(
@@ -394,16 +446,14 @@ impl Layout {
                 );
                 let node = &mut self.nodes[index];
                 node.rect = Rect::new(flow_x, flow_y, w, h);
-                // Содержимое кнопки центрируется по обеим осям.
+                // Содержимое кнопки центрируется по обеим осям (группа целиком).
                 if any_child {
-                    let inner_box_w = (w - 2.0 * (inset + BUTTON_PAD_X)).max(0.0);
-                    let inner_box_h = (h - 2.0 * (inset + BUTTON_PAD_Y)).max(0.0);
-                    let target_x =
-                        flow_x + inset + BUTTON_PAD_X + ((inner_box_w - content_w) / 2.0).max(0.0);
-                    let target_y =
-                        flow_y + inset + BUTTON_PAD_Y + ((inner_box_h - content_h) / 2.0).max(0.0);
-                    let dx = target_x - group_min_x;
-                    let dy = target_y - group_min_y;
+                    let pad_box = ContentBox::from_rect(node.rect, inset + BUTTON_PAD_X);
+                    let first = self.nodes[index].children[0];
+                    let dx = pad_box.left + ((pad_box.width - content_w) / 2.0).max(0.0)
+                        - self.nodes[first].rect.x;
+                    let dy = pad_box.top + ((pad_box.height - content_h) / 2.0).max(0.0)
+                        - self.nodes[first].rect.y;
                     if dx != 0.0 || dy != 0.0 {
                         for child in &mut self.nodes[index + 1..] {
                             child.rect.x += dx;
@@ -447,24 +497,20 @@ impl Layout {
             NodeKind::Column | NodeKind::Row | NodeKind::TitleBar | NodeKind::Window => {
                 let index = self.push(vnode, Rect::default(), parent);
                 let horizontal = matches!(vnode.kind, NodeKind::Row | NodeKind::TitleBar);
-                // Контентная область, доступная детям: собственный размер
-                // минус внутренние отступы (при `Auto` — предоставленный размер).
-                let inner_w = (style.resolve_width(avail_w, avail_w) - 2.0 * inset).max(0.0);
-                let inner_h = (style.resolve_height(avail_h, avail_h) - 2.0 * inset).max(0.0);
-                let content = Rect::new(flow_x + inset, flow_y + inset, inner_w, inner_h);
-                let mut cursor_x = content.x;
-                let mut cursor_y = content.y;
+                // Контентная область, которую узел отдаёт детям под проценты:
+                // собственный определённый размер минус внутренние отступы.
+                let mut cursor_x = child_content.left;
+                let mut cursor_y = child_content.top;
                 let mut content_w = 0.0_f32;
                 let mut content_h = 0.0_f32;
                 for child in &vnode.children {
                     if !child.style.visible {
                         continue;
                     }
-                    let child_slot = Rect::new(cursor_x, cursor_y, inner_w, inner_h);
                     let (child_w, child_h) = self.place(
                         child,
-                        child_slot,
-                        content,
+                        Point::new(cursor_x, cursor_y),
+                        child_content,
                         Some(index),
                         metrics,
                         Inherited {
@@ -482,20 +528,28 @@ impl Layout {
                 }
                 if !vnode.children.is_empty() {
                     if horizontal {
-                        content_w = cursor_x - content.x - SPACING;
+                        content_w = cursor_x - child_content.left - SPACING;
                     } else {
-                        content_h = cursor_y - content.y - SPACING;
+                        content_h = cursor_y - child_content.top - SPACING;
                     }
                 }
-                let w = style.resolve_width(content_w + 2.0 * inset, avail_w);
-                let h = style.resolve_height(content_h + 2.0 * inset, avail_h);
+                let (w, h) = if root {
+                    (avail_w, avail_h)
+                } else {
+                    (
+                        style.resolve_width(content_w + 2.0 * inset, avail_w),
+                        style.resolve_height(content_h + 2.0 * inset, avail_h),
+                    )
+                };
                 let node = &mut self.nodes[index];
                 node.rect = Rect::new(flow_x, flow_y, w, h);
+                // Выравниваем прямых детей относительно итогового content box.
+                let content = ContentBox::from_rect(node.rect, inset);
+                self.align_children(index, content);
                 (w, h)
             }
         };
 
-        self.align_subtree(start, (flow_x, flow_y), (w, h), bounds, &style);
         // Записываем разрешённый размер/цвет шрифта, чтобы отрисовщик и
         // наследование стилей (голый текст в контейнерах) работали корректно.
         self.nodes[start].style.font_size = Some(font_size);
@@ -507,40 +561,42 @@ impl Layout {
         (w + step, h + step)
     }
 
-    /// Сдвигает поддерево `[start, len)` под `position-x`/`position-y`.
+    /// Выравнивает прямых детей узла `index` по `position-x`/`position-y` и
+    /// `position-offset-*` относительно его контентной области `content`.
     ///
-    /// Изменение размера выполняется до выравнивания, поэтому всё поддерево
-    /// смещается на одну и ту же дельту и относительные позиции сохраняются.
-    fn align_subtree(
-        &mut self,
-        start: usize,
-        flow: (f32, f32),
-        size: (f32, f32),
-        bounds: Rect,
-        style: &Style,
-    ) {
-        let final_x = aligned(
-            flow.0,
-            size.0,
-            bounds.x,
-            bounds.w,
-            style.align_x,
-            style.offset_x,
-        );
-        let final_y = aligned(
-            flow.1,
-            size.1,
-            bounds.y,
-            bounds.h,
-            style.align_y,
-            style.offset_y,
-        );
-        let dx = final_x - flow.0;
-        let dy = final_y - flow.1;
-        if dx != 0.0 || dy != 0.0 {
-            for node in &mut self.nodes[start..] {
-                node.rect.x += dx;
-                node.rect.y += dy;
+    /// Абсолютные размеры и координаты фиксированы до вызова, поэтому всё
+    /// поддерево ребёнка смещается одной дельтой — относительные позиции
+    /// внутри него (в том числе у внуков) сохраняются.
+    fn align_children(&mut self, index: usize, content: ContentBox) {
+        let children = self.nodes[index].children.clone();
+        let end = self.nodes.len();
+        for (position, &child) in children.iter().enumerate() {
+            let child_end = children.get(position + 1).copied().unwrap_or(end);
+            let rect = self.nodes[child].rect;
+            let style = self.nodes[child].style;
+            let final_x = aligned(
+                rect.x,
+                rect.w,
+                content.left,
+                content.width,
+                style.align_x,
+                style.offset_x,
+            );
+            let final_y = aligned(
+                rect.y,
+                rect.h,
+                content.top,
+                content.height,
+                style.align_y,
+                style.offset_y,
+            );
+            let dx = final_x - rect.x;
+            let dy = final_y - rect.y;
+            if dx != 0.0 || dy != 0.0 {
+                for node in &mut self.nodes[child..child_end] {
+                    node.rect.x += dx;
+                    node.rect.y += dy;
+                }
             }
         }
     }
