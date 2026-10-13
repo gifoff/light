@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/relay",
+    "crates/relay-macros",
+    "crates/relay-demo",
+]
+exclude = ["egui-main"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.95"
+
+[workspace.dependencies]
+winit = "0.30"
+pixels = "0.17"
+ab_glyph = "0.2"
+
+relay = { path = "crates/relay", version = "0.1.0" }
+relay-macros = { path = "crates/relay-macros", version = "0.1.0" }
+
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+
+[profile.dev]
+opt-level = 1

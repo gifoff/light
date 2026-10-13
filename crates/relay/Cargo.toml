@@ -1,0 +1,20 @@
+[package]
+name = "relay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Реактивный графический интерфейс для Rust: Proxy-обозреватели и HTML-шаблоны в духе Vue 3"
+
+[dependencies]
+relay-macros.workspace = true
+thiserror = "2"
+winit = { workspace = true, optional = true }
+pixels = { workspace = true, optional = true }
+ab_glyph = { workspace = true, optional = true }
+accesskit = { version = "0.25", optional = true }
+
+[features]
+default = ["window", "a11y"]
+window = ["dep:winit", "dep:pixels", "dep:ab_glyph"]
+a11y = ["dep:accesskit"]

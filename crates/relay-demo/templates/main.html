@@ -1,0 +1,18 @@
+<window id='main' width='440' height='760'  resizable='true'>
+    <titlebar @dblclick="Dom::window().map(|window| window.toggle_maximize())" width='100%' background='#333333DD' border-color='#D5DAE3'>
+        <div font-size='24' font-color='#FFFFFF'>Relay Demo</div>
+        <div position-x="right" direction='horizontal'>
+            <button @click='Dom::window().map(|window| window.minimize())'>_</button>
+            <button @click='Dom::window().map(|window| window.toggle_maximize())' v-if='!is_maximized'>[ ]</button>
+            <button @click='Dom::window().map(|window| window.toggle_maximize())' v-if='is_maximized'>[X]</button>
+            <button @click='Dom::window().map(|window| window.close())'>X</button>
+        </div>
+    </titlebar>
+    <div direction='vertical' padding='12'>
+        <include src='sections/header.html'></include>
+        <include src='sections/counter.html'></include>
+        <include src='sections/greeting.html'></include>
+        <include src='sections/form.html'></include>
+        <include src='sections/cross.html'></include>
+    </div>
+</window>

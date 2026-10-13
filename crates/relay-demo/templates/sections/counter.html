@@ -1,0 +1,5 @@
+<div>Счётчик: {{ counter.count }}</div>
+<div direction="horizontal">
+    <button @click="increment">{{ counter.count }}</button>
+    <button @click="reset" :disabled="counter.is_zero">Сброс</button>
+</div>

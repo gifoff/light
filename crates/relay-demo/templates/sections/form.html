@@ -1,0 +1,19 @@
+<div>Форма обратной связи:</div>
+<checkbox v-model="agreed">Согласен с условиями</checkbox>
+<div>Тариф:</div>
+<div direction="horizontal">
+    <radio v-model="plan" value="free">Бесплатный</radio>
+    <radio v-model="plan" value="pro">Pro</radio>
+    <radio v-model="plan" value="team">Команда</radio>
+</div>
+<div>Город:</div>
+<select v-model="city">
+    <option value="msk">Москва</option>
+    <option value="spb">Санкт-Петербург</option>
+    <option value="kzn">Казань</option>
+</select>
+<password v-model="secret" placeholder="Секрет" />
+<div>Сообщение (многострочная область):</div>
+<text v-model="note" textarea placeholder="Введите сообщение" />
+<div>Согласие: {{ agreed }}, тариф: {{ plan }}, город: {{ city }}, пароль: {{ secret }}</div>
+<div>Сообщение: {{ note }}</div>

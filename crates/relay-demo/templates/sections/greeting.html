@@ -1,0 +1,4 @@
+<div>Демонстрация двусторонней привязки:</div>
+<text v-model="name" placeholder="Введите имя" />
+<div v-if="show_greeting">Привет, {{ name }}! {{ counter.count }}</div>
+<button @click="toggle_greeting">Переключить приветствие</button>

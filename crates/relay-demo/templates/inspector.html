@@ -1,0 +1,16 @@
+<window id='inspector' width='360' height='320' resizable='true'>
+    <titlebar width='100%' background='#333333DD' border-color='#D5DAE3'>
+        <div font-size='18' font-color='#FFFFFF'>Инспектор</div>
+        <div position-x="right" direction='horizontal'>
+            <button @click='Dom::window().map(|window| window.minimize())'>_</button>
+            <button @click='Dom::window().map(|window| window.close())'>X</button>
+        </div>
+    </titlebar>
+    <div direction='vertical' padding='16'>
+        Это второе главное окно. Оно делит общее реактивное состояние с первым окном.
+        <button @click="bump_shared">Общий счётчик: {{ shared.count }}</button>
+        <text v-model="shared.text" placeholder="Общий текст" />
+        <div>Общий текст: {{ shared.text }}</div>
+        <button @click="Dom::window().map(|window| window.close())">Закрыть</button>
+    </div>
+</window>

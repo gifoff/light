@@ -1,0 +1,6 @@
+<div>
+    <div v-if="visible">Видно</div>
+    <button @click="hide" v-if="visible">Скрыть</button>
+    <button @click="toggle_lock">Замок</button>
+    <text v-model="note" :disabled="locked" placeholder="Заметка" />
+</div>

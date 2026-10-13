@@ -1,0 +1,14 @@
+<window id='dialog' width='320' height='240' resizable='false' modal='true' min-width='280' min-height='200' max-width='480' max-height='320'>
+    <titlebar width='100%' background='#333333DD' border-color='#D5DAE3'>
+        <div font-size='18' font-color='#FFFFFF'>Диалог</div>
+        <div position-x="right" direction='horizontal'>
+            <button @click='Dom::window().map(|window| window.close())'>X</button>
+        </div>
+    </titlebar>
+    <div direction='vertical' padding='16'>
+        Это модальное дочернее окно. Пока диалог открыт, родительское окно не принимает ввод.
+        <div>Общий счётчик: {{ shared.count }}</div>
+        <button @click="bump_shared">Общий счётчик: {{ shared.count }}</button>
+        <button @click='Dom::window().map(|window| window.close())'>Закрыть</button>
+    </div>
+</window>

@@ -1,0 +1,11 @@
+[package]
+name = "relay-demo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Демонстрационное приложение библиотеки Relay"
+
+[dependencies]
+relay.workspace = true

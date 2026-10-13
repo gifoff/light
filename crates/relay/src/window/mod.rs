@@ -1,0 +1,1812 @@
+//! Оконная обвязка поверх `winit` и `pixels`.
+//!
+//! Создаёт безрамочное окно (параметры берутся из [`Component::window_config`]),
+//! рисует интерфейс программным растеризатором в RGBA-буфер, обрабатывает
+//! ввод, перетаскивание за `<titlebar>` и команды управления окном
+//! (`close()`, `minimize()`, `maximize()`, …).
+//!
+//! Бэкенд поддерживает несколько окон: главное окно и дочерние модальные
+//! (`Component::modal`). Команда адресуется окну по [`WindowToken`], который
+//! запоминается перед обработкой события.
+
+mod font;
+mod paint;
+mod text;
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use pixels::{Pixels, SurfaceTexture};
+use winit::application::ApplicationHandler;
+use winit::dpi::LogicalSize;
+use winit::event::{ElementState, KeyEvent, MouseButton, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
+use winit::window::{CursorIcon, ResizeDirection, Window, WindowId};
+
+use crate::Error;
+use crate::component::{Component, WindowConfig};
+use crate::control::{WindowCommand, WindowToken, set_active_window, set_command_sender};
+use crate::layout::{
+    FIELD_MIN_H, Layout, Point, Rect, TextMetrics, damage_regions, snapshot_rects,
+};
+use crate::reactive::set_repaint_requester;
+use crate::vdom::{
+    Event as DomEvent, KeyInfo, MouseButton as DomButton, NodeKind, Resize, VElement, diff,
+};
+
+use font::FontMetrics;
+use paint::Canvas;
+
+/// Толщина зоны у края окна, тянуть за которую меняет размер.
+const RESIZE_BORDER: f32 = 6.0;
+/// Промежуток, в течение которого два нажатия считаются двойным кликом.
+const DOUBLE_CLICK: Duration = Duration::from_millis(400);
+
+/// Пользовательское событие цикла: команда окна с адресатом-токеном.
+struct UserEvent {
+    token: WindowToken,
+    command: WindowCommand,
+}
+
+/// Запускает цикл событий для компонента.
+///
+/// Если [`Component::window_config`] возвращает `None`, цикл событий не запускается
+/// и функция сразу завершается успешно.
+pub fn run(component: impl Component + 'static) -> crate::Result<()> {
+    if component.window_config().is_none() {
+        return Ok(());
+    }
+    let font = Arc::new(FontMetrics::load()?);
+    let mut builder = EventLoop::<UserEvent>::with_user_event();
+    let event_loop = builder.build()?;
+    let proxy = event_loop.create_proxy();
+    set_command_sender(move |token, command| {
+        let _ = proxy.send_event(UserEvent { token, command });
+    });
+    let mut app = App::new(Box::new(component), font);
+    event_loop.run_app(&mut app)?;
+    match app.error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+struct ScaledMetrics<'a> {
+    inner: &'a FontMetrics,
+    scale: f32,
+}
+
+impl TextMetrics for ScaledMetrics<'_> {
+    fn measure(&self, text: &str, font_size: f32) -> (f32, f32) {
+        self.inner.measure(text, font_size * self.scale)
+    }
+}
+
+enum ClickAction {
+    Click(&'static str),
+    FocusField {
+        key: &'static str,
+        value: String,
+        caret: usize,
+    },
+    ToggleSelect(&'static str),
+}
+
+/// Действие пункта контекстного меню поля ввода.
+#[derive(Clone, Copy)]
+enum MenuAction {
+    Cut,
+    Copy,
+    Paste,
+    Delete,
+    SelectAll,
+}
+
+/// Элемент стандартного меню по правой кнопке мыши.
+#[derive(Clone)]
+struct MenuItem {
+    label: &'static str,
+    action: MenuAction,
+    enabled: bool,
+}
+
+/// Всплывающее меню поля ввода.
+struct ContextMenu {
+    x: f32,
+    y: f32,
+    items: Vec<MenuItem>,
+    hover: Option<usize>,
+}
+
+/// Состояние одного системного окна: компонент, поверхность, раскладка и ввод.
+struct WindowState {
+    token: WindowToken,
+    parent: Option<WindowToken>,
+    component: Box<dyn Component>,
+    font: Arc<FontMetrics>,
+    window: Arc<Window>,
+    surface: Pixels<'static>,
+    config: WindowConfig,
+    title: String,
+    pixels: Vec<u8>,
+    width: u32,
+    height: u32,
+    scale: f32,
+    tree: Option<Arc<VElement>>,
+    layout: Option<Layout>,
+    full_redraw: bool,
+    focused: Option<String>,
+    editing: String,
+    caret: usize,
+    anchor: Option<usize>,
+    dragging: bool,
+    resizing: Option<&'static str>,
+    resized: HashMap<&'static str, (f32, f32)>,
+    modifiers: ModifiersState,
+    cursor: Point,
+    hover: Option<&'static str>,
+    hover_top: Option<&'static str>,
+    menu: Option<ContextMenu>,
+    clipboard: String,
+    undo: Vec<String>,
+    redo: Vec<String>,
+    cursor_icon: Option<CursorIcon>,
+    last_click: Option<(Instant, Point)>,
+    open_select: Option<&'static str>,
+    select_hover: Option<usize>,
+}
+
+impl WindowState {
+    fn redraw(&mut self) -> crate::Result<()> {
+        let window = Arc::clone(&self.window);
+        self.scale = window.scale_factor() as f32;
+        let size = window.inner_size();
+        if self.resize(size.width, size.height)? {
+            self.full_redraw = true;
+        }
+        crate::control::set_maximized(window.is_maximized());
+
+        let mut tree = self.component.render();
+        apply_overrides(&mut tree, &self.resized);
+        self.update_title(&tree);
+        let metrics = ScaledMetrics {
+            inner: self.font.as_ref(),
+            scale: self.scale,
+        };
+        let layout = Layout::build(&tree, (self.width as f32, self.height as f32), &metrics);
+        let tree = Arc::new(tree);
+        let damage = if self.full_redraw {
+            vec![Rect::new(0.0, 0.0, self.width as f32, self.height as f32)]
+        } else {
+            match (self.tree.as_ref(), self.layout.as_ref()) {
+                (Some(old_tree), Some(old_layout)) => {
+                    let patch = diff(old_tree, &tree);
+                    damage_regions(&snapshot_rects(old_layout), &layout, &patch.changed)
+                }
+                _ => vec![Rect::new(0.0, 0.0, self.width as f32, self.height as f32)],
+            }
+        };
+        crate::dom::set_tree(self.token, Arc::clone(&tree));
+        self.tree = Some(tree);
+        self.layout = Some(layout);
+        self.full_redraw = false;
+
+        self.sync_focus_after_redraw();
+        self.sync_select_after_redraw();
+        if damage.is_empty() {
+            return Ok(());
+        }
+        self.paint(&damage);
+        let frame = self.surface.frame_mut();
+        if frame.len() == self.pixels.len() {
+            frame.copy_from_slice(&self.pixels);
+        }
+        self.surface.render()?;
+        Ok(())
+    }
+
+    fn update_title(&mut self, tree: &VElement) {
+        let Some(title) = tree.titlebar_text() else {
+            return;
+        };
+        if title != self.title {
+            self.title = title;
+            self.window.set_title(&self.title);
+        }
+    }
+
+    fn sync_focus_after_redraw(&mut self) {
+        let Some(key) = self.focused.clone() else {
+            return;
+        };
+        let field = self.layout.as_ref().and_then(|layout| {
+            layout
+                .nodes()
+                .iter()
+                .find(|node| node.key == key)
+                .and_then(|node| match &node.kind {
+                    NodeKind::TextField {
+                        value,
+                        disabled: false,
+                        ..
+                    } => Some(value.clone()),
+                    _ => None,
+                })
+        });
+        match field {
+            Some(value) => {
+                let changed_externally = value != self.editing;
+                let len = value.chars().count();
+                self.editing = value.clone();
+                self.caret = self.caret.min(len);
+                self.anchor = self.anchor.map(|anchor| anchor.min(len));
+                if changed_externally {
+                    self.undo.clear();
+                    self.redo.clear();
+                }
+            }
+            None => {
+                self.focused = None;
+                self.editing.clear();
+                self.caret = 0;
+                self.anchor = None;
+            }
+        }
+    }
+
+    /// Сбрасывает состояние раскрытого списка, если его узел исчез из дерева.
+    fn sync_select_after_redraw(&mut self) {
+        let Some(key) = self.open_select else {
+            return;
+        };
+        let alive = self.layout.as_ref().is_some_and(|layout| {
+            matches!(
+                layout.node(key).map(|node| &node.kind),
+                Some(NodeKind::Select {
+                    disabled: false,
+                    ..
+                })
+            )
+        });
+        if !alive {
+            self.open_select = None;
+            self.select_hover = None;
+        }
+    }
+
+    fn resize(&mut self, width: u32, height: u32) -> crate::Result<bool> {
+        if width == self.width && height == self.height {
+            return Ok(false);
+        }
+        self.width = width;
+        self.height = height;
+        self.pixels = vec![0u8; (width * height * 4) as usize];
+        if width > 0 && height > 0 {
+            self.surface.resize_surface(width, height)?;
+            self.surface.resize_buffer(width, height)?;
+        }
+        Ok(true)
+    }
+
+    fn paint(&mut self, damage: &[Rect]) {
+        let Some(layout) = self.layout.as_ref() else {
+            return;
+        };
+        let focused = self.focused.as_deref();
+        let hover = self.hover;
+        let selection = self.selection();
+        let background = self.config.background;
+        let font = self.font.font();
+        let scale = self.scale;
+        let menu = self.menu.as_ref();
+        for region in damage {
+            let mut canvas = Canvas::new(&mut self.pixels, self.width, self.height, *region);
+            paint::render(
+                layout,
+                &mut canvas,
+                font,
+                scale,
+                paint::Interaction {
+                    focused,
+                    caret_pos: self.caret,
+                    selection,
+                    hover,
+                    open_select: self.open_select,
+                    select_hover: self.select_hover,
+                },
+                background,
+            );
+            if let Some(menu) = menu {
+                paint::draw_context_menu(&mut canvas, menu, font, scale);
+            }
+        }
+    }
+
+    /// Выделенный диапазон (начало ≤ конец), если выделение не пустое.
+    fn selection(&self) -> Option<(usize, usize)> {
+        self.focused.as_ref()?;
+        let anchor = self.anchor?;
+        if anchor == self.caret {
+            return None;
+        }
+        Some((anchor.min(self.caret), anchor.max(self.caret)))
+    }
+
+    /// Удаляет выделение из буфера и возвращает изменённый текст.
+    ///
+    /// Возвращает `true`, если выделение было и текст изменился; каретка
+    /// ставится в начало удалённого диапазона.
+    fn delete_selection(&mut self) -> bool {
+        let Some((start, end)) = self.selection() else {
+            return false;
+        };
+        let mut chars: Vec<char> = self.editing.chars().collect();
+        chars.drain(start..end);
+        self.editing = chars.into_iter().collect();
+        self.caret = start;
+        self.anchor = None;
+        true
+    }
+
+    /// Отправляет событие компоненту окна, запоминая окно как активное.
+    fn dispatch(&self, key: &str, event: DomEvent) -> bool {
+        set_active_window(self.token);
+        self.component.dispatch(key, event)
+    }
+
+    /// Доставляет событие узлам под курсором от глубокого к корню.
+    fn deliver(&self, event: DomEvent) -> bool {
+        let Some(layout) = self.layout.as_ref() else {
+            return false;
+        };
+        for node in layout.hit_stack(self.cursor) {
+            if self.dispatch(node.key, event.clone()) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Доставляет `@mousemove` узлам под курсором с координатами относительно узла.
+    fn deliver_mousemove(&self) -> bool {
+        let Some(layout) = self.layout.as_ref() else {
+            return false;
+        };
+        for node in layout.hit_stack(self.cursor) {
+            let event = DomEvent::Mousemove {
+                x: self.cursor.x - node.rect.x,
+                y: self.cursor.y - node.rect.y,
+            };
+            if self.dispatch(node.key, event) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn click_action(&self) -> Option<ClickAction> {
+        let layout = self.layout.as_ref()?;
+        let node = layout.hit_interactive(self.cursor)?;
+        match &node.kind {
+            NodeKind::Button { .. } | NodeKind::Checkbox { .. } | NodeKind::Radio { .. } => {
+                Some(ClickAction::Click(node.key))
+            }
+            NodeKind::TextField { value, .. } => Some(ClickAction::FocusField {
+                key: node.key,
+                value: value.clone(),
+                caret: self.caret_from_pointer(node, self.cursor),
+            }),
+            NodeKind::Select { .. } => Some(ClickAction::ToggleSelect(node.key)),
+            _ => None,
+        }
+    }
+
+    /// Позиция каретки (в символах) по точке клика внутри поля.
+    ///
+    /// Учитывает многострочную раскладку и горизонтальную прокрутку.
+    fn caret_from_pointer(&self, node: &crate::layout::PlacedNode, point: Point) -> usize {
+        let NodeKind::TextField {
+            value, multiline, ..
+        } = &node.kind
+        else {
+            return 0;
+        };
+        let rect = node.rect;
+        let scale = self.scale;
+        let inset = node.style.inset() * scale;
+        let pad_x = crate::layout::FIELD_PAD_X * scale;
+        let size = node.style.font_size.unwrap_or(crate::layout::FONT_SIZE) * scale;
+        let font = self.font.font();
+        let text_left = rect.x + inset + pad_x;
+        let max_w = (rect.w - 2.0 * inset - 2.0 * pad_x).max(1.0);
+        let lines = text::layout(font, value, size, max_w, *multiline);
+        let len = value.chars().count();
+
+        let (line, scroll_x) = if *multiline {
+            let row_h = text::row_height(font, size);
+            let content_top = rect.y + inset;
+            let content_h = (rect.h - 2.0 * inset).max(0.0);
+            let visible = (content_h / row_h).floor().max(1.0);
+            let caret_line = text::line_of(&lines, self.caret.min(len));
+            let scroll_y = ((caret_line as f32 + 1.0 - visible).max(0.0)) * row_h;
+            let local = point.y - content_top + scroll_y;
+            let index = (local / row_h).floor().max(0.0) as usize;
+            (lines[index.min(lines.len() - 1)].clone(), 0.0)
+        } else {
+            let caret_prefix = text::prefix_width(font, value, size, self.caret.min(len));
+            let scroll_x = (caret_prefix - max_w).max(0.0);
+            (lines[0].clone(), scroll_x)
+        };
+
+        let target = point.x - text_left + scroll_x;
+        let count = line.text.chars().count();
+        for i in 0..count {
+            let left = text::prefix_width(font, &line.text, size, i);
+            let right = text::prefix_width(font, &line.text, size, i + 1);
+            if target < (left + right) / 2.0 {
+                return line.start + i;
+            }
+        }
+        line.start + count
+    }
+
+    /// Поле ввода под курсором: его ключ, значение и позицию каретки по клику.
+    fn field_at_cursor(&self) -> Option<(&'static str, String, usize)> {
+        let node = self.layout.as_ref()?.hit_interactive(self.cursor)?;
+        let NodeKind::TextField { value, .. } = &node.kind else {
+            return None;
+        };
+        Some((
+            node.key,
+            value.clone(),
+            self.caret_from_pointer(node, self.cursor),
+        ))
+    }
+
+    /// Выделяет слово под курсором — обработка двойного клика по полю ввода,
+    /// как в системных полях: фокус ставится на поле, а его слово выделяется.
+    ///
+    /// Возвращает `true`, если под курсором оказалось текстовое поле; тогда
+    /// обычная обработка клика (сброс выделения) не нужна.
+    fn select_word_at_cursor(&mut self) -> bool {
+        let Some((key, value, index)) = self.field_at_cursor() else {
+            return false;
+        };
+        self.focused = Some(key.to_owned());
+        self.editing = value;
+        let (start, end) = word_range(&self.editing, index);
+        self.anchor = Some(start);
+        self.caret = end;
+        self.dragging = true;
+        self.invalidate();
+        true
+    }
+
+    fn on_click(&mut self) {
+        if self.menu.is_some() {
+            self.on_menu_click();
+            return;
+        }
+        if self.handle_open_select() {
+            return;
+        }
+        if self.config.resizable
+            && let Some(direction) = self.resize_direction()
+        {
+            let _ = self.window.drag_resize_window(direction);
+            return;
+        }
+        match self.click_action() {
+            Some(ClickAction::Click(key)) => {
+                self.dispatch(key, DomEvent::Click);
+            }
+            Some(ClickAction::FocusField { key, value, caret }) => {
+                self.focused = Some(key.to_owned());
+                self.editing = value;
+                self.caret = caret;
+                self.anchor = Some(caret);
+                self.dragging = true;
+                self.undo.clear();
+                self.redo.clear();
+                self.invalidate();
+            }
+            Some(ClickAction::ToggleSelect(key)) => {
+                self.open_select = Some(key);
+                self.select_hover = None;
+                self.invalidate();
+            }
+            None => {
+                if self.deliver(DomEvent::Click) {
+                    return;
+                }
+                if self.is_draggable_titlebar() {
+                    let _ = self.window.drag_window();
+                    return;
+                }
+                if self.focused.take().is_some() {
+                    self.invalidate();
+                }
+            }
+        }
+    }
+
+    /// Обрабатывает клик при раскрытом выпадающем списке.
+    ///
+    /// Возвращает `true`, если клик поглощён (выбор пункта, закрытие списка);
+    /// `false`, если список закрыт и клик следует обработать обычным путём.
+    fn handle_open_select(&mut self) -> bool {
+        let Some(key) = self.open_select else {
+            return false;
+        };
+        if let Some(index) = self.select_option_at(key) {
+            let value = self
+                .layout
+                .as_ref()
+                .and_then(|layout| layout.node(key))
+                .and_then(|node| match &node.kind {
+                    NodeKind::Select { options, .. } => options.get(index).map(|o| o.value.clone()),
+                    _ => None,
+                });
+            self.open_select = None;
+            self.select_hover = None;
+            if let Some(value) = value {
+                self.dispatch(key, DomEvent::TextChange(value));
+            }
+            self.invalidate();
+            return true;
+        }
+        let on_select = self
+            .layout
+            .as_ref()
+            .and_then(|layout| layout.hit_interactive(self.cursor))
+            .is_some_and(|node| node.key == key);
+        self.open_select = None;
+        self.select_hover = None;
+        self.invalidate();
+        on_select
+    }
+
+    /// Индекс пункта раскрытого списка под точкой.
+    fn select_option_at(&self, key: &str) -> Option<usize> {
+        let layout = self.layout.as_ref()?;
+        let node = layout.node(key)?;
+        let NodeKind::Select { options, .. } = &node.kind else {
+            return None;
+        };
+        let popup = paint::select_popup(node.rect, options.len(), self.scale);
+        if !popup.contains(self.cursor) {
+            return None;
+        }
+        let row = paint::MENU_ROW_H * self.scale;
+        if row <= 0.0 {
+            return None;
+        }
+        let index = ((self.cursor.y - popup.y) / row) as usize;
+        (index < options.len()).then_some(index)
+    }
+
+    /// Точка под курсором прижата к краю окна (для изменения размера).
+    fn resize_direction(&self) -> Option<ResizeDirection> {
+        let (x, y) = (self.cursor.x, self.cursor.y);
+        let (w, h) = (self.width as f32, self.height as f32);
+        let left = x <= RESIZE_BORDER;
+        let right = x >= w - RESIZE_BORDER;
+        let top = y <= RESIZE_BORDER;
+        let bottom = y >= h - RESIZE_BORDER;
+        match (left, right, top, bottom) {
+            (true, _, true, _) => Some(ResizeDirection::NorthWest),
+            (_, true, true, _) => Some(ResizeDirection::NorthEast),
+            (true, _, _, true) => Some(ResizeDirection::SouthWest),
+            (_, true, _, true) => Some(ResizeDirection::SouthEast),
+            (true, _, _, _) => Some(ResizeDirection::West),
+            (_, true, _, _) => Some(ResizeDirection::East),
+            (_, _, true, _) => Some(ResizeDirection::North),
+            (_, _, _, true) => Some(ResizeDirection::South),
+            _ => None,
+        }
+    }
+
+    /// Лежит ли точка внутри титульной полосы (`<titlebar>`).
+    fn is_draggable_titlebar(&self) -> bool {
+        self.layout
+            .as_ref()
+            .is_some_and(|layout| layout.hit_titlebar(self.cursor))
+    }
+
+    fn on_release(&mut self) {
+        if self.resizing.take().is_some() {
+            self.invalidate();
+        }
+        if self.dragging {
+            self.dragging = false;
+            self.invalidate();
+        }
+    }
+
+    fn on_cursor_moved(&mut self, x: f32, y: f32) {
+        self.cursor = Point::new(x, y);
+
+        if self.menu.is_some() {
+            let hover = self.menu_hit(self.cursor);
+            if self.menu.as_ref().is_some_and(|menu| menu.hover != hover) {
+                if let Some(menu) = &mut self.menu {
+                    menu.hover = hover;
+                }
+                self.invalidate();
+            }
+            return;
+        }
+
+        if let Some(key) = self.open_select {
+            let hover = self.select_option_at(key);
+            if hover != self.select_hover {
+                self.select_hover = hover;
+                self.invalidate();
+            }
+            return;
+        }
+
+        if let Some(key) = self.resizing {
+            self.apply_resize(key);
+            return;
+        }
+
+        if self.dragging && self.focused.is_some() {
+            let caret = self
+                .focused_node()
+                .map(|node| self.caret_from_pointer(node, self.cursor));
+            if let Some(caret) = caret
+                && caret != self.caret
+            {
+                self.caret = caret;
+                self.invalidate();
+            }
+            return;
+        }
+
+        let top = self
+            .layout
+            .as_ref()
+            .and_then(|layout| layout.hit_stack(self.cursor).first().map(|node| node.key));
+        if top != self.hover_top {
+            if let Some(old) = self.hover_top {
+                self.dispatch(old, DomEvent::Mouseleave);
+            }
+            if let Some(new) = top {
+                self.dispatch(new, DomEvent::Mouseenter);
+            }
+            self.hover_top = top;
+        }
+        if top.is_some() {
+            self.deliver_mousemove();
+        }
+
+        let hovered = self
+            .layout
+            .as_ref()
+            .and_then(|layout| layout.hit_interactive(self.cursor))
+            .filter(|node| {
+                matches!(
+                    node.kind,
+                    NodeKind::Button {
+                        disabled: false,
+                        ..
+                    }
+                )
+            })
+            .map(|node| node.key);
+        if hovered != self.hover {
+            self.hover = hovered;
+            self.invalidate();
+        }
+        self.update_cursor();
+    }
+
+    /// Устанавливает курсор окна в зависимости от того, где он находится:
+    /// на области изменения размера — стрелки изменения размера, над полем
+    /// ввода — текстовый курсор, в остальных местах — стандартный.
+    fn update_cursor(&mut self) {
+        let icon = if self.config.resizable
+            && let Some(direction) = self.resize_direction()
+        {
+            direction.into()
+        } else if self.layout.as_ref().is_some_and(|layout| {
+            layout.hit_interactive(self.cursor).is_some_and(|node| {
+                matches!(
+                    node.kind,
+                    NodeKind::TextField {
+                        disabled: false,
+                        ..
+                    }
+                )
+            })
+        }) {
+            CursorIcon::Text
+        } else {
+            CursorIcon::Default
+        };
+        if self.cursor_icon != Some(icon) {
+            self.cursor_icon = Some(icon);
+            self.window.set_cursor(icon);
+        }
+    }
+
+    /// Курсор покинул пределы окна.
+    fn on_cursor_left(&mut self) {
+        if let Some(old) = self.hover_top.take() {
+            self.dispatch(old, DomEvent::Mouseleave);
+        }
+    }
+
+    fn focused_node(&self) -> Option<&crate::layout::PlacedNode> {
+        let key = self.focused.as_deref()?;
+        self.layout.as_ref()?.node(key)
+    }
+
+    /// Формирует меню у точки клика (с учётом заголовков пунктов).
+    fn open_menu_at(&mut self, point: Point) {
+        let selection = self.selection();
+        let has_selection = selection.is_some();
+        let has_text = self.editing.chars().count() > 0;
+        let items = vec![
+            MenuItem {
+                label: "Вырезать",
+                action: MenuAction::Cut,
+                enabled: has_selection,
+            },
+            MenuItem {
+                label: "Копировать",
+                action: MenuAction::Copy,
+                enabled: has_selection,
+            },
+            MenuItem {
+                label: "Вставить",
+                action: MenuAction::Paste,
+                enabled: !self.clipboard.is_empty(),
+            },
+            MenuItem {
+                label: "Удалить",
+                action: MenuAction::Delete,
+                enabled: has_selection,
+            },
+            MenuItem {
+                label: "Выделить всё",
+                action: MenuAction::SelectAll,
+                enabled: has_text,
+            },
+        ];
+        let scale = self.scale;
+        let w = paint::MENU_W * scale;
+        let h = items.len() as f32 * paint::MENU_ROW_H * scale + 2.0 * paint::MENU_BORDER * scale;
+        let x = point.x.clamp(2.0, (self.width as f32 - w - 2.0).max(2.0));
+        let y = point.y.clamp(2.0, (self.height as f32 - h - 2.0).max(2.0));
+        self.menu = Some(ContextMenu {
+            x,
+            y,
+            items,
+            hover: None,
+        });
+        self.full_redraw = true;
+    }
+
+    /// Индекс пункта меню под точкой (в пределах полного прямоугольника меню).
+    fn menu_hit(&self, point: Point) -> Option<usize> {
+        let menu = self.menu.as_ref()?;
+        let scale = self.scale;
+        let w = paint::MENU_W * scale;
+        let h =
+            menu.items.len() as f32 * paint::MENU_ROW_H * scale + 2.0 * paint::MENU_BORDER * scale;
+        if point.x < menu.x || point.x > menu.x + w || point.y < menu.y || point.y > menu.y + h {
+            return None;
+        }
+        let inner = paint::MENU_BORDER * scale;
+        let row = paint::MENU_ROW_H * scale;
+        let rel = point.y - menu.y - inner;
+        if rel < 0.0 {
+            return None;
+        }
+        let index = (rel / row) as usize;
+        if index < menu.items.len() {
+            Some(index)
+        } else {
+            None
+        }
+    }
+
+    fn on_menu_click(&mut self) {
+        let action = self
+            .menu
+            .as_ref()
+            .and_then(|menu| self.menu_hit(self.cursor).map(|i| menu.items[i].action));
+        self.menu = None;
+        match action {
+            Some(MenuAction::Cut) => self.cut_selection(),
+            Some(MenuAction::Copy) => self.copy_selection(),
+            Some(MenuAction::Paste) => self.paste_clipboard(),
+            Some(MenuAction::Delete) => {
+                let before = self.editing.clone();
+                if self.delete_selection() {
+                    self.snapshot_before_edit(&before);
+                    self.commit_text();
+                }
+            }
+            Some(MenuAction::SelectAll) => self.select_all(),
+            None => {}
+        }
+        self.invalidate();
+    }
+
+    fn copy_selection(&mut self) {
+        if let Some((start, end)) = self.selection() {
+            let text: String = self.editing.chars().skip(start).take(end - start).collect();
+            self.clipboard = text;
+        }
+    }
+
+    fn cut_selection(&mut self) {
+        let before = self.editing.clone();
+        self.copy_selection();
+        if self.delete_selection() {
+            self.snapshot_before_edit(&before);
+            self.commit_text();
+        }
+    }
+
+    fn paste_clipboard(&mut self) {
+        let clip = self.clipboard.clone();
+        if clip.is_empty() {
+            return;
+        }
+        let before = self.editing.clone();
+        self.delete_selection();
+        self.snapshot_before_edit(&before);
+        let mut chars: Vec<char> = self.editing.chars().collect();
+        let at = self.caret.min(chars.len());
+        for (offset, ch) in clip.chars().enumerate() {
+            chars.insert(at + offset, ch);
+        }
+        self.caret = at + clip.chars().count();
+        self.editing = chars.into_iter().collect();
+        self.commit_text();
+    }
+
+    fn snapshot_before_edit(&mut self, before: &str) {
+        self.undo.push(before.to_owned());
+        self.redo.clear();
+    }
+
+    fn commit_text(&mut self) {
+        if let Some(key) = self.focused.clone() {
+            self.dispatch(&key, DomEvent::TextChange(self.editing.clone()));
+        }
+        self.invalidate();
+    }
+
+    fn clamp_caret(&mut self) {
+        let len = self.editing.chars().count();
+        self.caret = self.caret.min(len);
+        self.anchor = self.anchor.map(|anchor| anchor.min(len));
+    }
+
+    fn undo(&mut self) {
+        let Some(previous) = self.undo.pop() else {
+            return;
+        };
+        self.redo.push(self.editing.clone());
+        self.editing = previous;
+        self.clamp_caret();
+        self.commit_text();
+    }
+
+    fn redo(&mut self) {
+        let Some(next) = self.redo.pop() else {
+            return;
+        };
+        self.undo.push(self.editing.clone());
+        self.editing = next;
+        self.clamp_caret();
+        self.commit_text();
+    }
+
+    fn select_all(&mut self) {
+        self.anchor = Some(0);
+        self.caret = self.editing.chars().count();
+    }
+
+    fn apply_resize(&mut self, key: &'static str) {
+        let Some((rect, resize)) = self.layout.as_ref().and_then(|layout| {
+            layout.node(key).and_then(|node| match &node.kind {
+                NodeKind::TextField { resize, .. } => Some((node.rect, *resize)),
+                _ => None,
+            })
+        }) else {
+            return;
+        };
+        let min = FIELD_MIN_H * self.scale;
+        let (mut w, mut h) = self.resized.get(key).copied().unwrap_or((rect.w, rect.h));
+        if matches!(resize, Resize::Horizontal | Resize::Both) {
+            w = (self.cursor.x - rect.x).max(min);
+        }
+        if matches!(resize, Resize::Vertical | Resize::Both) {
+            h = (self.cursor.y - rect.y).max(min);
+        }
+        self.resized.insert(key, (w, h));
+        self.invalidate();
+    }
+
+    fn multiline_focused(&self) -> bool {
+        matches!(
+            self.focused_node().map(|node| &node.kind),
+            Some(NodeKind::TextField {
+                multiline: true,
+                ..
+            })
+        )
+    }
+
+    fn field_lines(&self) -> Option<Vec<text::Line>> {
+        let node = self.focused_node()?;
+        let NodeKind::TextField { multiline, .. } = &node.kind else {
+            return None;
+        };
+        let scale = self.scale;
+        let inset = node.style.inset() * scale;
+        let pad_x = crate::layout::FIELD_PAD_X * scale;
+        let size = node.style.font_size.unwrap_or(crate::layout::FONT_SIZE) * scale;
+        let max_w = (node.rect.w - 2.0 * inset - 2.0 * pad_x).max(1.0);
+        Some(text::layout(
+            self.font.font(),
+            &self.editing,
+            size,
+            max_w,
+            *multiline,
+        ))
+    }
+
+    fn move_caret(&mut self, to: usize, extend: bool) {
+        let len = self.editing.chars().count();
+        if extend {
+            if self.anchor.is_none() {
+                self.anchor = Some(self.caret);
+            }
+        } else {
+            self.anchor = None;
+        }
+        self.caret = to.min(len);
+    }
+
+    fn move_caret_home(&mut self, extend: bool) {
+        let index = self
+            .field_lines()
+            .map(|lines| text::line_of(&lines, self.caret.min(self.editing.chars().count())))
+            .unwrap_or(0);
+        let to = self
+            .field_lines()
+            .map(|lines| lines[index].start)
+            .unwrap_or(0);
+        self.move_caret(to, extend);
+    }
+
+    fn move_caret_end(&mut self, extend: bool) {
+        let Some(lines) = self.field_lines() else {
+            let len = self.editing.chars().count();
+            self.move_caret(len, extend);
+            return;
+        };
+        let index = text::line_of(&lines, self.caret.min(self.editing.chars().count()));
+        let line = &lines[index];
+        let to = line.start + line.text.chars().count();
+        self.move_caret(to, extend);
+    }
+
+    fn move_caret_vertical(&mut self, delta: i32, extend: bool) {
+        let Some(lines) = self.field_lines() else {
+            return;
+        };
+        if lines.len() < 2 {
+            return;
+        }
+        let caret = self.caret.min(self.editing.chars().count());
+        let index = text::line_of(&lines, caret) as i32;
+        let target = index + delta;
+        if target < 0 || target >= lines.len() as i32 {
+            return;
+        }
+        let current = &lines[index as usize];
+        let column = caret.saturating_sub(current.start);
+        let text = &lines[target as usize].text;
+        let column = column.min(text.chars().count());
+        let to = lines[target as usize].start + column;
+        self.move_caret(to, extend);
+    }
+
+    fn on_key(&mut self, event: &KeyEvent) {
+        if self.open_select.is_some() && matches!(&event.logical_key, Key::Named(NamedKey::Escape))
+        {
+            self.open_select = None;
+            self.select_hover = None;
+            self.invalidate();
+            return;
+        }
+        let info = key_info(event, self.modifiers);
+        let key = self.focused.clone().unwrap_or_default();
+        match event.state {
+            ElementState::Pressed => {
+                self.dispatch(&key, DomEvent::Keydown(info));
+            }
+            ElementState::Released => {
+                self.dispatch(&key, DomEvent::Keyup(info));
+            }
+        }
+        if event.state != ElementState::Pressed {
+            return;
+        }
+        let Some(focused) = self.focused.clone() else {
+            return;
+        };
+        let extend = self.modifiers.shift_key();
+        let before = self.editing.clone();
+        let mut text_changed = false;
+        let mut caret_changed = false;
+        match &event.logical_key {
+            Key::Named(NamedKey::Backspace) => {
+                if self.delete_selection() {
+                    text_changed = true;
+                    caret_changed = true;
+                } else if self.caret > 0 {
+                    let mut chars: Vec<char> = self.editing.chars().collect();
+                    chars.remove(self.caret - 1);
+                    self.editing = chars.into_iter().collect();
+                    self.caret -= 1;
+                    text_changed = true;
+                    caret_changed = true;
+                }
+            }
+            Key::Named(NamedKey::Delete) => {
+                if self.delete_selection() {
+                    text_changed = true;
+                    caret_changed = true;
+                } else {
+                    let len = self.editing.chars().count();
+                    if self.caret < len {
+                        let mut chars: Vec<char> = self.editing.chars().collect();
+                        chars.remove(self.caret);
+                        self.editing = chars.into_iter().collect();
+                        text_changed = true;
+                    }
+                }
+            }
+            Key::Named(NamedKey::Enter) => {
+                if self.multiline_focused() {
+                    self.delete_selection();
+                    let mut chars: Vec<char> = self.editing.chars().collect();
+                    chars.insert(self.caret, '\n');
+                    self.caret += 1;
+                    self.anchor = None;
+                    self.editing = chars.into_iter().collect();
+                    text_changed = true;
+                    caret_changed = true;
+                }
+            }
+            Key::Named(NamedKey::ArrowLeft) => {
+                self.move_caret(self.caret.saturating_sub(1), extend);
+                caret_changed = true;
+            }
+            Key::Named(NamedKey::ArrowRight) => {
+                self.move_caret(self.caret + 1, extend);
+                caret_changed = true;
+            }
+            Key::Named(NamedKey::ArrowUp) => {
+                self.move_caret_home(extend);
+                self.move_caret_vertical(-1, extend);
+                caret_changed = true;
+            }
+            Key::Named(NamedKey::ArrowDown) => {
+                self.move_caret_vertical(1, extend);
+                caret_changed = true;
+            }
+            Key::Named(NamedKey::Home) => {
+                self.move_caret_home(extend);
+                caret_changed = true;
+            }
+            Key::Named(NamedKey::End) => {
+                self.move_caret_end(extend);
+                caret_changed = true;
+            }
+            _ => {
+                if self.modifiers.control_key() {
+                    let mapped = control_letter(event);
+                    match mapped.as_deref() {
+                        Some("a") => {
+                            self.select_all();
+                            caret_changed = true;
+                        }
+                        Some("c") => self.copy_selection(),
+                        Some("x") => self.cut_selection(),
+                        Some("v") => self.paste_clipboard(),
+                        Some("z") if self.modifiers.shift_key() => self.redo(),
+                        Some("z") => self.undo(),
+                        Some("y") => self.redo(),
+                        _ => {}
+                    }
+                    if caret_changed {
+                        self.invalidate();
+                    }
+                    return;
+                }
+                let Some(text) = event.text.as_deref() else {
+                    return;
+                };
+                if text.is_empty() || text.chars().any(char::is_control) {
+                    return;
+                }
+                self.delete_selection();
+                let mut chars: Vec<char> = self.editing.chars().collect();
+                let mut idx = self.caret;
+                for c in text.chars() {
+                    chars.insert(idx, c);
+                    idx += 1;
+                }
+                self.caret = idx;
+                self.anchor = None;
+                self.editing = chars.into_iter().collect();
+                text_changed = true;
+                caret_changed = true;
+            }
+        }
+
+        if text_changed {
+            if self.editing != before {
+                self.snapshot_before_edit(&before);
+            }
+            self.dispatch(&focused, DomEvent::TextChange(self.editing.clone()));
+        }
+        // Перемещение каретки не меняет значение поля, поэтому реактивная
+        // перерисовка не сработает — запрашиваем её вручную.
+        if caret_changed && !text_changed {
+            self.invalidate();
+        }
+    }
+
+    fn on_secondary_press(&mut self) {
+        if let Some((key, value, caret)) = self
+            .layout
+            .as_ref()
+            .and_then(|layout| layout.hit_interactive(self.cursor))
+            .and_then(|node| match &node.kind {
+                NodeKind::TextField { value, .. } => Some((
+                    node.key,
+                    value.clone(),
+                    self.caret_from_pointer(node, self.cursor),
+                )),
+                _ => None,
+            })
+        {
+            // Если поле уже в фокусе и текст выделен, ПКМ не сбрасывает
+            // выделение — контекстное меню открывается поверх него.
+            let keep_selection = self.focused.as_deref() == Some(key) && self.selection().is_some();
+            if !keep_selection {
+                self.focused = Some(key.to_owned());
+                self.editing = value;
+                self.caret = caret;
+                self.anchor = None;
+                self.dragging = false;
+                self.undo.clear();
+                self.redo.clear();
+            }
+            self.open_menu_at(self.cursor);
+            self.invalidate();
+        }
+    }
+
+    fn invalidate(&mut self) {
+        self.full_redraw = true;
+        self.window.request_redraw();
+    }
+}
+
+/// Буква для Ctrl-комбинации.
+///
+/// Сначала берётся **физическая** клавиша (`Ctrl`-сочетания не должны зависеть
+/// от раскладки: на кириллице `Ctrl+A` даёт логический символ «ф», но физически
+/// это по-прежнему клавиша `A`). Если физическая клавиша не распознана, берётся
+/// логический символ с разбором управляющих кодов (U+0001..U+001A → `a`..`z`).
+fn control_letter(event: &KeyEvent) -> Option<String> {
+    if let PhysicalKey::Code(code) = event.physical_key
+        && let Some(letter) = keycode_letter(code)
+    {
+        return Some(letter);
+    }
+    let Key::Character(ch) = &event.logical_key else {
+        return None;
+    };
+    let mapped: String = ch
+        .chars()
+        .map(|c| {
+            let code = c as u32;
+            if (1..=26).contains(&code) {
+                char::from(b'a' + (code as u8 - 1))
+            } else {
+                c
+            }
+        })
+        .collect();
+    Some(mapped.to_ascii_lowercase())
+}
+
+/// Строчная латинская буква для физической клавиши `A`..`Z` (без зависимости
+/// от активной раскладки).
+fn keycode_letter(code: KeyCode) -> Option<String> {
+    let letter = match code {
+        KeyCode::KeyA => 'a',
+        KeyCode::KeyB => 'b',
+        KeyCode::KeyC => 'c',
+        KeyCode::KeyD => 'd',
+        KeyCode::KeyE => 'e',
+        KeyCode::KeyF => 'f',
+        KeyCode::KeyG => 'g',
+        KeyCode::KeyH => 'h',
+        KeyCode::KeyI => 'i',
+        KeyCode::KeyJ => 'j',
+        KeyCode::KeyK => 'k',
+        KeyCode::KeyL => 'l',
+        KeyCode::KeyM => 'm',
+        KeyCode::KeyN => 'n',
+        KeyCode::KeyO => 'o',
+        KeyCode::KeyP => 'p',
+        KeyCode::KeyQ => 'q',
+        KeyCode::KeyR => 'r',
+        KeyCode::KeyS => 's',
+        KeyCode::KeyT => 't',
+        KeyCode::KeyU => 'u',
+        KeyCode::KeyV => 'v',
+        KeyCode::KeyW => 'w',
+        KeyCode::KeyX => 'x',
+        KeyCode::KeyY => 'y',
+        KeyCode::KeyZ => 'z',
+        _ => return None,
+    };
+    Some(letter.to_string())
+}
+
+/// Формирует [`KeyInfo`] из события клавиатуры.
+fn key_info(event: &KeyEvent, modifiers: ModifiersState) -> KeyInfo {
+    let key = match &event.logical_key {
+        Key::Character(ch) => ch.to_string(),
+        Key::Named(named) => format!("{named:?}"),
+        _ => String::new(),
+    };
+    KeyInfo::new(
+        key,
+        modifiers.shift_key(),
+        modifiers.control_key(),
+        modifiers.alt_key(),
+    )
+}
+
+/// Отображение кнопки мыши winit в событие виртуального дерева.
+fn map_button(button: MouseButton) -> DomButton {
+    match button {
+        MouseButton::Left => DomButton::Left,
+        MouseButton::Right => DomButton::Right,
+        MouseButton::Middle => DomButton::Middle,
+        _ => DomButton::Left,
+    }
+}
+
+/// Координатор цикла событий: набор окон и общие ресурсы.
+struct App {
+    windows: HashMap<WindowId, WindowState>,
+    tokens: HashMap<WindowToken, WindowId>,
+    next_token: WindowToken,
+    /// Фабрики окон по их `id` (собираются из [`Component::windows`] корня).
+    registry: HashMap<String, fn() -> Box<dyn Component>>,
+    root: Option<Box<dyn Component>>,
+    font: Arc<FontMetrics>,
+    error: Option<Error>,
+    redraw: Arc<Mutex<Vec<Arc<Window>>>>,
+}
+
+impl App {
+    fn new(root: Box<dyn Component>, font: Arc<FontMetrics>) -> Self {
+        let redraw: Arc<Mutex<Vec<Arc<Window>>>> = Arc::new(Mutex::new(Vec::new()));
+        let repaint = Arc::clone(&redraw);
+        set_repaint_requester(move || {
+            if let Ok(list) = repaint.lock() {
+                for window in list.iter() {
+                    window.request_redraw();
+                }
+            }
+        });
+        Self {
+            windows: HashMap::new(),
+            tokens: HashMap::new(),
+            next_token: 0,
+            registry: HashMap::new(),
+            root: Some(root),
+            font,
+            error: None,
+            redraw,
+        }
+    }
+
+    /// Истинно, если окно `token` блокировано открытым модальным потомком.
+    ///
+    /// Окно блокируется, пока поверх него открыто хотя бы одно дочернее окно
+    /// с `modal = true`: все события ввода такого окна игнорируются.
+    fn is_blocked(&self, token: WindowToken) -> bool {
+        self.windows
+            .values()
+            .any(|window| window.parent == Some(token) && window.config.modal)
+    }
+
+    /// Все потомки окна `token` (по иерархии parent/child), в том числе
+    /// косвенные. Возвращаются без самого `token`.
+    fn descendants(&self, token: WindowToken) -> Vec<WindowToken> {
+        let mut result = Vec::new();
+        let mut stack = self
+            .windows
+            .values()
+            .filter(|window| window.parent == Some(token))
+            .map(|window| window.token)
+            .collect::<Vec<_>>();
+        while let Some(next) = stack.pop() {
+            result.push(next);
+            stack.extend(
+                self.windows
+                    .values()
+                    .filter(|window| window.parent == Some(next))
+                    .map(|window| window.token),
+            );
+        }
+        result
+    }
+
+    /// Регистрирует окна, объявленные в `windows = [...]` корневого компонента.
+    fn build_registry(&mut self, root: &dyn Component) {
+        for factory in root.windows() {
+            let id = factory().window_config().and_then(|config| config.id);
+            if let Some(id) = id {
+                self.registry.entry(id).or_insert(factory);
+            }
+        }
+    }
+
+    /// Токен открытого окна с идентификатором `id`.
+    fn window_token_by_id(&self, id: &str) -> Option<WindowToken> {
+        self.windows
+            .values()
+            .find(|window| window.config.id.as_deref() == Some(id))
+            .map(|window| window.token)
+    }
+
+    /// Открывает окно `id` из реестра или фокусирует уже открытое.
+    fn open_by_id(&mut self, event_loop: &ActiveEventLoop, id: &str) {
+        if let Some(token) = self.window_token_by_id(id) {
+            if let Some(window_id) = self.tokens.get(&token).copied()
+                && let Some(state) = self.windows.get_mut(&window_id)
+            {
+                state.window.set_visible(true);
+                state.window.focus_window();
+                state.invalidate();
+            }
+            return;
+        }
+        let Some(factory) = self.registry.get(id).copied() else {
+            return;
+        };
+        let component = factory();
+        let config = component.window_config().unwrap_or_default();
+        let parent = config
+            .parent
+            .as_deref()
+            .and_then(|parent| self.window_token_by_id(parent));
+        if let Err(error) = self.create_window(event_loop, component, parent) {
+            self.error = Some(error);
+            event_loop.exit();
+        }
+    }
+
+    /// Закрывает окно с идентификатором `id` (вместе с потомками).
+    fn close_by_id(&mut self, event_loop: &ActiveEventLoop, id: &str) {
+        if let Some(token) = self.window_token_by_id(id)
+            && let Some(window_id) = self.tokens.get(&token).copied()
+        {
+            self.close_window(event_loop, window_id);
+        }
+    }
+
+    /// Показывает или скрывает окно с идентификатором `id`.
+    fn set_visible_by_id(&mut self, id: &str, visible: bool) {
+        if let Some(token) = self.window_token_by_id(id)
+            && let Some(window_id) = self.tokens.get(&token).copied()
+            && let Some(state) = self.windows.get_mut(&window_id)
+        {
+            state.window.set_visible(visible);
+            state.invalidate();
+        }
+    }
+
+    fn create_window(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        component: Box<dyn Component>,
+        parent: Option<WindowToken>,
+    ) -> crate::Result<WindowToken> {
+        let config = component.window_config().unwrap_or_default();
+        let attributes = Window::default_attributes()
+            .with_title(&config.title)
+            .with_inner_size(LogicalSize::new(config.width, config.height))
+            .with_decorations(false)
+            .with_transparent(config.transparent)
+            .with_resizable(config.resizable)
+            .with_visible(config.visible);
+        let window = Arc::new(event_loop.create_window(attributes)?);
+        if config.min_width.is_some() || config.min_height.is_some() {
+            window.set_min_inner_size(Some(LogicalSize::new(
+                config.min_width.unwrap_or(1),
+                config.min_height.unwrap_or(1),
+            )));
+        }
+        if let (Some(width), Some(height)) = (config.max_width, config.max_height) {
+            window.set_max_inner_size(Some(LogicalSize::new(width, height)));
+        }
+        let size = window.inner_size();
+        let width = size.width.max(1);
+        let height = size.height.max(1);
+        let surface_texture = SurfaceTexture::new(width, height, Arc::clone(&window));
+        let surface = Pixels::new(width, height, surface_texture)?;
+
+        let token = self.next_token;
+        self.next_token += 1;
+        let id = window.id();
+        if let Ok(mut list) = self.redraw.lock() {
+            list.push(Arc::clone(&window));
+        }
+        let state = WindowState {
+            token,
+            parent,
+            component,
+            font: Arc::clone(&self.font),
+            window,
+            surface,
+            config,
+            title: String::new(),
+            pixels: vec![0u8; (width * height * 4) as usize],
+            width,
+            height,
+            scale: 1.0,
+            tree: None,
+            layout: None,
+            full_redraw: true,
+            focused: None,
+            editing: String::new(),
+            caret: 0,
+            anchor: None,
+            dragging: false,
+            resizing: None,
+            resized: HashMap::new(),
+            modifiers: ModifiersState::empty(),
+            cursor: Point::new(0.0, 0.0),
+            hover: None,
+            hover_top: None,
+            menu: None,
+            clipboard: String::new(),
+            undo: Vec::new(),
+            redo: Vec::new(),
+            cursor_icon: None,
+            last_click: None,
+            open_select: None,
+            select_hover: None,
+        };
+        self.tokens.insert(token, id);
+        self.windows.insert(id, state);
+        if let Some(parent) = parent
+            && let Some(parent_id) = self.tokens.get(&parent).copied()
+            && let Some(parent_state) = self.windows.get_mut(&parent_id)
+        {
+            parent_state.invalidate();
+        }
+        if let Some(window) = self.windows.get(&id) {
+            window.window.request_redraw();
+        }
+        Ok(token)
+    }
+
+    fn close_window(&mut self, event_loop: &ActiveEventLoop, id: WindowId) {
+        let Some(state) = self.windows.get(&id) else {
+            return;
+        };
+        let token = state.token;
+        let parent = state.parent;
+        let mut closing = self.descendants(token);
+        closing.push(token);
+        for token in closing {
+            let Some(child_id) = self.tokens.remove(&token) else {
+                continue;
+            };
+            crate::dom::remove_tree(token);
+            if let Some(state) = self.windows.remove(&child_id) {
+                state.window.set_visible(false);
+            }
+            if let Ok(mut list) = self.redraw.lock() {
+                list.retain(|window| window.id() != child_id);
+            }
+        }
+        if let Some(parent) = parent
+            && let Some(parent_id) = self.tokens.get(&parent).copied()
+            && let Some(parent_state) = self.windows.get_mut(&parent_id)
+        {
+            parent_state.invalidate();
+        }
+        if !self.windows.values().any(|window| window.parent.is_none()) {
+            event_loop.exit();
+        }
+    }
+
+    fn open_modal(&mut self, event_loop: &ActiveEventLoop, token: WindowToken) {
+        if self.is_blocked(token) {
+            return;
+        }
+        let Some(id) = self.tokens.get(&token).copied() else {
+            return;
+        };
+        let Some(component) = self
+            .windows
+            .get(&id)
+            .and_then(|state| state.component.modal())
+        else {
+            return;
+        };
+        if let Err(error) = self.create_window(event_loop, component, Some(token)) {
+            self.error = Some(error);
+            event_loop.exit();
+        }
+    }
+
+    /// Открывает ещё одно **главное** окно (без родителя) из компонента окна
+    /// `token`, если тот предоставляет [`Component::window_factory`].
+    fn open_window(&mut self, event_loop: &ActiveEventLoop, token: WindowToken) {
+        let Some(id) = self.tokens.get(&token).copied() else {
+            return;
+        };
+        let Some(component) = self
+            .windows
+            .get(&id)
+            .and_then(|state| state.component.window_factory())
+        else {
+            return;
+        };
+        if let Err(error) = self.create_window(event_loop, component, None) {
+            self.error = Some(error);
+            event_loop.exit();
+        }
+    }
+
+    fn apply_command(&self, token: WindowToken, command: WindowCommand) {
+        let Some(id) = self.tokens.get(&token).copied() else {
+            return;
+        };
+        let Some(state) = self.windows.get(&id) else {
+            return;
+        };
+        let window = &state.window;
+        match command {
+            WindowCommand::Close
+            | WindowCommand::OpenModal
+            | WindowCommand::OpenWindow
+            | WindowCommand::Open(_)
+            | WindowCommand::CloseWindow(_)
+            | WindowCommand::ShowWindow(_)
+            | WindowCommand::HideWindow(_) => {}
+            WindowCommand::Minimize => window.set_minimized(true),
+            WindowCommand::Maximize => window.set_maximized(true),
+            WindowCommand::Restore => window.set_maximized(false),
+            WindowCommand::ToggleMaximize => window.set_maximized(!window.is_maximized()),
+            WindowCommand::Show => window.set_visible(true),
+            WindowCommand::Hide => window.set_visible(false),
+        }
+    }
+}
+
+impl ApplicationHandler<UserEvent> for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if !self.windows.is_empty() {
+            return;
+        }
+        let Some(component) = self.root.take() else {
+            return;
+        };
+        self.build_registry(&*component);
+        if let Err(error) = self.create_window(event_loop, component, None) {
+            self.error = Some(error);
+            event_loop.exit();
+        }
+    }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
+        let UserEvent { token, command } = event;
+        match command {
+            WindowCommand::OpenModal => self.open_modal(event_loop, token),
+            WindowCommand::OpenWindow => self.open_window(event_loop, token),
+            WindowCommand::Close => {
+                if let Some(id) = self.tokens.get(&token).copied() {
+                    self.close_window(event_loop, id);
+                }
+            }
+            WindowCommand::Open(id) => self.open_by_id(event_loop, &id),
+            WindowCommand::CloseWindow(id) => self.close_by_id(event_loop, &id),
+            WindowCommand::ShowWindow(id) => self.set_visible_by_id(&id, true),
+            WindowCommand::HideWindow(id) => self.set_visible_by_id(&id, false),
+            _ => self.apply_command(token, command),
+        }
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        let Some(token) = self.windows.get(&id).map(|window| window.token) else {
+            return;
+        };
+        if let WindowEvent::CloseRequested = event {
+            self.close_window(event_loop, id);
+            return;
+        }
+        let is_input = matches!(
+            &event,
+            WindowEvent::CursorMoved { .. }
+                | WindowEvent::MouseInput { .. }
+                | WindowEvent::KeyboardInput { .. }
+                | WindowEvent::ModifiersChanged(_)
+                | WindowEvent::MouseWheel { .. }
+        );
+        if is_input && self.is_blocked(token) {
+            return;
+        }
+        let Some(window) = self.windows.get_mut(&id) else {
+            return;
+        };
+        set_active_window(token);
+        match event {
+            WindowEvent::Resized(_) => window.invalidate(),
+            WindowEvent::Focused(false) => window.on_unfocus(),
+            WindowEvent::ModifiersChanged(modifiers) => window.modifiers = modifiers.state(),
+            WindowEvent::CursorMoved { position, .. } => {
+                window.on_cursor_moved(position.x as f32, position.y as f32);
+            }
+            WindowEvent::CursorLeft { .. } => window.on_cursor_left(),
+            WindowEvent::MouseInput { state, button, .. } => window.on_mouse(state, button),
+            WindowEvent::KeyboardInput { event, .. } => window.on_key(&event),
+            WindowEvent::RedrawRequested => {
+                if let Err(error) = window.redraw() {
+                    self.error = Some(error);
+                    event_loop.exit();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl WindowState {
+    /// Снимает фокус при потере активности окна.
+    fn on_unfocus(&mut self) {
+        self.dragging = false;
+        self.resizing = None;
+        self.menu = None;
+        if self.focused.take().is_some() {
+            self.anchor = None;
+            self.undo.clear();
+            self.redo.clear();
+            self.invalidate();
+        }
+    }
+
+    /// Обработка нажатий/отпусканий кнопок мыши.
+    fn on_mouse(&mut self, state: ElementState, button: MouseButton) {
+        match state {
+            ElementState::Pressed => {
+                self.deliver(DomEvent::Mousedown(map_button(button)));
+                match button {
+                    MouseButton::Left => {
+                        let now = Instant::now();
+                        let double = self.last_click.is_some_and(|(last, point)| {
+                            now.duration_since(last) < DOUBLE_CLICK
+                                && (point.x - self.cursor.x).abs() < 4.0
+                                && (point.y - self.cursor.y).abs() < 4.0
+                        });
+                        self.last_click = Some((now, self.cursor));
+                        if double {
+                            self.deliver(DomEvent::Dblclick);
+                            if self.select_word_at_cursor() {
+                                return;
+                            }
+                        }
+                        self.on_click();
+                    }
+                    MouseButton::Right => self.on_secondary_press(),
+                    _ => {}
+                }
+            }
+            ElementState::Released => {
+                self.deliver(DomEvent::Mouseup(map_button(button)));
+                if let MouseButton::Left = button {
+                    self.on_release();
+                }
+            }
+        }
+    }
+}
+
+/// Применяет сохранённые размеры полей (`resize`) к дереву перед раскладкой.
+fn apply_overrides(tree: &mut VElement, resized: &HashMap<&'static str, (f32, f32)>) {
+    for (&key, &(width, height)) in resized {
+        if let Some(node) = tree.get_mut(key) {
+            node.style.width = crate::vdom::Size::Px(width);
+            node.style.height = crate::vdom::Size::Px(height);
+        }
+    }
+}
+
+/// Границы слова (в символах) вокруг позиции `index` — для выделения двойным
+/// кликом. Слово — непрерывная последовательность букв, цифр и `_`. Если под
+/// позицией стоит несловесный символ (пробел, знак пунктуации), выделяется
+/// только он; позиция сразу после слова «прилипает» к этому слову.
+fn word_range(text: &str, index: usize) -> (usize, usize) {
+    let chars: Vec<char> = text.chars().collect();
+    let len = chars.len();
+    if len == 0 {
+        return (0, 0);
+    }
+    let is_word = |c: char| c.is_alphanumeric() || c == '_';
+    let probe = if index < len && is_word(chars[index]) {
+        index
+    } else if index > 0 && is_word(chars[index - 1]) {
+        index - 1
+    } else {
+        index.min(len - 1)
+    };
+    if !is_word(chars[probe]) {
+        return (probe, probe + 1);
+    }
+    let mut start = probe;
+    while start > 0 && is_word(chars[start - 1]) {
+        start -= 1;
+    }
+    let mut end = probe + 1;
+    while end < len && is_word(chars[end]) {
+        end += 1;
+    }
+    (start, end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{keycode_letter, word_range};
+    use winit::keyboard::KeyCode;
+
+    #[test]
+    fn keycode_letter_is_layout_independent() {
+        assert_eq!(keycode_letter(KeyCode::KeyA).as_deref(), Some("a"));
+        assert_eq!(keycode_letter(KeyCode::KeyX).as_deref(), Some("x"));
+        assert_eq!(keycode_letter(KeyCode::KeyZ).as_deref(), Some("z"));
+        assert_eq!(keycode_letter(KeyCode::Digit1), None);
+        assert_eq!(keycode_letter(KeyCode::Escape), None);
+    }
+
+    #[test]
+    fn word_range_selects_word_under_index() {
+        assert_eq!(word_range("hello world", 2), (0, 5));
+        assert_eq!(word_range("hello world", 8), (6, 11));
+        assert_eq!(word_range("hello world", 0), (0, 5));
+        assert_eq!(word_range("hello world", 11), (6, 11));
+        // Позиция сразу после слова «прилипает» к нему.
+        assert_eq!(word_range("hello world", 5), (0, 5));
+        assert_eq!(word_range("hello,world", 5), (0, 5));
+        // Изолированный несловесный символ выделяется сам.
+        assert_eq!(word_range("a  b", 2), (2, 3));
+        assert_eq!(word_range("", 0), (0, 0));
+        assert_eq!(word_range("word", 4), (0, 4));
+        assert_eq!(word_range("_x_9", 1), (0, 4));
+    }
+}

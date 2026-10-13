@@ -1,0 +1,11 @@
+<div>Общее состояние окон:</div>
+<div direction="horizontal">
+    <button @click="bump_shared">Общий счётчик: {{ shared.count }}</button>
+    <text v-model="shared.text" placeholder="Общий текст" />
+</div>
+<div>Общий текст: {{ shared.text }}</div>
+<div direction="horizontal">
+    <button @click="Dom::window().map(|window| window.open_modal())">Дочернее окно</button>
+    <button @click="Dom::window().map(|window| window.open_window())">Второе окно</button>
+    <button @click='Dom::window().map(|window| window.open("settings"))'>Настройки</button>
+</div>
