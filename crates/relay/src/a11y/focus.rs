@@ -6,26 +6,14 @@
 //! Узлы с `tabindex="-1"` доступны для программного фокуса, но пропускаются
 //! при обходе.
 
-use crate::vdom::{NodeKind, VElement};
+use crate::vdom::VElement;
 
 use super::roles::parse_bool;
 
-/// Явно ли узел недоступен для взаимодействия.
-pub fn is_disabled(element: &VElement) -> bool {
-    if let Some(value) = element.attr("aria-disabled")
-        && super::roles::parse_bool(value) == Some(true)
-    {
-        return true;
-    }
-    match &element.kind {
-        NodeKind::Button { disabled, .. }
-        | NodeKind::TextField { disabled, .. }
-        | NodeKind::Checkbox { disabled, .. }
-        | NodeKind::Radio { disabled, .. }
-        | NodeKind::Select { disabled, .. } => *disabled,
-        _ => false,
-    }
-}
+/// Отключён ли узел для взаимодействия (флаг `disabled` или `aria-disabled`).
+///
+/// Тонкая обёртка над [`super::is_disabled`] — единым источником истины.
+pub use super::is_disabled;
 
 /// Исключён ли узел (вместе с поддеревом) из дерева доступности.
 pub fn is_hidden(element: &VElement) -> bool {

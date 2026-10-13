@@ -146,13 +146,7 @@ pub fn is_focusable_by_role(role: Role) -> bool {
 }
 
 /// Разбирает булев атрибут (`true`/`false`; пустое значение — `true`).
-pub fn parse_bool(value: &str) -> Option<bool> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "" | "true" | "1" | "yes" => Some(true),
-        "false" | "0" | "no" => Some(false),
-        _ => None,
-    }
-}
+pub use super::parse_bool;
 
 /// Разбирает трёхзначный `aria-checked` (`true`/`false`/`mixed`).
 pub fn parse_tristate(value: &str) -> Option<Toggled> {

@@ -228,6 +228,8 @@ impl WindowState {
         self.sync_focus_after_redraw();
         self.sync_select_after_redraw();
         #[cfg(feature = "a11y-winit")]
+        self.reconcile_a11y_focus();
+        #[cfg(feature = "a11y-winit")]
         self.push_accessibility();
         if damage.is_empty() {
             return Ok(());
@@ -515,6 +517,9 @@ impl WindowState {
     fn click_action(&self) -> Option<ClickAction> {
         let layout = self.layout.as_ref()?;
         let node = layout.hit_interactive(self.cursor)?;
+        if self.node_disabled(node.key) {
+            return None;
+        }
         match &node.kind {
             NodeKind::Button { .. } | NodeKind::Checkbox { .. } | NodeKind::Radio { .. } => {
                 Some(ClickAction::Click(node.key))
@@ -581,6 +586,9 @@ impl WindowState {
     /// Поле ввода под курсором: его ключ, значение и позицию каретки по клику.
     fn field_at_cursor(&self) -> Option<(&'static str, String, usize)> {
         let node = self.layout.as_ref()?.hit_interactive(self.cursor)?;
+        if self.node_disabled(node.key) {
+            return None;
+        }
         let NodeKind::TextField { value, .. } = &node.kind else {
             return None;
         };
@@ -838,17 +846,13 @@ impl WindowState {
             && let Some(direction) = self.resize_direction()
         {
             direction.into()
-        } else if self.layout.as_ref().is_some_and(|layout| {
-            layout.hit_interactive(self.cursor).is_some_and(|node| {
-                matches!(
-                    node.kind,
-                    NodeKind::TextField {
-                        disabled: false,
-                        ..
-                    }
-                )
-            })
-        }) {
+        } else if let Some(node) = self
+            .layout
+            .as_ref()
+            .and_then(|layout| layout.hit_interactive(self.cursor))
+            && !self.node_disabled(node.key)
+            && matches!(node.kind, NodeKind::TextField { .. })
+        {
             CursorIcon::Text
         } else {
             CursorIcon::Default
@@ -1309,13 +1313,18 @@ impl WindowState {
             .layout
             .as_ref()
             .and_then(|layout| layout.hit_interactive(self.cursor))
-            .and_then(|node| match &node.kind {
-                NodeKind::TextField { value, .. } => Some((
-                    node.key,
-                    value.clone(),
-                    self.caret_from_pointer(node, self.cursor),
-                )),
-                _ => None,
+            .and_then(|node| {
+                if self.node_disabled(node.key) {
+                    return None;
+                }
+                match &node.kind {
+                    NodeKind::TextField { value, .. } => Some((
+                        node.key,
+                        value.clone(),
+                        self.caret_from_pointer(node, self.cursor),
+                    )),
+                    _ => None,
+                }
             })
         {
             // Если поле уже в фокусе и текст выделен, ПКМ не сбрасывает
@@ -1432,12 +1441,39 @@ impl WindowState {
         true
     }
 
+    /// Переносит фокус доступности на следующий tabbable-узел, если узел под
+    /// фокусом исчез, стал скрытым или отключённым.
+    ///
+    /// Без этого после повторной отрисовки диктор оставался бы на недоступном
+    /// элементе (например, на кнопке, которая только что стала `disabled`).
+    fn reconcile_a11y_focus(&mut self) {
+        let Some(tree) = self.tree.clone() else {
+            return;
+        };
+        let Some(key) = self.a11y_focus.clone() else {
+            return;
+        };
+        let unavailable = tree.get(&key).is_none_or(|element| {
+            crate::a11y::focus::is_hidden(element) || crate::a11y::is_disabled(element)
+        });
+        if !unavailable {
+            return;
+        }
+        let next = crate::a11y::focus::next_focus(&tree, &key, true)
+            .or_else(|| crate::a11y::focus::first_tabbable(&tree))
+            .map(|element| element.key.to_owned());
+        self.set_a11y_focus(next);
+    }
+
     /// Активирует узел в фокусе клавишами `Enter`/`Space`.
     fn activate_a11y_focus(&mut self) -> bool {
         let key = self.a11y_focus.clone().or_else(|| self.focused.clone());
         let Some(key) = key else {
             return false;
         };
+        if self.node_disabled(&key) {
+            return false;
+        }
         let is_text = self
             .tree
             .as_ref()

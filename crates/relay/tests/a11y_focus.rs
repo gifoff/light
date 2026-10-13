@@ -276,6 +276,44 @@ fn next_focus_moves_forward() {
 }
 
 #[test]
+fn next_focus_skips_disabled_node() {
+    let tree = column("", vec![button("0"), disabled_button("1"), button("2")]);
+    assert_eq!(
+        next_focus(&tree, "0", true).map(|e| e.key),
+        Some("2"),
+        "Tab пропускает отключённый узел"
+    );
+}
+
+#[test]
+fn aria_disabled_node_leaves_focus_order() {
+    let tree = column(
+        "",
+        vec![
+            button("0"),
+            with_attr(button("1"), "aria-disabled", "true"),
+            button("2"),
+        ],
+    );
+    assert_eq!(next_focus(&tree, "0", true).map(|e| e.key), Some("2"));
+    assert!(!is_focusable(&with_attr(
+        button("9"),
+        "aria-disabled",
+        "true"
+    )));
+}
+
+#[test]
+fn next_focus_from_removed_key_starts_at_first() {
+    let tree = column("", vec![button("0"), button("1")]);
+    assert_eq!(
+        next_focus(&tree, "gone", true).map(|e| e.key),
+        Some("0"),
+        "если узел исчез, фокус уходит к первому tabbable"
+    );
+}
+
+#[test]
 fn next_focus_moves_backward() {
     let tree = column("", vec![button("0"), button("1"), button("2")]);
     assert_eq!(next_focus(&tree, "2", false).map(|e| e.key), Some("1"));
