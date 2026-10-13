@@ -21,6 +21,8 @@ use pixels::{Pixels, SurfaceTexture};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, KeyEvent, MouseButton, WindowEvent};
+#[cfg(feature = "a11y-winit")]
+use winit::event_loop::EventLoopProxy;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, ResizeDirection, Window, WindowId};
@@ -44,10 +46,24 @@ const RESIZE_BORDER: f32 = 6.0;
 /// Промежуток, в течение которого два нажатия считаются двойным кликом.
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 
-/// Пользовательское событие цикла: команда окна с адресатом-токеном.
-struct UserEvent {
-    token: WindowToken,
-    command: WindowCommand,
+/// Пользовательское событие цикла: команда окна с адресатом-токеном либо
+/// событие AccessKit (запрос дерева, действие диктора, деактивация).
+enum UserEvent {
+    /// Команда управления окном с адресатом-токеном.
+    Command {
+        token: WindowToken,
+        command: WindowCommand,
+    },
+    /// Событие от адаптера AccessKit.
+    #[cfg(feature = "a11y-winit")]
+    Access(accesskit_winit::Event),
+}
+
+#[cfg(feature = "a11y-winit")]
+impl From<accesskit_winit::Event> for UserEvent {
+    fn from(event: accesskit_winit::Event) -> Self {
+        UserEvent::Access(event)
+    }
 }
 
 /// Запускает цикл событий для компонента.
@@ -62,10 +78,15 @@ pub fn run(component: impl Component + 'static) -> crate::Result<()> {
     let mut builder = EventLoop::<UserEvent>::with_user_event();
     let event_loop = builder.build()?;
     let proxy = event_loop.create_proxy();
+    let sender = proxy.clone();
     set_command_sender(move |token, command| {
-        let _ = proxy.send_event(UserEvent { token, command });
+        let _ = sender.send_event(UserEvent::Command { token, command });
     });
     let mut app = App::new(Box::new(component), font);
+    #[cfg(feature = "a11y-winit")]
+    {
+        app.proxy = Some(proxy);
+    }
     event_loop.run_app(&mut app)?;
     match app.error {
         Some(error) => Err(error),
@@ -156,6 +177,12 @@ struct WindowState {
     last_click: Option<(Instant, Point)>,
     open_select: Option<&'static str>,
     select_hover: Option<usize>,
+    /// Адаптер AccessKit этого окна (если фича и поддержка включены).
+    #[cfg(feature = "a11y-winit")]
+    adapter: Option<accesskit_winit::Adapter>,
+    /// Ключ узла, получившего фокус через дерево доступности или `Tab`.
+    #[cfg(feature = "a11y-winit")]
+    a11y_focus: Option<String>,
 }
 
 impl WindowState {
@@ -195,6 +222,8 @@ impl WindowState {
 
         self.sync_focus_after_redraw();
         self.sync_select_after_redraw();
+        #[cfg(feature = "a11y-winit")]
+        self.push_accessibility();
         if damage.is_empty() {
             return Ok(());
         }
@@ -1034,6 +1063,14 @@ impl WindowState {
         let key = self.focused.clone().unwrap_or_default();
         match event.state {
             ElementState::Pressed => {
+                #[cfg(feature = "a11y-winit")]
+                {
+                    let handled = self.dispatch(&key, DomEvent::Keydown(info.clone()));
+                    if !handled && self.handle_builtin_key(event) {
+                        return;
+                    }
+                }
+                #[cfg(not(feature = "a11y-winit"))]
                 self.dispatch(&key, DomEvent::Keydown(info));
             }
             ElementState::Released => {
@@ -1207,6 +1244,138 @@ impl WindowState {
     }
 }
 
+/// Интеграция с AccessKit: дерево доступности, действия диктора и клавиатура.
+#[cfg(feature = "a11y-winit")]
+impl WindowState {
+    /// Отправляет текущее дерево доступности адаптеру (если тот активен).
+    fn push_accessibility(&mut self) {
+        let Some(adapter) = self.adapter.as_mut() else {
+            return;
+        };
+        let Some(tree) = self.tree.clone() else {
+            return;
+        };
+        let focus = self.a11y_focus.clone().or_else(|| self.focused.clone());
+        let _ = crate::a11y::take_announcements();
+        adapter.update_if_active(|| crate::a11y::tree::build_update(&tree, focus.as_deref()));
+    }
+
+    /// Выполняет действие, запрошенное вспомогательной технологией.
+    fn handle_action_request(&mut self, request: &accesskit::ActionRequest) {
+        let node = request.target_node;
+        let Some(translated) = crate::a11y::actions::translate(request) else {
+            return;
+        };
+        let key = self
+            .tree
+            .as_ref()
+            .and_then(|tree| crate::a11y::tree::find_key_for_node_id(tree, node))
+            .map(str::to_owned);
+        match translated {
+            crate::a11y::actions::A11yRequest::Click => {
+                if let Some(key) = &key {
+                    self.dispatch(key, DomEvent::Click);
+                }
+            }
+            crate::a11y::actions::A11yRequest::SetValue(value) => {
+                if let Some(key) = &key {
+                    self.dispatch(key, DomEvent::TextChange(value));
+                }
+            }
+            crate::a11y::actions::A11yRequest::Focus => self.set_a11y_focus(key),
+            crate::a11y::actions::A11yRequest::Blur => self.set_a11y_focus(None),
+            crate::a11y::actions::A11yRequest::Increment
+            | crate::a11y::actions::A11yRequest::Decrement
+            | crate::a11y::actions::A11yRequest::Expand
+            | crate::a11y::actions::A11yRequest::Collapse => {}
+        }
+        self.invalidate();
+    }
+
+    /// Фиксирует фокус доступности и синхронизирует его с полем ввода.
+    fn set_a11y_focus(&mut self, key: Option<String>) {
+        let is_text = key.as_deref().is_some_and(|key| {
+            self.tree
+                .as_ref()
+                .and_then(|tree| tree.get(key))
+                .is_some_and(|element| {
+                    matches!(
+                        element.kind,
+                        NodeKind::TextField {
+                            disabled: false,
+                            ..
+                        }
+                    )
+                })
+        });
+        if is_text {
+            self.focused = key.clone();
+        } else {
+            self.focused = None;
+        }
+        self.a11y_focus = key.clone();
+        crate::a11y::set_focused_node(key.as_deref().map(crate::a11y::tree::node_id_for_key));
+    }
+
+    /// Переводит фокус на следующий либо предыдущий фокусируемый узел.
+    fn move_a11y_focus(&mut self, forward: bool) -> bool {
+        let Some(tree) = self.tree.clone() else {
+            return false;
+        };
+        let current = self.a11y_focus.clone().or_else(|| self.focused.clone());
+        let next = match &current {
+            Some(key) => crate::a11y::focus::next_focus(&tree, key, forward),
+            None => crate::a11y::focus::first_tabbable(&tree),
+        };
+        let Some(next) = next else {
+            return false;
+        };
+        self.set_a11y_focus(Some(next.key.to_owned()));
+        self.invalidate();
+        true
+    }
+
+    /// Активирует узел в фокусе клавишами `Enter`/`Space`.
+    fn activate_a11y_focus(&mut self) -> bool {
+        let key = self.a11y_focus.clone().or_else(|| self.focused.clone());
+        let Some(key) = key else {
+            return false;
+        };
+        let is_text = self
+            .tree
+            .as_ref()
+            .and_then(|tree| tree.get(&key))
+            .is_some_and(|element| matches!(element.kind, NodeKind::TextField { .. }));
+        if is_text {
+            return false;
+        }
+        self.dispatch(&key, DomEvent::Click);
+        self.invalidate();
+        true
+    }
+
+    /// Обрабатывает встроенные клавиатурные сокращения (`Tab`, `Enter`, …).
+    ///
+    /// Возвращает `true`, если клавиша обработана и не должна попадать
+    /// в логику редактирования текста.
+    fn handle_builtin_key(&mut self, event: &KeyEvent) -> bool {
+        if !crate::a11y::is_enabled() {
+            return false;
+        }
+        let info = key_info(event, self.modifiers);
+        let Some(action) = crate::a11y::keyboard::builtin_action(&info.key, info.shift) else {
+            return false;
+        };
+        use crate::a11y::keyboard::KeyAction;
+        match action {
+            KeyAction::NextFocus => self.move_a11y_focus(true),
+            KeyAction::PrevFocus => self.move_a11y_focus(false),
+            KeyAction::Activate => self.activate_a11y_focus(),
+            KeyAction::Escape | KeyAction::MovePrev | KeyAction::MoveNext => false,
+        }
+    }
+}
+
 /// Буква для Ctrl-комбинации.
 ///
 /// Сначала берётся **физическая** клавиша (`Ctrl`-сочетания не должны зависеть
@@ -1307,6 +1476,9 @@ struct App {
     font: Arc<FontMetrics>,
     error: Option<Error>,
     redraw: Arc<Mutex<Vec<Arc<Window>>>>,
+    /// Прокси цикла событий для доставки событий AccessKit.
+    #[cfg(feature = "a11y-winit")]
+    proxy: Option<EventLoopProxy<UserEvent>>,
 }
 
 impl App {
@@ -1329,6 +1501,8 @@ impl App {
             font,
             error: None,
             redraw,
+            #[cfg(feature = "a11y-winit")]
+            proxy: None,
         }
     }
 
@@ -1436,13 +1610,15 @@ impl App {
         parent: Option<WindowToken>,
     ) -> crate::Result<WindowToken> {
         let config = component.window_config().unwrap_or_default();
+        // Окно создаётся скрытым: адаптер AccessKit обязан быть создан до
+        // первого показа. Видимость выставляется ниже, после адаптера.
         let attributes = Window::default_attributes()
             .with_title(&config.title)
             .with_inner_size(LogicalSize::new(config.width, config.height))
             .with_decorations(false)
             .with_transparent(config.transparent)
             .with_resizable(config.resizable)
-            .with_visible(config.visible);
+            .with_visible(false);
         let window = Arc::new(event_loop.create_window(attributes)?);
         if config.min_width.is_some() || config.min_height.is_some() {
             window.set_min_inner_size(Some(LogicalSize::new(
@@ -1459,9 +1635,18 @@ impl App {
         let surface_texture = SurfaceTexture::new(width, height, Arc::clone(&window));
         let surface = Pixels::new(width, height, surface_texture)?;
 
+        #[cfg(feature = "a11y-winit")]
+        let adapter = match self.proxy.clone() {
+            Some(proxy) if crate::a11y::is_enabled() => Some(
+                accesskit_winit::Adapter::with_event_loop_proxy(event_loop, &window, proxy),
+            ),
+            _ => None,
+        };
+
         let token = self.next_token;
         self.next_token += 1;
         let id = window.id();
+        let visible = config.visible;
         if let Ok(mut list) = self.redraw.lock() {
             list.push(Arc::clone(&window));
         }
@@ -1500,6 +1685,10 @@ impl App {
             last_click: None,
             open_select: None,
             select_hover: None,
+            #[cfg(feature = "a11y-winit")]
+            adapter,
+            #[cfg(feature = "a11y-winit")]
+            a11y_focus: None,
         };
         self.tokens.insert(token, id);
         self.windows.insert(id, state);
@@ -1510,6 +1699,9 @@ impl App {
             parent_state.invalidate();
         }
         if let Some(window) = self.windows.get(&id) {
+            if visible {
+                window.window.set_visible(true);
+            }
             window.window.request_redraw();
         }
         Ok(token)
@@ -1609,6 +1801,23 @@ impl App {
             WindowCommand::Hide => window.set_visible(false),
         }
     }
+    /// Реагирует на событие адаптера AccessKit: отдаёт начальное дерево,
+    /// выполняет запрошенное диктором действие или игнорирует деактивацию.
+    #[cfg(feature = "a11y-winit")]
+    fn on_access_event(&mut self, event: accesskit_winit::Event) {
+        let Some(state) = self.windows.get_mut(&event.window_id) else {
+            return;
+        };
+        match event.window_event {
+            accesskit_winit::WindowEvent::InitialTreeRequested => {
+                state.push_accessibility();
+            }
+            accesskit_winit::WindowEvent::ActionRequested(request) => {
+                state.handle_action_request(&request);
+            }
+            accesskit_winit::WindowEvent::AccessibilityDeactivated => {}
+        }
+    }
 }
 
 impl ApplicationHandler<UserEvent> for App {
@@ -1627,7 +1836,14 @@ impl ApplicationHandler<UserEvent> for App {
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
-        let UserEvent { token, command } = event;
+        let (token, command) = match event {
+            UserEvent::Command { token, command } => (token, command),
+            #[cfg(feature = "a11y-winit")]
+            UserEvent::Access(event) => {
+                self.on_access_event(event);
+                return;
+            }
+        };
         match command {
             WindowCommand::OpenModal => self.open_modal(event_loop, token),
             WindowCommand::OpenWindow => self.open_window(event_loop, token),
@@ -1648,6 +1864,12 @@ impl ApplicationHandler<UserEvent> for App {
         let Some(token) = self.windows.get(&id).map(|window| window.token) else {
             return;
         };
+        #[cfg(feature = "a11y-winit")]
+        if let Some(state) = self.windows.get_mut(&id)
+            && let Some(adapter) = state.adapter.as_mut()
+        {
+            adapter.process_event(&state.window, &event);
+        }
         if let WindowEvent::CloseRequested = event {
             self.close_window(event_loop, id);
             return;

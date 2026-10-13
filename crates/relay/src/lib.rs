@@ -48,6 +48,9 @@
 //!     }
 //! }
 //!
+//! # #[cfg(not(feature = "window"))]
+//! # fn main() {}
+//! # #[cfg(feature = "window")]
 //! fn main() -> relay::Result<()> {
 //!     relay::run(App::new())
 //! }
