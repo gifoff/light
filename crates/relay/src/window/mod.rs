@@ -35,8 +35,8 @@ use crate::layout::{
 };
 use crate::reactive::set_repaint_requester;
 use crate::vdom::{
-    ButtonType, Event as DomEvent, KeyInfo, MouseButton as DomButton, NodeKind, Resize, VElement,
-    diff,
+    ButtonType, Cursor, Event as DomEvent, KeyInfo, MouseButton as DomButton, NodeKind, Resize,
+    VElement, diff,
 };
 
 use font::FontMetrics;
@@ -839,23 +839,19 @@ impl WindowState {
     }
 
     /// Устанавливает курсор окна в зависимости от того, где он находится:
-    /// на области изменения размера — стрелки изменения размера, над полем
-    /// ввода — текстовый курсор, в остальных местах — стандартный.
+    /// на области изменения размера — стрелки изменения размера, иначе —
+    /// курсор ближайшего подходящего узла под указателем.
     fn update_cursor(&mut self) {
         let icon = if self.config.resizable
             && let Some(direction) = self.resize_direction()
         {
             direction.into()
-        } else if let Some(node) = self
-            .layout
-            .as_ref()
-            .and_then(|layout| layout.hit_interactive(self.cursor))
-            && !self.node_disabled(node.key)
-            && matches!(node.kind, NodeKind::TextField { .. })
-        {
-            CursorIcon::Text
         } else {
-            CursorIcon::Default
+            let cursor = match (self.layout.as_ref(), self.tree.as_deref()) {
+                (Some(layout), Some(tree)) => resolve_cursor(layout, tree, self.cursor),
+                _ => Cursor::Default,
+            };
+            cursor_icon(cursor)
         };
         if self.cursor_icon != Some(icon) {
             self.cursor_icon = Some(icon);
@@ -2201,6 +2197,88 @@ fn word_range(text: &str, index: usize) -> (usize, usize) {
         end += 1;
     }
     (start, end)
+}
+
+/// Преобразует курсор Relay в иконку курсора окна.
+fn cursor_icon(cursor: Cursor) -> CursorIcon {
+    match cursor {
+        Cursor::Default => CursorIcon::Default,
+        Cursor::Pointer => CursorIcon::Pointer,
+        Cursor::Text => CursorIcon::Text,
+        Cursor::NotAllowed => CursorIcon::NotAllowed,
+        Cursor::Wait => CursorIcon::Wait,
+        Cursor::Progress => CursorIcon::Progress,
+        Cursor::Help => CursorIcon::Help,
+        Cursor::Crosshair => CursorIcon::Crosshair,
+        Cursor::Move => CursorIcon::Move,
+        Cursor::Grab => CursorIcon::Grab,
+        Cursor::Grabbing => CursorIcon::Grabbing,
+        Cursor::EwResize => CursorIcon::EwResize,
+        Cursor::NsResize => CursorIcon::NsResize,
+        Cursor::NeswResize => CursorIcon::NeswResize,
+        Cursor::NwseResize => CursorIcon::NwseResize,
+    }
+}
+
+/// Курсор, который узел задаёт сам (`cursor="…"`), либо `None`.
+fn explicit_cursor(element: &VElement) -> Option<Cursor> {
+    element.attr("cursor").and_then(Cursor::from_name)
+}
+
+/// Похож ли узел на ссылку: `role="link"` или HTML-тег `a`.
+fn is_link(element: &VElement) -> bool {
+    element.tag.eq_ignore_ascii_case("a")
+        || element
+            .attr("role")
+            .is_some_and(|role| role.eq_ignore_ascii_case("link"))
+}
+
+/// Курсор по умолчанию для узла, если атрибут `cursor` не задан.
+///
+/// Отключённые элементы показывают `not-allowed`, ссылки и элементы управления
+/// — `pointer`, поля ввода — `text`, остальные — системный курсор.
+pub fn default_cursor_for(element: &VElement) -> Cursor {
+    if crate::a11y::is_disabled(element) {
+        return Cursor::NotAllowed;
+    }
+    if is_link(element) {
+        return Cursor::Pointer;
+    }
+    match &element.kind {
+        NodeKind::Button { .. }
+        | NodeKind::Checkbox { .. }
+        | NodeKind::Radio { .. }
+        | NodeKind::Select { .. } => Cursor::Pointer,
+        NodeKind::TextField { .. } => Cursor::Text,
+        _ => Cursor::Default,
+    }
+}
+
+/// Курсор для узла: явный `cursor`, иначе значение по роли.
+pub fn cursor_for(element: &VElement) -> Cursor {
+    explicit_cursor(element).unwrap_or_else(|| default_cursor_for(element))
+}
+
+/// Определяет курсор для точки окна.
+///
+/// Узлы перебираются от самого глубокого к корню (`hit_stack`), поэтому
+/// значение может «всплывать»: если у дочернего узла нет собственного курсора
+/// (он возвращает `Default`), берётся курсор ближайшего подходящего родителя.
+/// Явно заданный `cursor="default"` прекращает всплытие.
+pub fn resolve_cursor(layout: &Layout, tree: &VElement, point: Point) -> Cursor {
+    for node in layout.hit_stack(point) {
+        let Some(element) = tree.get(node.key) else {
+            continue;
+        };
+        if let Some(cursor) = explicit_cursor(element) {
+            return cursor;
+        }
+        let cursor = default_cursor_for(element);
+        if cursor != Cursor::Default {
+            return cursor;
+        }
+    }
+    Cursor::Default
 }
 
 #[cfg(test)]
