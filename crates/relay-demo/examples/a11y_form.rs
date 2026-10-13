@@ -1,7 +1,10 @@
-//! Пример доступной формы: заголовок `h1`, поля с `aria-label` и `required`,
-//! флажок и регион статуса `role="status"` с `aria-live="polite"`.
+//! Пример доступной формы: заголовок `h1`, поля с `aria-label`, `required`
+//! и `:validator`, флажок и регион статуса `role="status"` с
+//! `aria-live="polite"`.
 //!
-//! После отправки текст статуса меняется, а соответствующий фрагмент дерева
+//! Проверку выполняет рантайм при нажатии кнопки отправки: невалидные поля
+//! подсвечиваются, получают `aria-description` и озвучиваются диктором. При
+//! успехе меняется текст статуса, а соответствующий фрагмент дерева
 //! доступности помечается как живой регион — скринридер объявит его сам.
 
 use relay::prelude::*;
@@ -24,14 +27,19 @@ impl A11yForm {
     }
 
     /// Проверяет обязательные поля и пишет результат в живой регион.
-    fn submit(&self) {
-        if self.name().trim().is_empty() {
-            self.set_message("Введите имя.".to_owned());
-        } else if self.email().trim().is_empty() {
-            self.set_message("Введите адрес электронной почты.".to_owned());
+    /// Проверка формата адреса (`:validator`). Пустое значение допустимо —
+    /// его отсекает атрибут `required`.
+    fn validate_email(&self, value: &str) -> Result<(), String> {
+        if value.trim().is_empty() || value.contains('@') {
+            Ok(())
         } else {
-            self.set_message(format!("Спасибо, {}! Форма отправлена.", self.name()));
+            Err("Адрес должен содержать @.".to_owned())
         }
+    }
+
+    /// Вызывается только после успешной проверки `required` и `:validator`.
+    fn submit(&self) {
+        self.set_message(format!("Спасибо, {}! Форма отправлена.", self.name()));
     }
 }
 
