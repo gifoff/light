@@ -1482,6 +1482,7 @@ fn style_token(
         required: #required,
         invalid: false,
         required_indicator: #required_indicator,
+        ..::core::default::Default::default()
     }))
 }
 
