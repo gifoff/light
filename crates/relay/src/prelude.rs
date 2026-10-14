@@ -5,7 +5,7 @@ pub use crate::component::{Component, WindowConfig};
 pub use crate::dom::Dom;
 pub use crate::reactive::{Property, Proxy, ProxyState, Watcher, watch};
 pub use crate::vdom::{
-    Cursor, Event, KeyInfo, MouseButton, NodeKind, SelectOption, VElement, VNode, VWindow,
+    Cursor, Edges, Event, KeyInfo, MouseButton, NodeKind, SelectOption, VElement, VNode, VWindow,
 };
 pub use crate::{proxy, template};
 

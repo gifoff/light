@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use relay::layout::{Layout, Point, Rect, SPACING, TextMetrics, damage_regions, snapshot_rects};
-use relay::vdom::{Align, NodeKind, Offset, Size, Style, VElement, diff};
+use relay::vdom::{Align, Edges, NodeKind, Offset, Size, Style, VElement, diff};
 
 /// Метрики заглушка: знак шириной 8px, высота строки 16px.
 struct StubMetrics;
@@ -69,7 +69,7 @@ fn column_stacks_children_with_spacing_and_zero_default_padding() {
 fn padding_and_margin_offset_content() {
     let mut root = column("", vec![text("0", "АБ")]);
     root.style = Style {
-        padding: 10.0,
+        padding: Edges::all(10.0),
         ..Style::default()
     };
     let layout = build(&root);
@@ -79,12 +79,101 @@ fn padding_and_margin_offset_content() {
 
     let mut root = column("", vec![text("0", "АБ")]);
     root.style = Style {
-        margin: 5.0,
+        margin: Edges::all(5.0),
         ..Style::default()
     };
     let layout = build(&root);
     let child = layout.rect_of("0").expect("дочерний узел");
     assert_eq!(child, Rect::new(5.0, 5.0, 16.0, 16.0), "margin сдвигает");
+}
+
+#[test]
+fn asymmetric_padding_offsets_each_side() {
+    let mut root = column("", vec![text("0", "АБ")]);
+    root.style = Style {
+        padding: Edges {
+            top: 1.0,
+            right: 2.0,
+            bottom: 3.0,
+            left: 4.0,
+        },
+        ..Style::default()
+    };
+    let layout = build(&root);
+    assert_eq!(
+        layout.rect_of("0"),
+        Some(Rect::new(4.0, 1.0, 16.0, 16.0)),
+        "ребёнок смещён на padding-left/padding-top"
+    );
+}
+
+#[test]
+fn asymmetric_margin_offsets_and_steps_siblings() {
+    let mut first = text("0", "АБ");
+    first.style = Style {
+        margin: Edges {
+            top: 2.0,
+            right: 8.0,
+            bottom: 4.0,
+            left: 6.0,
+        },
+        ..Style::default()
+    };
+    let root = column("", vec![first, text("1", "АБ")]);
+    let layout = build(&root);
+    assert_eq!(
+        layout.rect_of("0"),
+        Some(Rect::new(6.0, 2.0, 16.0, 16.0)),
+        "margin-left/margin-top смещают узел"
+    );
+    // Внешняя высота первого: 16 + top 2 + bottom 4 = 22, плюс SPACING 6 → 28.
+    assert_eq!(
+        layout.rect_of("1"),
+        Some(Rect::new(0.0, 28.0, 16.0, 16.0)),
+        "шаг учитывает margin-bottom соседа"
+    );
+}
+
+#[test]
+fn container_height_includes_asymmetric_padding() {
+    let mut box_node = column("box", vec![text("0", "АБ")]);
+    box_node.style = Style {
+        width: Size::Px(200.0),
+        padding: Edges {
+            top: 5.0,
+            right: 0.0,
+            bottom: 7.0,
+            left: 0.0,
+        },
+        ..Style::default()
+    };
+    let root = VElement::container("win", NodeKind::Window, vec![box_node]);
+    let layout = Layout::build(&root, (400.0, 300.0), &StubMetrics);
+    // Высота контейнера = текст 16 + top 5 + bottom 7 = 28.
+    assert_eq!(layout.rect_of("box").unwrap().h, 28.0);
+    // Ребёнок смещён вниз на padding-top.
+    assert_eq!(layout.rect_of("0").unwrap().y, 5.0);
+}
+
+#[test]
+fn button_per_side_padding_disables_builtin() {
+    let mut btn = button("b", "АБ", false);
+    btn.style = Style {
+        padding: Edges {
+            left: 5.0,
+            ..Edges::ZERO
+        },
+        ..Style::default()
+    };
+    let root = column("", vec![btn]);
+    let layout = build(&root);
+    // Встроенные отступы 14/9 отключены: ширина = 16 + 5 (слева) = 21,
+    // высота = max(16, BUTTON_MIN_H 34) = 34.
+    assert_eq!(
+        layout.rect_of("b"),
+        Some(Rect::new(0.0, 0.0, 21.0, 34.0)),
+        "построчный padding отключает встроенные отступы кнопки"
+    );
 }
 
 #[test]
@@ -208,12 +297,12 @@ fn nested_auto_containers_stretch_recursively() {
     };
     let mut inner = column("0.0", vec![leaf]);
     inner.style = Style {
-        padding: 10.0,
+        padding: Edges::all(10.0),
         ..Style::default()
     };
     let mut outer = column("0", vec![inner]);
     outer.style = Style {
-        padding: 10.0,
+        padding: Edges::all(10.0),
         ..Style::default()
     };
     let root = column("", vec![outer]);
@@ -234,7 +323,7 @@ fn percent_width_of_auto_vertical_container_resolves_to_parent_content() {
     };
     let mut form = column("form", vec![field]);
     form.style = Style {
-        padding: 12.0,
+        padding: Edges::all(12.0),
         ..Style::default()
     };
     let root = column("", vec![form]);
@@ -262,13 +351,13 @@ fn percent_width_nested_three_levels() {
     let mut level2 = column("0.0", vec![level3]);
     level2.style = Style {
         width: Size::Percent(100.0),
-        padding: 10.0,
+        padding: Edges::all(10.0),
         ..Style::default()
     };
     let mut level1 = column("0", vec![level2]);
     level1.style = Style {
         width: Size::Px(400.0),
-        padding: 10.0,
+        padding: Edges::all(10.0),
         ..Style::default()
     };
     let layout = build(&level1);
@@ -360,7 +449,7 @@ fn percentage_size_is_relative_to_parent_content_box() {
     frame.style = Style {
         width: Size::Px(200.0),
         height: Size::Px(100.0),
-        padding: 10.0,
+        padding: Edges::all(10.0),
         ..Style::default()
     };
     let root = column("", vec![frame]);
@@ -444,7 +533,7 @@ fn percentage_position_offset_is_relative_to_parent() {
 fn bare_text_gets_layout_rect() {
     let mut root = column("", vec![text("0", "АБВ")]);
     root.style = Style {
-        padding: 8.0,
+        padding: Edges::all(8.0),
         ..Style::default()
     };
     let layout = build(&root);
@@ -707,7 +796,7 @@ fn titlebar_padding_offsets_content_box() {
     tb.style = Style {
         width: Size::Percent(100.0),
         height: Size::Px(40.0),
-        padding: 6.0,
+        padding: Edges::all(6.0),
         ..Style::default()
     };
     let root = VElement::container("win", NodeKind::Window, vec![tb]);
@@ -845,7 +934,7 @@ fn nested_percent_recalculates_on_resize() {
     let mut outer = column("outer", vec![inner]);
     outer.style = Style {
         width: Size::Percent(100.0),
-        padding: 10.0,
+        padding: Edges::all(10.0),
         ..Style::default()
     };
     // 400 → content родителя 380 → 50% = 190

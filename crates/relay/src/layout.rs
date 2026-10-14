@@ -6,7 +6,7 @@ use std::collections::{BTreeSet, HashMap};
 #[cfg(debug_assertions)]
 use std::env;
 
-use crate::vdom::{Align, NodeKind, Offset, Resize, Size, Style, VElement};
+use crate::vdom::{Align, Edges, NodeKind, Offset, Resize, Size, Style, VElement};
 
 /// Шрифт интерфейса по умолчанию (px).
 pub const FONT_SIZE: f32 = 16.0;
@@ -115,29 +115,40 @@ pub struct ContentBox {
 }
 
 impl ContentBox {
-    /// Контентная область элемента с заданным прямоугольником и внутренним
-    /// отступом (`padding` + толщина рамки).
-    pub fn from_rect(rect: Rect, inset: f32) -> Self {
+    /// Контентная область элемента с заданным прямоугольником и внутренними
+    /// отступами по каждой стороне (`padding-*` + толщина рамки).
+    pub fn from_rect(rect: Rect, inset: Edges) -> Self {
         Self {
-            left: rect.x + inset,
-            top: rect.y + inset,
-            width: (rect.w - 2.0 * inset).max(0.0),
-            height: (rect.h - 2.0 * inset).max(0.0),
+            left: rect.x + inset.left,
+            top: rect.y + inset.top,
+            width: (rect.w - inset.left - inset.right).max(0.0),
+            height: (rect.h - inset.top - inset.bottom).max(0.0),
         }
     }
 }
 
-/// Встроенные (по умолчанию) отступы кнопки по осям.
+/// Встроенные (по умолчанию) отступы кнопки по сторонам.
 ///
 /// Значения [`BUTTON_PAD_X`]/[`BUTTON_PAD_Y`] действуют, пока пользователь не
-/// задал `padding` (статически, через `:padding` или программно). Явный
-/// `padding` переопределяет встроенные отступы — тогда возвращается `(0, 0)`:
-/// собственный `padding` уже учтён в [`Style::inset`].
-fn button_extra_padding(vnode: &VElement, style: &Style) -> (f32, f32) {
-    if vnode.attr("padding").is_some() || style.padding != 0.0 {
-        (0.0, 0.0)
+/// задал какой-либо `padding`/`padding-*` (статически, через `:`-привязку или
+/// программно). Явный отступ переопределяет встроенные — тогда возвращается
+/// нулевой набор: собственный `padding` уже учтён в [`Style::inset`].
+fn button_extra_padding(vnode: &VElement, style: &Style) -> Edges {
+    let explicit = vnode.attr("padding").is_some()
+        || vnode.attr("padding-top").is_some()
+        || vnode.attr("padding-right").is_some()
+        || vnode.attr("padding-bottom").is_some()
+        || vnode.attr("padding-left").is_some()
+        || !style.padding.is_zero();
+    if explicit {
+        Edges::ZERO
     } else {
-        (BUTTON_PAD_X, BUTTON_PAD_Y)
+        Edges {
+            top: BUTTON_PAD_Y,
+            right: BUTTON_PAD_X,
+            bottom: BUTTON_PAD_Y,
+            left: BUTTON_PAD_X,
+        }
     }
 }
 
@@ -411,15 +422,16 @@ impl Layout {
         }
         let inset = style.inset();
         let margin = style.margin;
-        let flow_x = origin.x + margin;
-        let flow_y = origin.y + margin;
+        let flow_x = origin.x + margin.left;
+        let flow_y = origin.y + margin.top;
         let font_size = style.font_size.unwrap_or(inherited.size);
         let font_color = style.font_color.or(inherited.color);
         // Проценты размера отсчитываются от контентной области родителя.
         let avail_w = flow.content.width;
         let avail_h = flow.content.height;
         // Полный шаг узла по осям (включая внешние отступы) — для родителей.
-        let step = 2.0 * margin;
+        let step_w = margin.left + margin.right;
+        let step_h = margin.top + margin.bottom;
         // Поддерево узла занимает в плоском списке диапазон `[start, len)`.
         let start = self.nodes.len();
         // Корень и окно занимают всю доступную область. Контейнер с `Auto`
@@ -457,10 +469,10 @@ impl Layout {
             || (matches!(style.height, Size::Auto) && stretch_h);
         // Контентная область, которую узел отдаёт детям под размеры-проценты.
         let child_content = ContentBox {
-            left: flow_x + inset,
-            top: flow_y + inset,
-            width: (definite_w - 2.0 * inset).max(0.0),
-            height: (definite_h - 2.0 * inset).max(0.0),
+            left: flow_x + inset.left,
+            top: flow_y + inset.top,
+            width: (definite_w - inset.left - inset.right).max(0.0),
+            height: (definite_h - inset.top - inset.bottom).max(0.0),
         };
         // Ось, по которой узел растягивает своих детей (если размер известен).
         let child_stretch = match vnode.kind {
@@ -478,8 +490,8 @@ impl Layout {
         let (w, h) = match &vnode.kind {
             NodeKind::Text { content } => {
                 let (content_w, content_h) = metrics.measure(content, font_size);
-                let w = style.resolve_width(content_w + 2.0 * inset, avail_w);
-                let h = style.resolve_height(content_h + 2.0 * inset, avail_h);
+                let w = style.resolve_width(content_w + inset.horizontal(), avail_w);
+                let h = style.resolve_height(content_h + inset.vertical(), avail_h);
                 self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
                 (w, h)
             }
@@ -488,11 +500,12 @@ impl Layout {
                 // Внутренняя область кнопки: собственная рамка и `padding`.
                 // Встроенные отступы кнопки (14/9) — значения по умолчанию,
                 // которые переопределяет заданный пользователем `padding`.
-                let (extra_x, extra_y) = button_extra_padding(vnode, &style);
-                let inner_left = flow_x + inset + extra_x;
-                let inner_top = flow_y + inset + extra_y;
-                let inner_w = (definite_w - 2.0 * (inset + extra_x)).max(0.0);
-                let inner_h = (definite_h - 2.0 * (inset + extra_y)).max(0.0);
+                let extra = button_extra_padding(vnode, &style);
+                let btn_inset = inset.plus(extra);
+                let inner_left = flow_x + btn_inset.left;
+                let inner_top = flow_y + btn_inset.top;
+                let inner_w = (definite_w - btn_inset.horizontal()).max(0.0);
+                let inner_h = (definite_h - btn_inset.vertical()).max(0.0);
                 let content = ContentBox {
                     left: inner_left,
                     top: inner_top,
@@ -531,9 +544,9 @@ impl Layout {
                 if any_child {
                     content_w = cursor_x - inner_left - SPACING;
                 }
-                let w = style.resolve_width(content_w + 2.0 * (inset + extra_x), avail_w);
+                let w = style.resolve_width(content_w + btn_inset.horizontal(), avail_w);
                 let h = style.resolve_height(
-                    (content_h + 2.0 * (inset + extra_y)).max(BUTTON_MIN_H),
+                    (content_h + btn_inset.vertical()).max(BUTTON_MIN_H),
                     avail_h,
                 );
                 let node = &mut self.nodes[index];
@@ -543,10 +556,10 @@ impl Layout {
                 // Содержимое кнопки центрируется по обеим осям (группа целиком).
                 if any_child {
                     let pad_box = ContentBox {
-                        left: node.rect.x + inset + extra_x,
-                        top: node.rect.y + inset + extra_y,
-                        width: (node.rect.w - 2.0 * (inset + extra_x)).max(0.0),
-                        height: (node.rect.h - 2.0 * (inset + extra_y)).max(0.0),
+                        left: node.rect.x + btn_inset.left,
+                        top: node.rect.y + btn_inset.top,
+                        width: (node.rect.w - btn_inset.horizontal()).max(0.0),
+                        height: (node.rect.h - btn_inset.vertical()).max(0.0),
                     };
                     let first = self.nodes[index].children[0];
                     let dx = pad_box.left + ((pad_box.width - content_w) / 2.0).max(0.0)
@@ -568,8 +581,8 @@ impl Layout {
                 } else {
                     FIELD_MIN_H
                 };
-                let w = style.resolve_width(FIELD_WIDTH + 2.0 * inset, avail_w);
-                let h = style.resolve_height(default_h + 2.0 * inset, avail_h);
+                let w = style.resolve_width(FIELD_WIDTH + inset.horizontal(), avail_w);
+                let h = style.resolve_height(default_h + inset.vertical(), avail_h);
                 self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
                 (w, h)
             }
@@ -577,8 +590,8 @@ impl Layout {
                 let (label_w, label_h) = metrics.measure(label, font_size);
                 let content_w = CHECKBOX_BOX + CHECKBOX_GAP + label_w;
                 let content_h = CHECKBOX_BOX.max(label_h);
-                let w = style.resolve_width(content_w + 2.0 * inset, avail_w);
-                let h = style.resolve_height(content_h + 2.0 * inset, avail_h);
+                let w = style.resolve_width(content_w + inset.horizontal(), avail_w);
+                let h = style.resolve_height(content_h + inset.vertical(), avail_h);
                 self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
                 (w, h)
             }
@@ -588,8 +601,8 @@ impl Layout {
                     .map(|option| metrics.measure(&option.label, font_size).0)
                     .fold(0.0_f32, f32::max);
                 let content_w = SELECT_WIDTH.max(widest + 2.0 * SELECT_PAD_X + CHECKBOX_BOX);
-                let w = style.resolve_width(content_w + 2.0 * inset, avail_w);
-                let h = style.resolve_height(FIELD_MIN_H + 2.0 * inset, avail_h);
+                let w = style.resolve_width(content_w + inset.horizontal(), avail_w);
+                let h = style.resolve_height(FIELD_MIN_H + inset.vertical(), avail_h);
                 self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
                 (w, h)
             }
@@ -637,17 +650,17 @@ impl Layout {
                 } else if stretch_w {
                     (
                         style.resolve_width(avail_w, avail_w),
-                        style.resolve_height(content_h + 2.0 * inset, avail_h),
+                        style.resolve_height(content_h + inset.vertical(), avail_h),
                     )
                 } else if stretch_h {
                     (
-                        style.resolve_width(content_w + 2.0 * inset, avail_w),
+                        style.resolve_width(content_w + inset.horizontal(), avail_w),
                         style.resolve_height(avail_h, avail_h),
                     )
                 } else {
                     (
-                        style.resolve_width(content_w + 2.0 * inset, avail_w),
-                        style.resolve_height(content_h + 2.0 * inset, avail_h),
+                        style.resolve_width(content_w + inset.horizontal(), avail_w),
+                        style.resolve_height(content_h + inset.vertical(), avail_h),
                     )
                 };
                 let node = &mut self.nodes[index];
@@ -667,7 +680,7 @@ impl Layout {
         {
             self.nodes[start].style.font_color = Some(color);
         }
-        (w + step, h + step)
+        (w + step_w, h + step_h)
     }
 
     /// Выравнивает прямых детей узла `index` по `position-x`/`position-y` и

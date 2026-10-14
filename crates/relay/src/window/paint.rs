@@ -395,7 +395,7 @@ pub fn render(
             continue;
         }
         let style = node.style;
-        let inset = style.inset() * scale;
+        let inset = style.inset().scaled(scale);
         let size = style.font_size.unwrap_or(FONT_SIZE) * scale;
         let thickness = if style.border_size > 0.0 {
             style.border_size * scale
@@ -442,7 +442,14 @@ pub fn render(
                 } else {
                     style.font_color.unwrap_or(COLOR_TEXT)
                 };
-                canvas.draw_text(font, content, rect.x + inset, rect.y + inset, color, size);
+                canvas.draw_text(
+                    font,
+                    content,
+                    rect.x + inset.left,
+                    rect.y + inset.top,
+                    color,
+                    size,
+                );
             }
             crate::vdom::NodeKind::Button { .. } => {
                 canvas.stroke_rect(style.border_color.unwrap_or(BUTTON_BORDER), rect, thickness);
@@ -510,7 +517,7 @@ pub fn render(
                 );
                 if style.required {
                     let end = rect.x
-                        + inset
+                        + inset.left
                         + CHECKBOX_BOX * scale
                         + CHECKBOX_GAP * scale
                         + measure(font, label, size).0;
@@ -536,7 +543,7 @@ pub fn render(
                 );
                 if style.required {
                     let end = rect.x
-                        + inset
+                        + inset.left
                         + CHECKBOX_BOX * scale
                         + CHECKBOX_GAP * scale
                         + measure(font, label, size).0;
@@ -683,7 +690,7 @@ fn draw_checkbox(
     canvas: &mut Canvas,
     font: &FontVec,
     rect: Rect,
-    inset: f32,
+    inset: crate::vdom::Edges,
     scale: f32,
     size: f32,
     label: &str,
@@ -693,8 +700,8 @@ fn draw_checkbox(
 ) {
     let box_size = CHECKBOX_BOX * scale;
     let gap = CHECKBOX_GAP * scale;
-    let left = rect.x + inset;
-    let top = rect.y + inset + (rect.h - 2.0 * inset - box_size).max(0.0) / 2.0;
+    let left = rect.x + inset.left;
+    let top = rect.y + inset.top + (rect.h - inset.vertical() - box_size).max(0.0) / 2.0;
     let box_rect = Rect::new(left, top, box_size, box_size);
     canvas.fill_rect(FORM_BG, box_rect);
     canvas.stroke_rect(FIELD_BORDER, box_rect, scale.max(1.0));
@@ -729,7 +736,7 @@ fn draw_radio(
     canvas: &mut Canvas,
     font: &FontVec,
     rect: Rect,
-    inset: f32,
+    inset: crate::vdom::Edges,
     scale: f32,
     size: f32,
     label: &str,
@@ -739,7 +746,7 @@ fn draw_radio(
 ) {
     let box_size = CHECKBOX_BOX * scale;
     let gap = CHECKBOX_GAP * scale;
-    let left = rect.x + inset;
+    let left = rect.x + inset.left;
     let cx = left + box_size / 2.0;
     let cy = rect.y + rect.h / 2.0;
     let radius = box_size / 2.0;
@@ -771,7 +778,7 @@ fn draw_select(
     canvas: &mut Canvas,
     font: &FontVec,
     rect: Rect,
-    inset: f32,
+    inset: crate::vdom::Edges,
     scale: f32,
     size: f32,
     thickness: f32,
@@ -806,22 +813,22 @@ fn draw_select(
     };
     let (_, text_h) = measure(font, label, size);
     let text_rect = Rect::new(
-        rect.x + inset,
+        rect.x + inset.left,
         rect.y,
-        (rect.w - 2.0 * inset - 2.0 * SELECT_PAD_X * scale - CHECKBOX_BOX * scale).max(0.0),
+        (rect.w - inset.horizontal() - 2.0 * SELECT_PAD_X * scale - CHECKBOX_BOX * scale).max(0.0),
         rect.h,
     );
     canvas.clipped(text_rect, |c| {
         c.draw_text(
             font,
             label,
-            rect.x + inset + SELECT_PAD_X * scale,
+            rect.x + inset.left + SELECT_PAD_X * scale,
             rect.y + (rect.h - text_h) / 2.0,
             color,
             size,
         );
     });
-    let cx = rect.x + rect.w - inset - CHECKBOX_BOX * scale / 2.0;
+    let cx = rect.x + rect.w - inset.right - CHECKBOX_BOX * scale / 2.0;
     let cy = rect.y + rect.h / 2.0;
     let width = (CHECKBOX_BOX * scale * 0.5).max(4.0);
     let stroke = (scale * 1.5).max(1.0);
@@ -887,7 +894,7 @@ fn render_field(
     canvas: &mut Canvas,
     font: &FontVec,
     rect: Rect,
-    inset: f32,
+    inset: crate::vdom::Edges,
     scale: f32,
     size: f32,
     border: f32,
@@ -899,8 +906,8 @@ fn render_field(
     selection: Option<(usize, usize)>,
 ) {
     let pad_x = FIELD_PAD_X * scale;
-    let text_left = rect.x + inset + pad_x;
-    let text_max_w = (rect.w - 2.0 * inset - 2.0 * pad_x).max(1.0);
+    let text_left = rect.x + inset.left + pad_x;
+    let text_max_w = (rect.w - inset.horizontal() - 2.0 * pad_x).max(1.0);
     let row_h = super::text::row_height(font, size);
     let inner = Rect::new(
         rect.x + border,
@@ -912,10 +919,10 @@ fn render_field(
 
     if multiline {
         let content = Rect::new(
-            rect.x + inset,
-            rect.y + inset,
-            (rect.w - 2.0 * inset).max(0.0),
-            (rect.h - 2.0 * inset).max(0.0),
+            rect.x + inset.left,
+            rect.y + inset.top,
+            (rect.w - inset.horizontal()).max(0.0),
+            (rect.h - inset.vertical()).max(0.0),
         );
         let visible = (content.h / row_h).floor().max(1.0);
         let caret_line = super::text::line_of(&lines, caret_pos);

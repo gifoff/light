@@ -171,6 +171,78 @@ impl Default for Offset {
     }
 }
 
+/// Отступы по четырём сторонам (`padding-*`, `margin-*`).
+///
+/// Значения — в логических пикселях. Атрибут без суффикса (`padding`/`margin`)
+/// задаёт сразу все четыре стороны; атрибуты с суффиксом
+/// (`padding-top`, `margin-left`, …) переопределяют отдельные стороны.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Edges {
+    /// Отступ сверху (`*-top`).
+    pub top: f32,
+    /// Отступ справа (`*-right`).
+    pub right: f32,
+    /// Отступ снизу (`*-bottom`).
+    pub bottom: f32,
+    /// Отступ слева (`*-left`).
+    pub left: f32,
+}
+
+impl Edges {
+    /// Нулевые отступы со всех сторон.
+    pub const ZERO: Self = Self {
+        top: 0.0,
+        right: 0.0,
+        bottom: 0.0,
+        left: 0.0,
+    };
+
+    /// Одинаковый отступ со всех сторон.
+    pub const fn all(value: f32) -> Self {
+        Self {
+            top: value,
+            right: value,
+            bottom: value,
+            left: value,
+        }
+    }
+
+    /// Суммарный отступ по горизонтали (`left` + `right`).
+    pub const fn horizontal(self) -> f32 {
+        self.left + self.right
+    }
+
+    /// Суммарный отступ по вертикали (`top` + `bottom`).
+    pub const fn vertical(self) -> f32 {
+        self.top + self.bottom
+    }
+
+    /// Все ли стороны нулевые.
+    pub const fn is_zero(self) -> bool {
+        self.top == 0.0 && self.right == 0.0 && self.bottom == 0.0 && self.left == 0.0
+    }
+
+    /// Масштабирует каждую сторону на `factor` (для HiDPI).
+    pub const fn scaled(self, factor: f32) -> Self {
+        Self {
+            top: self.top * factor,
+            right: self.right * factor,
+            bottom: self.bottom * factor,
+            left: self.left * factor,
+        }
+    }
+
+    /// Покомпонентная сумма двух наборов отступов.
+    pub const fn plus(self, other: Self) -> Self {
+        Self {
+            top: self.top + other.top,
+            right: self.right + other.right,
+            bottom: self.bottom + other.bottom,
+            left: self.left + other.left,
+        }
+    }
+}
+
 /// Возможность изменения размера текстового поля (`resize`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Resize {
@@ -305,10 +377,10 @@ pub struct Style {
     pub offset_x: Offset,
     /// Вертикальное смещение (`position-offset-y`).
     pub offset_y: Offset,
-    /// Внутренний отступ (`padding`), по умолчанию `0`.
-    pub padding: f32,
-    /// Внешний отступ (`margin`), по умолчанию `0`.
-    pub margin: f32,
+    /// Внутренние отступы (`padding`/`padding-*`), по умолчанию `0`.
+    pub padding: Edges,
+    /// Внешние отступы (`margin`/`margin-*`), по умолчанию `0`.
+    pub margin: Edges,
     /// Цвет фона (`background`, `0xRRGGBBAA`).
     pub background: Option<u32>,
     /// Цвет текста (`font-color`, `0xRRGGBBAA`).
@@ -347,8 +419,8 @@ impl Default for Style {
             align_y: Align::Start,
             offset_x: Offset::Px(0.0),
             offset_y: Offset::Px(0.0),
-            padding: 0.0,
-            margin: 0.0,
+            padding: Edges::ZERO,
+            margin: Edges::ZERO,
             background: None,
             font_color: None,
             font_size: None,
@@ -364,9 +436,10 @@ impl Default for Style {
 }
 
 impl Style {
-    /// Отступ содержимого узла от его границ: `padding` + `border_size`.
-    pub fn inset(&self) -> f32 {
-        self.padding + self.border_size
+    /// Отступ содержимого узла от его границ по каждой стороне:
+    /// `padding` + `border_size`.
+    pub fn inset(&self) -> Edges {
+        self.padding.plus(Edges::all(self.border_size))
     }
 
     /// Разрешает ширину с учётом `min-width`/`max-width`.

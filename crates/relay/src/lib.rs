@@ -94,7 +94,7 @@ pub use error::{Error, Result};
 pub use reactive::{Property, Proxy, ProxyState, Watcher, watch};
 pub use relay_macros::{proxy, template};
 pub use vdom::{
-    Align, Event, KeyInfo, MouseButton, NodeKind, Offset, Resize, SelectOption, Size, Style,
+    Align, Edges, Event, KeyInfo, MouseButton, NodeKind, Offset, Resize, SelectOption, Size, Style,
     VElement, VNode, VWindow,
 };
 

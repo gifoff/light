@@ -1436,7 +1436,9 @@ fn parse_size_attr(element: &Element, name: &str) -> syn::Result<Option<TokenStr
 /// Собирает [`relay::vdom::Style`] из атрибутов: `width`, `height` (px или %),
 /// `position-x` (`left`/`center`/`right`), `position-y` (`top`/`center`/
 /// `bottom`), `position-offset-x`/`position-offset-y` (px или %, в том числе
-/// отрицательные; псевдонимы `left`/`top`), `padding`, `margin`, `font-size`,
+/// отрицательные; псевдонимы `left`/`top`), `padding`/`margin` и их
+/// построчные варианты `padding-top`/`padding-right`/`padding-bottom`/
+/// `padding-left` (аналогично `margin-*`), `font-size`,
 /// `border-size` (px), `background`, `font-color`, `border-color` (цвет),
 /// `visible` (видимость).
 fn style_token(
@@ -1467,8 +1469,8 @@ fn style_token(
     )?;
     let offset_x = offset_token(element, "position-offset-x")?;
     let offset_y = offset_token(element, "position-offset-y")?;
-    let padding = parse_px_attr(element, "padding")?.unwrap_or(0.0);
-    let margin = parse_px_attr(element, "margin")?.unwrap_or(0.0);
+    let padding = edges_token(element, "padding")?;
+    let margin = edges_token(element, "margin")?;
     let border_size = parse_px_attr(element, "border-size")?.unwrap_or(0.0);
     let font_size = match parse_px_attr(element, "font-size")? {
         Some(value) => quote!(::std::option::Option::Some(#value)),
@@ -1584,6 +1586,28 @@ fn color_token(value: Option<u32>) -> TokenStream {
         Some(color) => quote!(::std::option::Option::Some(#color)),
         None => quote!(::std::option::Option::None),
     }
+}
+
+/// Собирает [`relay::vdom::Edges`] из базового атрибута (`padding`/`margin`) и
+/// переопределений по сторонам (`padding-top`, `margin-left` и т. п.).
+///
+/// Базовый атрибут задаёт все четыре стороны (по умолчанию `0`), атрибут с
+/// суффиксом переопределяет одну сторону.
+fn edges_token(element: &Element, base: &str) -> syn::Result<TokenStream> {
+    let scalar = parse_px_attr(element, base)?.unwrap_or(0.0);
+    let side = |suffix: &str| -> syn::Result<f32> {
+        Ok(parse_px_attr(element, &format!("{base}-{suffix}"))?.unwrap_or(scalar))
+    };
+    let top = side("top")?;
+    let right = side("right")?;
+    let bottom = side("bottom")?;
+    let left = side("left")?;
+    Ok(quote!(::relay::vdom::Edges {
+        top: #top,
+        right: #right,
+        bottom: #bottom,
+        left: #left,
+    }))
 }
 
 /// Разбирает атрибут в пикселях (`12`, `12px`); `None`, если атрибута нет.

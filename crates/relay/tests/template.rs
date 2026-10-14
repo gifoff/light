@@ -378,8 +378,26 @@ fn style_attributes_are_compiled_into_vnode() {
 
     let div = tree.get("0").expect("корневой <div>");
     assert_eq!(div.style.width, Size::Percent(50.0), "width в процентах");
-    assert_eq!(div.style.padding, 10.0);
-    assert_eq!(div.style.margin, 4.0);
+    assert_eq!(
+        div.style.padding,
+        relay::vdom::Edges {
+            top: 10.0,
+            right: 10.0,
+            bottom: 10.0,
+            left: 20.0,
+        },
+        "padding-left переопределяет сторону"
+    );
+    assert_eq!(
+        div.style.margin,
+        relay::vdom::Edges {
+            top: 7.0,
+            right: 4.0,
+            bottom: 4.0,
+            left: 4.0,
+        },
+        "margin-top переопределяет сторону"
+    );
     assert_eq!(div.style.background, Some(0xFFFF_FFFF));
     assert_eq!(div.style.border_size, 2.0);
     assert_eq!(div.style.border_color, Some(0x0000_00FF));

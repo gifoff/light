@@ -557,19 +557,19 @@ impl WindowState {
         };
         let rect = node.rect;
         let scale = self.scale;
-        let inset = node.style.inset() * scale;
+        let inset = node.style.inset().scaled(scale);
         let pad_x = crate::layout::FIELD_PAD_X * scale;
         let size = node.style.font_size.unwrap_or(crate::layout::FONT_SIZE) * scale;
         let font = self.font.font();
-        let text_left = rect.x + inset + pad_x;
-        let max_w = (rect.w - 2.0 * inset - 2.0 * pad_x).max(1.0);
+        let text_left = rect.x + inset.left + pad_x;
+        let max_w = (rect.w - inset.horizontal() - 2.0 * pad_x).max(1.0);
         let lines = text::layout(font, value, size, max_w, *multiline);
         let len = value.chars().count();
 
         let (line, scroll_x) = if *multiline {
             let row_h = text::row_height(font, size);
-            let content_top = rect.y + inset;
-            let content_h = (rect.h - 2.0 * inset).max(0.0);
+            let content_top = rect.y + inset.top;
+            let content_h = (rect.h - inset.vertical()).max(0.0);
             let visible = (content_h / row_h).floor().max(1.0);
             let caret_line = text::line_of(&lines, self.caret.min(len));
             let scroll_y = ((caret_line as f32 + 1.0 - visible).max(0.0)) * row_h;
@@ -1095,10 +1095,10 @@ impl WindowState {
             return None;
         };
         let scale = self.scale;
-        let inset = node.style.inset() * scale;
+        let inset = node.style.inset().scaled(scale);
         let pad_x = crate::layout::FIELD_PAD_X * scale;
         let size = node.style.font_size.unwrap_or(crate::layout::FONT_SIZE) * scale;
-        let max_w = (node.rect.w - 2.0 * inset - 2.0 * pad_x).max(1.0);
+        let max_w = (node.rect.w - inset.horizontal() - 2.0 * pad_x).max(1.0);
         Some(text::layout(
             self.font.font(),
             &self.editing,
