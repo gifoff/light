@@ -810,3 +810,53 @@ fn z_is_local_to_parent() {
         "поддерево остаётся над своим родителем (z локальный)"
     );
 }
+
+/// Раскладка при заданном размере окна.
+fn layout_at(root: &VElement, width: f32, height: f32) -> Layout {
+    Layout::build(root, (width, height), &StubMetrics)
+}
+
+fn percent_div(key: &'static str, width: f32, height: f32) -> VElement {
+    let mut node = column(key, vec![]);
+    node.style = Style {
+        width: Size::Percent(width),
+        height: Size::Percent(height),
+        ..Style::default()
+    };
+    node
+}
+
+#[test]
+fn percent_width_recalculates_on_window_resize() {
+    let root = column("", vec![percent_div("0", 50.0, 100.0)]);
+    assert_eq!(
+        layout_at(&root, 400.0, 300.0).rect_of("0").unwrap().w,
+        200.0
+    );
+    assert_eq!(
+        layout_at(&root, 800.0, 300.0).rect_of("0").unwrap().w,
+        400.0
+    );
+}
+
+#[test]
+fn nested_percent_recalculates_on_resize() {
+    let inner = percent_div("0", 50.0, 100.0);
+    let mut outer = column("outer", vec![inner]);
+    outer.style = Style {
+        width: Size::Percent(100.0),
+        padding: 10.0,
+        ..Style::default()
+    };
+    // 400 → content родителя 380 → 50% = 190
+    assert_eq!(layout_at(&outer, 400.0, 0.0).rect_of("0").unwrap().w, 190.0);
+    // 800 → content 780 → 50% = 390
+    assert_eq!(layout_at(&outer, 800.0, 0.0).rect_of("0").unwrap().w, 390.0);
+}
+
+#[test]
+fn percent_height_recalculates_on_resize() {
+    let root = column("", vec![percent_div("0", 100.0, 50.0)]);
+    assert_eq!(layout_at(&root, 0.0, 200.0).rect_of("0").unwrap().h, 100.0);
+    assert_eq!(layout_at(&root, 0.0, 400.0).rect_of("0").unwrap().h, 200.0);
+}
