@@ -330,6 +330,8 @@ pub struct Style {
     pub invalid: bool,
     /// Как показывать обязательность поля (`required-indicator`).
     pub required_indicator: RequiredIndicator,
+    /// Порядок отрисовки и хит-теста (больше z — выше).
+    pub z: i32,
 }
 
 impl Default for Style {
@@ -356,6 +358,7 @@ impl Default for Style {
             required: false,
             invalid: false,
             required_indicator: RequiredIndicator::Asterisk,
+            z: 0,
         }
     }
 }
