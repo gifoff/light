@@ -127,6 +127,20 @@ impl ContentBox {
     }
 }
 
+/// Встроенные (по умолчанию) отступы кнопки по осям.
+///
+/// Значения [`BUTTON_PAD_X`]/[`BUTTON_PAD_Y`] действуют, пока пользователь не
+/// задал `padding` (статически, через `:padding` или программно). Явный
+/// `padding` переопределяет встроенные отступы — тогда возвращается `(0, 0)`:
+/// собственный `padding` уже учтён в [`Style::inset`].
+fn button_extra_padding(vnode: &VElement, style: &Style) -> (f32, f32) {
+    if vnode.attr("padding").is_some() || style.padding != 0.0 {
+        (0.0, 0.0)
+    } else {
+        (BUTTON_PAD_X, BUTTON_PAD_Y)
+    }
+}
+
 /// Ось `cross`-растяжения потомков в потоке родителя.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Axis {
@@ -471,12 +485,14 @@ impl Layout {
             }
             NodeKind::Button { .. } => {
                 let index = self.push(vnode, Rect::default(), parent);
-                // Внутренняя область кнопки: собственный `padding`/рамка плюс
-                // дефолтные отступы кнопки.
-                let inner_left = flow_x + inset + BUTTON_PAD_X;
-                let inner_top = flow_y + inset + BUTTON_PAD_Y;
-                let inner_w = (definite_w - 2.0 * (inset + BUTTON_PAD_X)).max(0.0);
-                let inner_h = (definite_h - 2.0 * (inset + BUTTON_PAD_Y)).max(0.0);
+                // Внутренняя область кнопки: собственная рамка и `padding`.
+                // Встроенные отступы кнопки (14/9) — значения по умолчанию,
+                // которые переопределяет заданный пользователем `padding`.
+                let (extra_x, extra_y) = button_extra_padding(vnode, &style);
+                let inner_left = flow_x + inset + extra_x;
+                let inner_top = flow_y + inset + extra_y;
+                let inner_w = (definite_w - 2.0 * (inset + extra_x)).max(0.0);
+                let inner_h = (definite_h - 2.0 * (inset + extra_y)).max(0.0);
                 let content = ContentBox {
                     left: inner_left,
                     top: inner_top,
@@ -515,9 +531,9 @@ impl Layout {
                 if any_child {
                     content_w = cursor_x - inner_left - SPACING;
                 }
-                let w = style.resolve_width(content_w + 2.0 * (inset + BUTTON_PAD_X), avail_w);
+                let w = style.resolve_width(content_w + 2.0 * (inset + extra_x), avail_w);
                 let h = style.resolve_height(
-                    (content_h + 2.0 * (inset + BUTTON_PAD_Y)).max(BUTTON_MIN_H),
+                    (content_h + 2.0 * (inset + extra_y)).max(BUTTON_MIN_H),
                     avail_h,
                 );
                 let node = &mut self.nodes[index];
@@ -526,7 +542,12 @@ impl Layout {
                 debug_trace(vnode, node.rect, child_flow);
                 // Содержимое кнопки центрируется по обеим осям (группа целиком).
                 if any_child {
-                    let pad_box = ContentBox::from_rect(node.rect, inset + BUTTON_PAD_X);
+                    let pad_box = ContentBox {
+                        left: node.rect.x + inset + extra_x,
+                        top: node.rect.y + inset + extra_y,
+                        width: (node.rect.w - 2.0 * (inset + extra_x)).max(0.0),
+                        height: (node.rect.h - 2.0 * (inset + extra_y)).max(0.0),
+                    };
                     let first = self.nodes[index].children[0];
                     let dx = pad_box.left + ((pad_box.width - content_w) / 2.0).max(0.0)
                         - self.nodes[first].rect.x;

@@ -860,3 +860,97 @@ fn percent_height_recalculates_on_resize() {
     assert_eq!(layout_at(&root, 0.0, 200.0).rect_of("0").unwrap().h, 100.0);
     assert_eq!(layout_at(&root, 0.0, 400.0).rect_of("0").unwrap().h, 200.0);
 }
+
+/// Кнопка-контейнер с заданным содержимым.
+fn content_button(key: &'static str, children: Vec<VElement>) -> VElement {
+    VElement::container(
+        key,
+        NodeKind::Button {
+            disabled: false,
+            button_type: relay::vdom::ButtonType::Submit,
+        },
+        children,
+    )
+}
+
+fn sized_column(key: &'static str, width: Size, height: Size) -> VElement {
+    let mut node = column(key, vec![]);
+    node.style = Style {
+        width,
+        height,
+        ..Style::default()
+    };
+    node
+}
+
+#[test]
+fn button_without_padding_uses_builtin_padding() {
+    // "АБ" = 16×16; ширина = 16 + 2*14, высота = max(16 + 2*9, 34) = 34.
+    let root = column("", vec![button("b", "АБ", false)]);
+    let layout = build(&root);
+    assert_eq!(
+        layout.rect_of("b"),
+        Some(Rect::new(0.0, 0.0, 44.0, 34.0)),
+        "встроенные отступы 14/9 действуют по умолчанию"
+    );
+}
+
+#[test]
+fn button_padding_attribute_removes_builtin_padding() {
+    let mut btn = button("b", "АБ", false);
+    btn.attrs.push(("padding", "0".to_owned()));
+    let root = column("", vec![btn]);
+    let layout = build(&root);
+    assert_eq!(
+        layout.rect_of("b"),
+        Some(Rect::new(0.0, 0.0, 16.0, 34.0)),
+        "padding=\"0\" убирает встроенные отступы"
+    );
+}
+
+#[test]
+fn button_padding_zero_lets_child_fill() {
+    let child = sized_column("d", Size::Px(30.0), Size::Px(30.0));
+    let mut btn = content_button("b", vec![child]);
+    btn.style = Style {
+        height: Size::Px(30.0),
+        ..Style::default()
+    };
+    btn.attrs.push(("padding", "0".to_owned()));
+    let mut tb = VElement::container("tb", NodeKind::TitleBar, vec![btn]);
+    tb.style = Style {
+        width: Size::Px(200.0),
+        height: Size::Px(30.0),
+        ..Style::default()
+    };
+    let layout = build(&tb);
+    assert_eq!(
+        layout.rect_of("b"),
+        Some(Rect::new(0.0, 0.0, 30.0, 30.0)),
+        "кнопка ужимается ровно по содержимому"
+    );
+    assert_eq!(
+        layout.rect_of("d"),
+        Some(Rect::new(0.0, 0.0, 30.0, 30.0)),
+        "ребёнок вплотную, без смещения"
+    );
+}
+
+#[test]
+fn percent_child_fills_sized_button_without_padding() {
+    let child = sized_column("d", Size::Percent(100.0), Size::Percent(100.0));
+    let mut btn = content_button("b", vec![child]);
+    btn.style = Style {
+        width: Size::Px(100.0),
+        height: Size::Px(40.0),
+        ..Style::default()
+    };
+    btn.attrs.push(("padding", "0".to_owned()));
+    let root = column("", vec![btn]);
+    let layout = build(&root);
+    assert_eq!(
+        layout.rect_of("d"),
+        Some(Rect::new(0.0, 0.0, 100.0, 40.0)),
+        "100% от контентной области кнопки"
+    );
+}
