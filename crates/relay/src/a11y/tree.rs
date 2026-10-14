@@ -59,7 +59,9 @@ pub fn find_key_for_node_id(root: &VElement, id: NodeId) -> Option<&'static str>
 ///
 /// `focused_key` — путь узла, который должен быть помечен как находящийся
 /// в фокусе. Если ключ не задан или узел не найден, фокус получает первый
-/// tabbable-узел (по порядку обхода), а при его отсутствии — корень.
+/// узел по правилам [`focus::initial_focus`] (наименьший положительный
+/// `tabindex`, иначе первый tabbable в DOM-порядке), а при отсутствии
+/// tabbable-узлов — корень.
 pub fn build_update(root: &VElement, focused_key: Option<&str>) -> TreeUpdate {
     let mut id_map: HashMap<&str, NodeId> = HashMap::new();
     collect_ids(root, &mut id_map);
@@ -70,7 +72,7 @@ pub fn build_update(root: &VElement, focused_key: Option<&str>) -> TreeUpdate {
         .map(node_id_for_key)
         .filter(|id| nodes.iter().any(|(node, _)| node == id))
         .or_else(|| {
-            focus::first_tabbable(root)
+            focus::initial_focus(root)
                 .map(|element| node_id_for_key(element.key))
                 .filter(|id| nodes.iter().any(|(node, _)| node == id))
         })

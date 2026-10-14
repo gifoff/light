@@ -2,8 +2,8 @@
 #![cfg(feature = "a11y")]
 
 use relay::a11y::focus::{
-    first_tabbable, focus_order, is_disabled, is_focusable, is_hidden, is_tabbable, next_focus,
-    tabindex,
+    first_tabbable, focus_order, initial_focus, is_disabled, is_focusable, is_hidden, is_tabbable,
+    next_focus, tabindex,
 };
 use relay::vdom::{ButtonType, NodeKind, Resize, VElement};
 
@@ -325,4 +325,55 @@ fn next_focus_does_not_panic_at_ends() {
     let tree = column("", vec![button("0"), button("1")]);
     let _ = next_focus(&tree, "1", true);
     let _ = next_focus(&tree, "0", false);
+}
+
+// ---------- initial_focus ----------
+
+#[test]
+fn initial_focus_prefers_lowest_positive_tabindex() {
+    let tree = column(
+        "",
+        vec![
+            with_attr(button("0"), "tabindex", "3"),
+            with_attr(button("1"), "tabindex", "1"),
+            with_attr(button("2"), "tabindex", "2"),
+        ],
+    );
+    assert_eq!(initial_focus(&tree).map(|e| e.key), Some("1"));
+}
+
+#[test]
+fn initial_focus_uses_dom_order_when_no_positive() {
+    let tree = column(
+        "",
+        vec![button("0"), with_attr(button("1"), "tabindex", "0")],
+    );
+    assert_eq!(initial_focus(&tree).map(|e| e.key), Some("0"));
+}
+
+#[test]
+fn initial_focus_skips_negative_tabindex() {
+    let tree = column(
+        "",
+        vec![with_attr(button("0"), "tabindex", "-1"), button("1")],
+    );
+    assert_eq!(initial_focus(&tree).map(|e| e.key), Some("1"));
+}
+
+#[test]
+fn initial_focus_returns_none_when_nothing_tabbable() {
+    let tree = column("", vec![column("0", vec![])]);
+    assert!(initial_focus(&tree).is_none());
+}
+
+#[test]
+fn initial_focus_ties_break_by_dom_order() {
+    let tree = column(
+        "",
+        vec![
+            with_attr(button("0"), "tabindex", "1"),
+            with_attr(button("1"), "tabindex", "1"),
+        ],
+    );
+    assert_eq!(initial_focus(&tree).map(|e| e.key), Some("0"));
 }

@@ -239,3 +239,25 @@ fn aria_description_reaches_accesskit() {
         Some("Укажите имя")
     );
 }
+
+#[test]
+fn build_update_respects_positive_tabindex_for_default_focus() {
+    let tree = window(
+        "",
+        vec![
+            button("0", "First in DOM"),
+            with_attr(button("1", "Priority"), "tabindex", "1"),
+        ],
+    );
+    let update = build_update(&tree, None);
+    let key = find_key_for_node_id(&tree, update.focus).unwrap();
+    assert_eq!(key, "1");
+}
+
+#[test]
+fn build_update_falls_back_to_dom_order_without_tabindex() {
+    let tree = window("", vec![button("0", "A"), button("1", "B")]);
+    let update = build_update(&tree, None);
+    let key = find_key_for_node_id(&tree, update.focus).unwrap();
+    assert_eq!(key, "0");
+}

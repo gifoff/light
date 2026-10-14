@@ -94,6 +94,26 @@ pub fn first_tabbable(root: &VElement) -> Option<&VElement> {
     focus_order(root).into_iter().next()
 }
 
+/// Первый узел, получающий фокус при старте окна (при отсутствии явного).
+///
+/// Семантика WAI-ARIA: положительный `tabindex` выносит узел вперёд очереди по
+/// возрастанию значения, поэтому приоритет отдаётся tabbable-узлу с
+/// наименьшим положительным `tabindex` (при равенстве — первый по DOM).
+/// Если положительных `tabindex` нет, фокус получает первый tabbable в
+/// DOM-порядке. Если tabbable-узлов нет — `None`.
+pub fn initial_focus(root: &VElement) -> Option<&VElement> {
+    let candidates = focus_order(root);
+    candidates
+        .iter()
+        .filter_map(|element| {
+            let index = tabindex(element)?;
+            (index > 0).then_some((index, *element))
+        })
+        .min_by_key(|(index, _)| *index)
+        .map(|(_, element)| element)
+        .or_else(|| candidates.first().copied())
+}
+
 /// Ключ следующего фокусируемого узла после `current` (с зацикливанием).
 pub fn next_focus<'a>(root: &'a VElement, current: &str, forward: bool) -> Option<&'a VElement> {
     let order = focus_order(root);
