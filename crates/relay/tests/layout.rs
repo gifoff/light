@@ -627,3 +627,92 @@ fn hidden_nodes_are_skipped_in_layout() {
         "скрытый узел не перехватывает события"
     );
 }
+
+fn titlebar(key: &'static str, children: Vec<VElement>) -> VElement {
+    VElement::container(key, NodeKind::TitleBar, children)
+}
+
+#[test]
+fn titlebar_respects_position_x() {
+    let mut child = VElement::container("0", NodeKind::Column, vec![]);
+    child.style = Style {
+        width: Size::Px(50.0),
+        height: Size::Px(20.0),
+        align_x: Align::End,
+        ..Style::default()
+    };
+    let mut tb = titlebar("tb", vec![child]);
+    tb.style = Style {
+        width: Size::Percent(100.0),
+        height: Size::Px(40.0),
+        ..Style::default()
+    };
+    let root = VElement::container("win", NodeKind::Window, vec![tb]);
+    let layout = Layout::build(&root, (400.0, 300.0), &StubMetrics);
+    let c = layout.rect_of("0").expect("child");
+    assert_eq!(c.x, 350.0, "right of titlebar");
+}
+
+#[test]
+fn titlebar_respects_position_y() {
+    let mut child = VElement::container("0", NodeKind::Column, vec![]);
+    child.style = Style {
+        width: Size::Px(50.0),
+        height: Size::Px(20.0),
+        align_y: Align::End,
+        ..Style::default()
+    };
+    let mut tb = titlebar("tb", vec![child]);
+    tb.style = Style {
+        width: Size::Percent(100.0),
+        height: Size::Px(40.0),
+        ..Style::default()
+    };
+    let root = VElement::container("win", NodeKind::Window, vec![tb]);
+    let layout = Layout::build(&root, (400.0, 300.0), &StubMetrics);
+    let c = layout.rect_of("0").expect("child");
+    assert_eq!(c.y, 20.0, "bottom of titlebar");
+}
+
+#[test]
+fn titlebar_respects_position_center() {
+    let child = text("0", "T");
+    let mut tb = titlebar("tb", vec![child]);
+    tb.style = Style {
+        width: Size::Percent(100.0),
+        height: Size::Px(40.0),
+        ..Style::default()
+    };
+    // center via align
+    let mut child = text("0", "T");
+    child.style.align_x = Align::Center;
+    child.style.align_y = Align::Center;
+    let mut tb = titlebar("tb", vec![child]);
+    tb.style = Style {
+        width: Size::Percent(100.0),
+        height: Size::Px(40.0),
+        ..Style::default()
+    };
+    let root = VElement::container("win", NodeKind::Window, vec![tb]);
+    let layout = Layout::build(&root, (400.0, 300.0), &StubMetrics);
+    let c = layout.rect_of("0").expect("child");
+    assert_eq!(c.x, 196.0); // (400-8)/2
+    assert_eq!(c.y, 12.0); // (40-16)/2
+}
+
+#[test]
+fn titlebar_padding_offsets_content_box() {
+    let child = text("0", "T");
+    let mut tb = titlebar("tb", vec![child]);
+    tb.style = Style {
+        width: Size::Percent(100.0),
+        height: Size::Px(40.0),
+        padding: 6.0,
+        ..Style::default()
+    };
+    let root = VElement::container("win", NodeKind::Window, vec![tb]);
+    let layout = Layout::build(&root, (400.0, 300.0), &StubMetrics);
+    let c = layout.rect_of("0").expect("child");
+    assert_eq!(c.x, 6.0);
+    assert_eq!(c.y, 6.0);
+}
