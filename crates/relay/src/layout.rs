@@ -3,6 +3,9 @@
 
 use std::collections::{BTreeSet, HashMap};
 
+#[cfg(debug_assertions)]
+use std::env;
+
 use crate::vdom::{Align, NodeKind, Offset, Resize, Size, Style, VElement};
 
 /// Шрифт интерфейса по умолчанию (px).
@@ -516,6 +519,8 @@ impl Layout {
                 );
                 let node = &mut self.nodes[index];
                 node.rect = Rect::new(flow_x, flow_y, w, h);
+                #[cfg(debug_assertions)]
+                debug_trace(vnode, node.rect, child_flow);
                 // Содержимое кнопки центрируется по обеим осям (группа целиком).
                 if any_child {
                     let pad_box = ContentBox::from_rect(node.rect, inset + BUTTON_PAD_X);
@@ -774,4 +779,28 @@ fn aligned(
         Align::End => bound_start + bound_size - size,
     };
     base + offset.resolve(bound_size)
+}
+
+#[cfg(debug_assertions)]
+fn debug_trace(vnode: &VElement, rect: Rect, flow: FlowContext) {
+    let dbg = env::var("RELAY_DEBUG_LAYOUT").unwrap_or_default();
+    if dbg != "1" && dbg != "true" && dbg != "on" {
+        return;
+    }
+    eprintln!(
+        "[LAYOUT] tag={} kind={:?} key={} parent_content=(x={} y={} w={} h={}) pos_x={:?} pos_y={:?} resolved_rect=(x={} y={} w={} h={})",
+        vnode.tag,
+        vnode.kind,
+        vnode.key,
+        flow.content.left,
+        flow.content.top,
+        flow.content.width,
+        flow.content.height,
+        vnode.style.align_x,
+        vnode.style.align_y,
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h
+    );
 }

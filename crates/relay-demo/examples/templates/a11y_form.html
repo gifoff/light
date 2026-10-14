@@ -1,18 +1,18 @@
 <window id="a11y-form" width="420" height="480" min-width="200" min-height="200" max-width="800" max-height="800" resizable="true">
-    <titlebar width="100%" background="#333333DD" border-color="#D5DAE3">
-        <div font-size="20" font-color="#FFFFFF">Доступная форма</div>
-        <div position-x="right">
-            <button position-x="center" position-y="center" type="button" @click="Dom::window().map(|window| window.close())">
-                x
-            </button>
+    <titlebar width="100%" height="50">
+        <div width="100%" height="100%" position-y="center" position-x="center">
+            Доступная форма
         </div>
+        <button position-x="right" position-y="center" type="button" aria-label="Закрыть" tabindex="-1" @click="Dom::window().map(|window| window.close())">
+            x
+        </button>
     </titlebar>
     <div direction="vertical" padding="12" role="form" aria-label="Регистрация">
         <h1>Регистрация</h1>
-        <text width="100%" v-model="name" placeholder="Имя" aria-label="Имя" required />
+        <text min-width="100" width="100%" v-model="name" placeholder="Имя" aria-label="Имя" required />
         <text width="100%" v-model="email" placeholder="Email" aria-label="Электронная почта" required :validator="validate_email" />
         <checkbox v-model="agree" aria-label="Согласие с условиями" required>Согласен с условиями</checkbox>
-        <button width="100%" @click="submit" :disabled="blocked">Отправить</button>
+        <button min-width="200" width="75%" @click="submit" :disabled="blocked">Отправить</button>
         <div font-size="12" font-color="#6B7280">Нажмите Enter в поле ввода, чтобы отправить форму</div>
         <div role="status" aria-live="polite">{{ message }}</div>
     </div>
