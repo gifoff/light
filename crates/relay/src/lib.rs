@@ -88,7 +88,7 @@ pub mod window;
 
 pub use collection::Collection;
 pub use component::{Component, WindowConfig};
-pub use control::WindowCommand;
+pub use control::{FocusCommand, WindowCommand, blur, focus, focused_key};
 pub use dom::Dom;
 pub use error::{Error, Result};
 pub use reactive::{Property, Proxy, ProxyState, Watcher, watch};

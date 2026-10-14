@@ -5,7 +5,7 @@
 //! реализацией по умолчанию, которая отправляет команду в этот канал.
 //! Оконный бэкенд регистрирует получателя команд ([`set_command_sender`]).
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
@@ -105,5 +105,78 @@ pub fn request(command: WindowCommand) {
     {
         let token = ACTIVE.with(Cell::get);
         sender(token, command);
+    }
+}
+
+/// Программный запрос клавиатурного фокуса от компонента.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FocusCommand {
+    /// Установить фокус на узел с указанным ключом.
+    Focus(String),
+    /// Снять фокус с текущего узла.
+    Blur,
+}
+
+thread_local! {
+    /// Ожидающий запрос фокуса (потребляется оконным бэкендом).
+    static FOCUS_COMMAND: RefCell<Option<FocusCommand>> = const { RefCell::new(None) };
+    /// Ключ узла в фокусе, опубликованный оконным бэкендом.
+    static FOCUSED_KEY: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// Запрашивает клавиатурный фокус на узле с ключом `key`.
+///
+/// Оконный бэкенд применяет запрос при ближайшей перерисовке. Если фокус уже
+/// на этом узле, запрос безвреден.
+pub fn focus(key: impl Into<String>) {
+    FOCUS_COMMAND.with(|slot| *slot.borrow_mut() = Some(FocusCommand::Focus(key.into())));
+}
+
+/// Запрашивает снятие клавиатурного фокуса.
+pub fn blur() {
+    FOCUS_COMMAND.with(|slot| *slot.borrow_mut() = Some(FocusCommand::Blur));
+}
+
+/// Ключ узла, находящегося в клавиатурном фокусе в данный момент.
+///
+/// Значение публикует оконный бэкенд; без запущенного окна возвращается
+/// последнее известное (по умолчанию `None`).
+pub fn focused_key() -> Option<String> {
+    FOCUSED_KEY.with(|key| key.borrow().clone())
+}
+
+/// Извлекает ожидающий запрос фокуса (вызывает оконный бэкенд).
+pub fn take_focus_command() -> Option<FocusCommand> {
+    FOCUS_COMMAND.with(|slot| slot.borrow_mut().take())
+}
+
+/// Публикует ключ узла в фокусе (вызывает оконный бэкенд).
+pub fn set_focused_key(key: Option<String>) {
+    FOCUSED_KEY.with(|slot| *slot.borrow_mut() = key);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn focus_request_round_trips() {
+        set_focused_key(None);
+        assert_eq!(focused_key(), None);
+        assert_eq!(take_focus_command(), None);
+
+        focus("field");
+        assert_eq!(
+            take_focus_command(),
+            Some(FocusCommand::Focus("field".into()))
+        );
+        assert_eq!(take_focus_command(), None, "запрос потребляется один раз");
+
+        blur();
+        assert_eq!(take_focus_command(), Some(FocusCommand::Blur));
+
+        set_focused_key(Some("field".into()));
+        assert_eq!(focused_key().as_deref(), Some("field"));
+        set_focused_key(None);
     }
 }

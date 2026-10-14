@@ -198,6 +198,10 @@ impl WindowState {
             self.full_redraw = true;
         }
         crate::control::set_maximized(window.is_maximized());
+        #[cfg(feature = "a11y-winit")]
+        if let Some(command) = crate::control::take_focus_command() {
+            self.apply_focus_command(command);
+        }
 
         let mut tree = self.component.render();
         apply_overrides(&mut tree, &self.resized);
@@ -228,9 +232,11 @@ impl WindowState {
         self.sync_focus_after_redraw();
         self.sync_select_after_redraw();
         #[cfg(feature = "a11y-winit")]
-        self.reconcile_a11y_focus();
-        #[cfg(feature = "a11y-winit")]
-        self.push_accessibility();
+        {
+            self.reconcile_a11y_focus();
+            crate::control::set_focused_key(self.a11y_focus.clone());
+            self.push_accessibility();
+        }
         if damage.is_empty() {
             return Ok(());
         }
@@ -331,6 +337,10 @@ impl WindowState {
             return;
         };
         let focused = self.focused.as_deref();
+        #[cfg(feature = "a11y-winit")]
+        let focus_ring = self.a11y_focus.as_deref();
+        #[cfg(not(feature = "a11y-winit"))]
+        let focus_ring: Option<&str> = None;
         let hover = self.hover;
         let selection = self.selection();
         let background = self.config.background;
@@ -346,6 +356,7 @@ impl WindowState {
                 scale,
                 paint::Interaction {
                     focused,
+                    focus_ring,
                     caret_pos: self.caret,
                     selection,
                     hover,
@@ -1394,6 +1405,16 @@ impl WindowState {
     fn invalidate(&mut self) {
         self.full_redraw = true;
         self.window.request_redraw();
+    }
+
+    /// Применяет программный запрос фокуса (`crate::control::focus`/`blur`).
+    #[cfg(feature = "a11y-winit")]
+    fn apply_focus_command(&mut self, command: crate::control::FocusCommand) {
+        match command {
+            crate::control::FocusCommand::Focus(key) => self.set_a11y_focus(Some(key)),
+            crate::control::FocusCommand::Blur => self.set_a11y_focus(None),
+        }
+        self.invalidate();
     }
 }
 

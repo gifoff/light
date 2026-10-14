@@ -56,6 +56,12 @@ pub const FORM_ACCENT: u32 = rgb(0x3B, 0x82, 0xF6);
 pub const FIELD_INVALID: u32 = rgb(0xD9, 0x53, 0x4F);
 /// Цвет индикатора обязательного поля (`*`).
 pub const REQUIRED_COLOR: u32 = rgb(0xD9, 0x53, 0x4F);
+/// Цвет кольца фокуса клавиатурной навигации.
+pub const FOCUS_RING: u32 = rgb(0x4A, 0x90, 0xD9);
+/// Толщина кольца фокуса (px).
+pub const FOCUS_RING_WIDTH: f32 = 2.0;
+/// Отступ кольца фокуса внутрь узла (px).
+pub const FOCUS_RING_OFFSET: f32 = 1.0;
 
 /// Ширина контекстного меню.
 pub(crate) const MENU_W: f32 = 160.0;
@@ -314,6 +320,8 @@ impl<'a> Canvas<'a> {
 pub struct Interaction<'a> {
     /// Ключ текстового поля в фокусе.
     pub focused: Option<&'a str>,
+    /// Ключ узла с клавиатурным фокусом (для кольца фокуса).
+    pub focus_ring: Option<&'a str>,
     /// Позиция каретки (в символах) для поля в фокусе.
     pub caret_pos: usize,
     /// Выделенный диапазон (в символах, начало ≤ конец) для поля в фокусе.
@@ -366,6 +374,7 @@ pub fn render(
 ) {
     let Interaction {
         focused,
+        focus_ring,
         caret_pos,
         selection,
         hover,
@@ -568,6 +577,15 @@ pub fn render(
         }
     }
 
+    // Кольцо фокуса рисуется поверх дерева, вокруг узла с клавиатурным
+    // фокусом. Текстовые поля имеют собственную рамку фокуса.
+    if let Some(key) = focus_ring
+        && let Some(node) = layout.node(key)
+        && !matches!(node.kind, crate::vdom::NodeKind::TextField { .. })
+    {
+        draw_focus_ring(canvas, node.rect, scale);
+    }
+
     if let Some(key) = open_select
         && let Some(node) = layout.node(key)
         && let crate::vdom::NodeKind::Select { value, options, .. } = &node.kind
@@ -585,6 +603,19 @@ pub fn render(
             size,
         );
     }
+}
+
+/// Рисует кольцо клавиатурного фокуса внутри прямоугольника узла.
+fn draw_focus_ring(canvas: &mut Canvas, rect: Rect, scale: f32) {
+    let offset = FOCUS_RING_OFFSET * scale;
+    let thickness = FOCUS_RING_WIDTH * scale;
+    let ring = Rect::new(
+        rect.x + offset,
+        rect.y + offset,
+        (rect.w - 2.0 * offset).max(0.0),
+        (rect.h - 2.0 * offset).max(0.0),
+    );
+    canvas.stroke_rect(FOCUS_RING, ring, thickness);
 }
 
 /// Рисует индикатор обязательности текстового поля/списка в правом верхнем углу.
@@ -1044,5 +1075,37 @@ pub(crate) fn draw_context_menu(
             color,
             size,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pixel(pixels: &[u8], width: u32, x: u32, y: u32) -> u32 {
+        let i = ((y * width + x) * 4) as usize;
+        ((pixels[i] as u32) << 24)
+            | ((pixels[i + 1] as u32) << 16)
+            | ((pixels[i + 2] as u32) << 8)
+            | pixels[i + 3] as u32
+    }
+
+    #[test]
+    fn focus_ring_is_drawn_inset_inside_node() {
+        let (width, height) = (24u32, 24u32);
+        let mut pixels = vec![0u8; (width * height * 4) as usize];
+        let region = Rect::new(0.0, 0.0, width as f32, height as f32);
+        let mut canvas = Canvas::new(&mut pixels, width, height, region);
+        draw_focus_ring(&mut canvas, Rect::new(4.0, 4.0, 16.0, 16.0), 1.0);
+
+        // Кольцо с отступом 1px внутрь, толщиной 2px: рамка (5, 5, 14, 14).
+        assert_eq!(pixel(&pixels, width, 5, 5), FOCUS_RING, "угол кольца");
+        assert_eq!(pixel(&pixels, width, 6, 5), FOCUS_RING, "толщина 2px");
+        assert_eq!(
+            pixel(&pixels, width, 12, 12),
+            0,
+            "внутренность не закрашена"
+        );
+        assert_eq!(pixel(&pixels, width, 2, 2), 0, "снаружи узла не закрашено");
     }
 }
