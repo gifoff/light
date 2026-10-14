@@ -716,3 +716,97 @@ fn titlebar_padding_offsets_content_box() {
     assert_eq!(c.x, 6.0);
     assert_eq!(c.y, 6.0);
 }
+
+/// Узел с заданным `z` (остальные стили по умолчанию).
+fn ztext(key: &'static str, content: &str, z: i32) -> VElement {
+    let mut node = text(key, content);
+    node.style.z = z;
+    node
+}
+
+#[test]
+fn z_orders_children_for_painting() {
+    let root = column(
+        "",
+        vec![ztext("a", "A", 2), ztext("b", "B", 0), ztext("c", "C", 1)],
+    );
+    let layout = build(&root);
+    let keys: Vec<&str> = layout.nodes().iter().map(|node| node.key).collect();
+    assert_eq!(
+        keys,
+        vec!["", "b", "c", "a"],
+        "соседи рисуются по возрастанию z"
+    );
+}
+
+#[test]
+fn z_equal_preserves_dom_order() {
+    let root = column(
+        "",
+        vec![ztext("a", "A", 1), ztext("b", "B", 1), ztext("c", "C", 1)],
+    );
+    let layout = build(&root);
+    let keys: Vec<&str> = layout.nodes().iter().map(|node| node.key).collect();
+    assert_eq!(
+        keys,
+        vec!["", "a", "b", "c"],
+        "равные z сохраняют DOM-порядок"
+    );
+}
+
+#[test]
+fn z_does_not_move_nodes() {
+    let root = column("", vec![ztext("a", "A", 5), ztext("b", "B", 0)]);
+    let layout = build(&root);
+    assert_eq!(
+        layout.rect_of("a"),
+        Some(Rect::new(0.0, 0.0, 8.0, 16.0)),
+        "z не влияет на раскладку"
+    );
+    assert_eq!(
+        layout.rect_of("b"),
+        Some(Rect::new(0.0, 16.0 + SPACING, 8.0, 16.0))
+    );
+}
+
+#[test]
+fn z_orders_hit_test_for_overlap() {
+    let mut a = button("a", "AA", false);
+    a.style.z = 1;
+    let mut b = button("b", "AA", false);
+    b.style.offset_y = Offset::Px(-30.0);
+    let root = column("", vec![a, b]);
+    let layout = build(&root);
+
+    let top = layout
+        .hit_interactive(Point::new(10.0, 20.0))
+        .expect("точка внутри перекрытия");
+    assert_eq!(top.key, "a", "узел с большим z выше под точкой");
+}
+
+#[test]
+fn z_default_keeps_later_sibling_on_top() {
+    let b = button("b", "AA", false);
+    let mut a = button("a", "AA", false);
+    a.style.offset_y = Offset::Px(30.0);
+    let root = column("", vec![a, b]);
+    let layout = build(&root);
+
+    let top = layout
+        .hit_interactive(Point::new(10.0, 40.0))
+        .expect("точка внутри перекрытия");
+    assert_eq!(top.key, "b", "при равном z выше поздний сосед");
+}
+
+#[test]
+fn z_is_local_to_parent() {
+    let inner = VElement::container("p1", NodeKind::Column, vec![ztext("deep", "D", 100)]);
+    let root = column("", vec![inner, ztext("p2", "E", 0)]);
+    let layout = build(&root);
+    let keys: Vec<&str> = layout.nodes().iter().map(|node| node.key).collect();
+    assert_eq!(
+        keys,
+        vec!["", "p1", "deep", "p2"],
+        "поддерево остаётся над своим родителем (z локальный)"
+    );
+}

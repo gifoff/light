@@ -561,6 +561,27 @@ impl Generator {
         Ok(quote!(#visible))
     }
 
+    /// Порядок отрисовки/хит-теста `z`: `:z="path"` (динамически) либо
+    /// целочисленный атрибут `z` (статически, по умолчанию `0`).
+    fn z_token(&self, element: &Element) -> syn::Result<TokenStream> {
+        if let Some(path) = attr_value(&element.attrs, ":z") {
+            return self.path_expr(path);
+        }
+        let Some(value) = attr_value(&element.attrs, "z") else {
+            return Ok(quote!(0));
+        };
+        let number: i32 = value.trim().parse().map_err(|_| {
+            syn::Error::new(
+                Span::call_site(),
+                format!(
+                    "нечисловое значение z=\"{value}\" у <{}>: ожидается целое",
+                    element.name
+                ),
+            )
+        })?;
+        Ok(quote!(#number))
+    }
+
     /// Регистрирует пользовательскую проверку поля (`:validator="метод"`).
     fn record_field_validator(&mut self, element: &Element, key: &KeyExpr) -> syn::Result<()> {
         let Some(name) = attr_value(&element.attrs, ":validator") else {
@@ -975,7 +996,7 @@ impl Generator {
             quote!(::relay::vdom::NodeKind::Column)
         };
         let pushes = self.gen_children(&element.children, Some(key))?;
-        let style = style_token(element, default_font, self.visible_token(element)?)?;
+        let style = style_token(self, element, default_font, self.visible_token(element)?)?;
         let key = key.token();
         self.push_events(element, &key)?;
         Ok(quote! {{
@@ -990,7 +1011,7 @@ impl Generator {
         validate_attrs(&element.attrs, &["v-if", "v-else-if", "v-else", "v-for"])?;
         let meta = self.node_meta(element)?;
         let pushes = self.gen_children(&element.children, Some(key))?;
-        let style = style_token(element, None, self.visible_token(element)?)?;
+        let style = style_token(self, element, None, self.visible_token(element)?)?;
         let key = key.token();
         self.push_events(element, &key)?;
         Ok(quote! {{
@@ -1038,7 +1059,7 @@ impl Generator {
         };
 
         let pushes = self.gen_children(&element.children, Some(key))?;
-        let style = style_token(element, None, self.visible_token(element)?)?;
+        let style = style_token(self, element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;
         let key = key.token();
         self.push_events(element, &key)?;
@@ -1147,7 +1168,7 @@ impl Generator {
             if __key == #key { #(#branches)* }
         });
 
-        let style = style_token(element, None, self.visible_token(element)?)?;
+        let style = style_token(self, element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;
         Ok(quote! {
             ::relay::vdom::VElement::leaf(
@@ -1210,7 +1231,7 @@ impl Generator {
             if __key == #key { #(#branches)* }
         });
 
-        let style = style_token(element, None, self.visible_token(element)?)?;
+        let style = style_token(self, element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;
         Ok(quote! {
             ::relay::vdom::VElement::leaf(
@@ -1269,7 +1290,7 @@ impl Generator {
             if __key == #key { #(#branches)* }
         });
 
-        let style = style_token(element, None, self.visible_token(element)?)?;
+        let style = style_token(self, element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;
         Ok(quote! {
             ::relay::vdom::VElement::leaf(
@@ -1352,7 +1373,7 @@ impl Generator {
             if __key == #key { #(#branches)* }
         });
 
-        let style = style_token(element, None, self.visible_token(element)?)?;
+        let style = style_token(self, element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;
         Ok(quote! {
             ::relay::vdom::VElement::leaf(
@@ -1419,6 +1440,7 @@ fn parse_size_attr(element: &Element, name: &str) -> syn::Result<Option<TokenStr
 /// `border-size` (px), `background`, `font-color`, `border-color` (цвет),
 /// `visible` (видимость).
 fn style_token(
+    generator: &Generator,
     element: &Element,
     default_font: Option<f32>,
     visible: TokenStream,
@@ -1460,6 +1482,7 @@ fn style_token(
     let background = color_token(parse_color_attr(element, "background")?);
     let font_color = color_token(parse_color_attr(element, "font-color")?);
     let border_color = color_token(parse_color_attr(element, "border-color")?);
+    let z = generator.z_token(element)?;
     Ok(quote!(::relay::vdom::Style {
         width: #width,
         height: #height,
@@ -1480,8 +1503,8 @@ fn style_token(
         border_size: #border_size,
         visible: #visible,
         required: #required,
-        invalid: false,
         required_indicator: #required_indicator,
+        z: #z,
         ..::core::default::Default::default()
     }))
 }

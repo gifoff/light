@@ -201,7 +201,8 @@ struct Inherited {
 }
 
 /// Разложенное дерево: плоский список узлов в порядке отрисовки
-/// (предок раньше потомков, поздний сосед выше раннего).
+/// (предок раньше потомков; поздний сосед выше раннего; среди соседей выше
+/// тот, у кого больше `z`).
 #[derive(Debug, Clone)]
 pub struct Layout {
     nodes: Vec<PlacedNode>,
@@ -240,6 +241,8 @@ impl Layout {
         if let Some(node) = layout.nodes.first_mut() {
             node.rect = view;
         }
+        // Соседи переупорядочиваются по `z` (порядок отрисовки и хит-теста).
+        layout.reorder_by_z();
         layout
     }
 
@@ -684,6 +687,51 @@ impl Layout {
                 }
             }
         }
+    }
+
+    /// Переупорядочивает плоский список так, чтобы среди соседей порядок
+    /// отрисовки и попадания задавался `z`; геометрия узлов не меняется.
+    ///
+    /// Дети каждого узла стабильно сортируются по `style.z` (равные `z`
+    /// сохраняют DOM-порядок), затем список перестраивается в обходе в глубину
+    /// по новому порядку детей, а индексы детей перенумеровываются. `z`
+    /// действует только среди соседей (поддерево остаётся внутри родителя).
+    /// Корень остаётся нулевым индексом.
+    fn reorder_by_z(&mut self) {
+        if self.nodes.is_empty() {
+            return;
+        }
+        let z: Vec<i32> = self.nodes.iter().map(|node| node.style.z).collect();
+        for node in &mut self.nodes {
+            node.children.sort_by_key(|&child| z[child]);
+        }
+        let mut order = Vec::with_capacity(self.nodes.len());
+        let mut stack = vec![0usize];
+        while let Some(index) = stack.pop() {
+            order.push(index);
+            for &child in self.nodes[index].children.iter().rev() {
+                stack.push(child);
+            }
+        }
+        if order.len() != self.nodes.len() {
+            return;
+        }
+        let mut remap = vec![0usize; self.nodes.len()];
+        for (new, &old) in order.iter().enumerate() {
+            remap[old] = new;
+        }
+        let mut old_nodes: Vec<Option<PlacedNode>> = self.nodes.drain(..).map(Some).collect();
+        let mut nodes = Vec::with_capacity(order.len());
+        for &old in &order {
+            let Some(mut node) = old_nodes[old].take() else {
+                return;
+            };
+            for child in &mut node.children {
+                *child = remap[*child];
+            }
+            nodes.push(node);
+        }
+        self.nodes = nodes;
     }
 
     fn push(&mut self, vnode: &VElement, rect: Rect, parent: Option<usize>) -> usize {

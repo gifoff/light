@@ -367,11 +367,13 @@ fn switching_page_patches_only_sections() {
 #[proxy]
 struct StyledApp {
     ready: bool,
+    depth: i32,
 }
 
 #[test]
 fn style_attributes_are_compiled_into_vnode() {
     let app = StyledApp::new();
+    app.set_depth(5);
     let tree = app.render();
 
     let div = tree.get("0").expect("корневой <div>");
@@ -401,6 +403,7 @@ fn style_attributes_are_compiled_into_vnode() {
         relay::vdom::Offset::Px(-5.0),
         "position-offset-y отрицательный"
     );
+    assert_eq!(div.style.z, 3, "статический z");
 
     let span = tree.get("0.0").expect("вложенный <span>");
     assert_eq!(span.style.font_size, Some(20.0));
@@ -410,6 +413,7 @@ fn style_attributes_are_compiled_into_vnode() {
         relay::vdom::Offset::Px(3.0),
         "position-offset-x"
     );
+    assert_eq!(span.style.z, 5, "динамический :z=\"depth\"");
     assert!(
         tree.find_by_content("Стиль").is_some(),
         "голый текст внутри <span>"
