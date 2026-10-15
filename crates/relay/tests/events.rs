@@ -4,6 +4,12 @@
 //! всплывать к родителям. Единая проверка [`is_disabled`] используется и
 //! оконным бэкендом (доставка событий, курсор), и клавиатурной активацией.
 
+#![cfg(all(
+    feature = "elements-checkbox",
+    feature = "elements-radio",
+    feature = "elements-select"
+))]
+
 use relay::a11y::is_disabled;
 use relay::layout::{Layout, Point, TextMetrics};
 use relay::vdom::{ButtonType, NodeKind, SelectOption, VElement};

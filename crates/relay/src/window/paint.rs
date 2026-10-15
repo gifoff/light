@@ -4,9 +4,15 @@
 use ab_glyph::{Font, FontVec, PxScale, ScaleFont, point};
 
 use super::font::measure;
-use crate::layout::{
-    CHECKBOX_BOX, CHECKBOX_GAP, FIELD_PAD_X, FONT_SIZE, Layout, PlacedNode, Rect, SELECT_PAD_X,
-};
+#[cfg(feature = "elements-select")]
+use crate::layout::SELECT_PAD_X;
+#[cfg(any(
+    feature = "elements-checkbox",
+    feature = "elements-radio",
+    feature = "elements-select"
+))]
+use crate::layout::{CHECKBOX_BOX, CHECKBOX_GAP};
+use crate::layout::{FIELD_PAD_X, FONT_SIZE, Layout, PlacedNode, Rect};
 
 /// Цвет в формате `0xRRGGBBAA`.
 pub const fn rgba(r: u8, g: u8, b: u8, a: u8) -> u32 {
@@ -48,9 +54,15 @@ pub const COLOR_CARET: u32 = rgb(0x1F, 0x24, 0x2B);
 pub const SELECTION_BG: u32 = rgb(0xB6, 0xD4, 0xFE);
 /// Индикатор изменения размера поля.
 pub const RESIZE_GRIP: u32 = rgb(0x9A, 0xA2, 0xAE);
-/// Фон флажка/переключателя.
+/// Заливка флажка/переключателя.
+#[cfg(any(feature = "elements-checkbox", feature = "elements-radio"))]
 pub const FORM_BG: u32 = rgb(0xFF, 0xFF, 0xFF);
 /// Акцент флажка/переключателя/списка.
+#[cfg(any(
+    feature = "elements-checkbox",
+    feature = "elements-radio",
+    feature = "elements-select"
+))]
 pub const FORM_ACCENT: u32 = rgb(0x3B, 0x82, 0xF6);
 /// Рамка поля, не прошедшего валидацию.
 pub const FIELD_INVALID: u32 = rgb(0xD9, 0x53, 0x4F);
@@ -187,6 +199,11 @@ impl<'a> Canvas<'a> {
     }
 
     /// Заливает круг (с обрезкой по области холста).
+    #[cfg(any(
+        feature = "elements-checkbox",
+        feature = "elements-radio",
+        feature = "elements-select"
+    ))]
     pub fn fill_circle(&mut self, color: u32, cx: f32, cy: f32, radius: f32) {
         if radius <= 0.0 {
             return;
@@ -209,6 +226,11 @@ impl<'a> Canvas<'a> {
     }
 
     /// Рисует отрезок толщиной `thickness` (с обрезкой по области холста).
+    #[cfg(any(
+        feature = "elements-checkbox",
+        feature = "elements-radio",
+        feature = "elements-select"
+    ))]
     pub fn draw_line(&mut self, color: u32, from: (f32, f32), to: (f32, f32), thickness: f32) {
         let (x0, y0) = from;
         let (x1, y1) = to;
@@ -335,6 +357,7 @@ pub struct Interaction<'a> {
 }
 
 /// Прямоугольник раскрытого списка под его полем.
+#[cfg(feature = "elements-select")]
 pub(crate) fn select_popup(rect: Rect, count: usize, scale: f32) -> Rect {
     Rect::new(
         rect.x,
@@ -381,6 +404,8 @@ pub fn render(
         open_select,
         select_hover,
     } = interaction;
+    #[cfg(not(feature = "elements-select"))]
+    let _ = (open_select, select_hover);
     canvas.clear(background);
     let border = scale.max(1.0);
     let nodes = layout.nodes();
@@ -414,6 +439,7 @@ pub fn render(
                 }))
             }
             crate::vdom::NodeKind::TextField { .. } => Some(style.background.unwrap_or(FIELD_BG)),
+            #[cfg(feature = "elements-select")]
             crate::vdom::NodeKind::Select { .. } => Some(style.background.unwrap_or(FIELD_BG)),
             _ => style.background,
         };
@@ -507,6 +533,7 @@ pub fn render(
                     draw_field_required(canvas, font, rect, scale, size, style.required_indicator);
                 }
             }
+            #[cfg(feature = "elements-checkbox")]
             crate::vdom::NodeKind::Checkbox {
                 label,
                 checked,
@@ -532,6 +559,7 @@ pub fn render(
                     );
                 }
             }
+            #[cfg(feature = "elements-radio")]
             crate::vdom::NodeKind::Radio {
                 label,
                 selected,
@@ -558,6 +586,7 @@ pub fn render(
                     );
                 }
             }
+            #[cfg(feature = "elements-select")]
             crate::vdom::NodeKind::Select {
                 value,
                 options,
@@ -593,6 +622,7 @@ pub fn render(
         draw_focus_ring(canvas, node.rect, scale);
     }
 
+    #[cfg(feature = "elements-select")]
     if let Some(key) = open_select
         && let Some(node) = layout.node(key)
         && let crate::vdom::NodeKind::Select { value, options, .. } = &node.kind
@@ -655,6 +685,7 @@ fn draw_field_required(
 }
 
 /// Рисует индикатор обязательности флажка/переключателя после подписи.
+#[cfg(any(feature = "elements-checkbox", feature = "elements-radio"))]
 fn draw_inline_required(
     canvas: &mut Canvas,
     font: &FontVec,
@@ -686,6 +717,7 @@ fn draw_inline_required(
 
 /// Рисует флажок с подписью.
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "elements-checkbox")]
 fn draw_checkbox(
     canvas: &mut Canvas,
     font: &FontVec,
@@ -732,6 +764,7 @@ fn draw_checkbox(
 
 /// Рисует переключатель с подписью.
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "elements-radio")]
 fn draw_radio(
     canvas: &mut Canvas,
     font: &FontVec,
@@ -774,6 +807,7 @@ fn draw_radio(
 
 /// Рисует выпадающий список (без раскрытого меню).
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "elements-select")]
 fn draw_select(
     canvas: &mut Canvas,
     font: &FontVec,
@@ -848,6 +882,7 @@ fn draw_select(
 
 /// Рисует раскрытое меню выпадающего списка поверх интерфейса.
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "elements-select")]
 fn draw_select_popup(
     canvas: &mut Canvas,
     font: &FontVec,

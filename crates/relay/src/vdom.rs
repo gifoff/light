@@ -754,6 +754,7 @@ pub enum NodeKind {
         masked: bool,
     },
     /// Флажок (`<checkbox>`): переключает булево значение `v-model`.
+    #[cfg(feature = "elements-checkbox")]
     Checkbox {
         /// Подпись рядом с флажком.
         label: String,
@@ -764,6 +765,7 @@ pub enum NodeKind {
     },
     /// Переключатель (`<radio>`): выбирает одно значение из группы,
     /// объединённой общим `v-model`.
+    #[cfg(feature = "elements-radio")]
     Radio {
         /// Подпись рядом с переключателем.
         label: String,
@@ -775,6 +777,7 @@ pub enum NodeKind {
         disabled: bool,
     },
     /// Выпадающий список (`<select>`).
+    #[cfg(feature = "elements-select")]
     Select {
         /// Текущее выбранное значение (`v-model`).
         value: String,
@@ -981,11 +984,13 @@ impl VElement {
     fn collect_plain_text(&self, out: &mut String) {
         match &self.kind {
             NodeKind::Text { content } => out.push_str(content),
-            NodeKind::Button { .. }
-            | NodeKind::TextField { .. }
-            | NodeKind::Checkbox { .. }
-            | NodeKind::Radio { .. }
-            | NodeKind::Select { .. } => {}
+            NodeKind::Button { .. } | NodeKind::TextField { .. } => {}
+            #[cfg(feature = "elements-checkbox")]
+            NodeKind::Checkbox { .. } => {}
+            #[cfg(feature = "elements-radio")]
+            NodeKind::Radio { .. } => {}
+            #[cfg(feature = "elements-select")]
+            NodeKind::Select { .. } => {}
             _ => {
                 for child in &self.children {
                     child.collect_plain_text(out);
@@ -1069,24 +1074,30 @@ pub trait VNode {
 
     /// Заблокирован ли узел.
     fn disabled(&self) -> bool {
-        matches!(
-            self.kind(),
-            NodeKind::Button { disabled: true, .. }
-                | NodeKind::TextField { disabled: true, .. }
-                | NodeKind::Checkbox { disabled: true, .. }
-                | NodeKind::Radio { disabled: true, .. }
-                | NodeKind::Select { disabled: true, .. }
-        )
+        match self.kind() {
+            NodeKind::Button { disabled, .. } | NodeKind::TextField { disabled, .. } => *disabled,
+            #[cfg(feature = "elements-checkbox")]
+            NodeKind::Checkbox { disabled, .. } => *disabled,
+            #[cfg(feature = "elements-radio")]
+            NodeKind::Radio { disabled, .. } => *disabled,
+            #[cfg(feature = "elements-select")]
+            NodeKind::Select { disabled, .. } => *disabled,
+            _ => false,
+        }
     }
 
     /// Блокирует или разблокирует узел.
     fn set_disabled(&mut self, value: bool) {
         match self.kind_mut() {
-            NodeKind::Button { disabled, .. }
-            | NodeKind::TextField { disabled, .. }
-            | NodeKind::Checkbox { disabled, .. }
-            | NodeKind::Radio { disabled, .. }
-            | NodeKind::Select { disabled, .. } => *disabled = value,
+            NodeKind::Button { disabled, .. } | NodeKind::TextField { disabled, .. } => {
+                *disabled = value;
+            }
+            #[cfg(feature = "elements-checkbox")]
+            NodeKind::Checkbox { disabled, .. } => *disabled = value,
+            #[cfg(feature = "elements-radio")]
+            NodeKind::Radio { disabled, .. } => *disabled = value,
+            #[cfg(feature = "elements-select")]
+            NodeKind::Select { disabled, .. } => *disabled = value,
             _ => {}
         }
     }
@@ -1094,7 +1105,9 @@ pub trait VNode {
     /// Текущее значение (поля ввода или списка).
     fn value(&self) -> Option<&str> {
         match self.kind() {
-            NodeKind::TextField { value, .. } | NodeKind::Select { value, .. } => Some(value),
+            NodeKind::TextField { value, .. } => Some(value),
+            #[cfg(feature = "elements-select")]
+            NodeKind::Select { value, .. } => Some(value),
             _ => None,
         }
     }
@@ -1103,7 +1116,11 @@ pub trait VNode {
     fn set_value(&mut self, new_value: impl Into<String>) {
         let new_value = new_value.into();
         match self.kind_mut() {
-            NodeKind::TextField { value, .. } | NodeKind::Select { value, .. } => {
+            NodeKind::TextField { value, .. } => {
+                *value = new_value;
+            }
+            #[cfg(feature = "elements-select")]
+            NodeKind::Select { value, .. } => {
                 *value = new_value;
             }
             _ => {}
@@ -1112,31 +1129,52 @@ pub trait VNode {
 
     /// Отмечен ли флажок.
     fn checked(&self) -> bool {
-        matches!(self.kind(), NodeKind::Checkbox { checked: true, .. })
+        #[cfg(feature = "elements-checkbox")]
+        {
+            matches!(self.kind(), NodeKind::Checkbox { checked: true, .. })
+        }
+        #[cfg(not(feature = "elements-checkbox"))]
+        {
+            false
+        }
     }
 
     /// Ставит или снимает флажок.
     fn set_checked(&mut self, value: bool) {
+        #[cfg(feature = "elements-checkbox")]
         if let NodeKind::Checkbox { checked, .. } = self.kind_mut() {
             *checked = value;
         }
+        #[cfg(not(feature = "elements-checkbox"))]
+        let _ = value;
     }
 
     /// Выбран ли переключатель.
     fn selected(&self) -> bool {
-        matches!(self.kind(), NodeKind::Radio { selected: true, .. })
+        #[cfg(feature = "elements-radio")]
+        {
+            matches!(self.kind(), NodeKind::Radio { selected: true, .. })
+        }
+        #[cfg(not(feature = "elements-radio"))]
+        {
+            false
+        }
     }
 
     /// Выбирает или снимает переключатель.
     fn set_selected(&mut self, value: bool) {
+        #[cfg(feature = "elements-radio")]
         if let NodeKind::Radio { selected, .. } = self.kind_mut() {
             *selected = value;
         }
+        #[cfg(not(feature = "elements-radio"))]
+        let _ = value;
     }
 
     /// Варианты выпадающего списка.
     fn options(&self) -> &[SelectOption] {
         match self.kind() {
+            #[cfg(feature = "elements-select")]
             NodeKind::Select { options, .. } => options,
             _ => &[],
         }
@@ -1144,9 +1182,12 @@ pub trait VNode {
 
     /// Задаёт варианты выпадающего списка.
     fn set_options(&mut self, value: Vec<SelectOption>) {
+        #[cfg(feature = "elements-select")]
         if let NodeKind::Select { options, .. } = self.kind_mut() {
             *options = value;
         }
+        #[cfg(not(feature = "elements-select"))]
+        let _ = value;
     }
 
     /// Отправляет действие оконному бэкенду для окна, событие которого
@@ -1429,19 +1470,22 @@ fn diff_node(old: &VElement, new: &VElement, patch: &mut Patch) {
 
 /// Совместимы ли типы узлов: контейнер с контейнером, текст с текстом и т. д.
 fn kind_compatible(a: &NodeKind, b: &NodeKind) -> bool {
-    matches!(
-        (a, b),
+    match (a, b) {
         (NodeKind::Column, NodeKind::Column)
-            | (NodeKind::Row, NodeKind::Row)
-            | (NodeKind::TitleBar, NodeKind::TitleBar)
-            | (NodeKind::Window, NodeKind::Window)
-            | (NodeKind::Text { .. }, NodeKind::Text { .. })
-            | (NodeKind::Button { .. }, NodeKind::Button { .. })
-            | (NodeKind::TextField { .. }, NodeKind::TextField { .. })
-            | (NodeKind::Checkbox { .. }, NodeKind::Checkbox { .. })
-            | (NodeKind::Radio { .. }, NodeKind::Radio { .. })
-            | (NodeKind::Select { .. }, NodeKind::Select { .. })
-    )
+        | (NodeKind::Row, NodeKind::Row)
+        | (NodeKind::TitleBar, NodeKind::TitleBar)
+        | (NodeKind::Window, NodeKind::Window)
+        | (NodeKind::Text { .. }, NodeKind::Text { .. })
+        | (NodeKind::Button { .. }, NodeKind::Button { .. })
+        | (NodeKind::TextField { .. }, NodeKind::TextField { .. }) => true,
+        #[cfg(feature = "elements-checkbox")]
+        (NodeKind::Checkbox { .. }, NodeKind::Checkbox { .. }) => true,
+        #[cfg(feature = "elements-radio")]
+        (NodeKind::Radio { .. }, NodeKind::Radio { .. }) => true,
+        #[cfg(feature = "elements-select")]
+        (NodeKind::Select { .. }, NodeKind::Select { .. }) => true,
+        _ => false,
+    }
 }
 
 fn diff_kind(old: &NodeKind, new: &NodeKind, key: &'static str, patch: &mut Patch) {
@@ -1529,6 +1573,7 @@ fn diff_kind(old: &NodeKind, new: &NodeKind, key: &'static str, patch: &mut Patc
                 patch.changed.insert(key);
             }
         }
+        #[cfg(feature = "elements-checkbox")]
         (
             NodeKind::Checkbox {
                 label: label_a,
@@ -1563,6 +1608,7 @@ fn diff_kind(old: &NodeKind, new: &NodeKind, key: &'static str, patch: &mut Patc
                 patch.changed.insert(key);
             }
         }
+        #[cfg(feature = "elements-radio")]
         (
             NodeKind::Radio {
                 label: label_a,
@@ -1602,6 +1648,7 @@ fn diff_kind(old: &NodeKind, new: &NodeKind, key: &'static str, patch: &mut Patc
                 patch.changed.insert(key);
             }
         }
+        #[cfg(feature = "elements-select")]
         (
             NodeKind::Select {
                 value: value_a,

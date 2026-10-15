@@ -10,7 +10,12 @@
 //!
 //! После этого любые изменения в дереве будут показаны в diff'е.
 
-#![cfg(feature = "a11y")]
+#![cfg(all(
+    feature = "a11y",
+    feature = "elements-checkbox",
+    feature = "elements-radio",
+    feature = "elements-select"
+))]
 
 use accesskit::TreeUpdate;
 use relay::a11y::tree::{build_update, find_key_for_node_id};

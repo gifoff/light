@@ -62,7 +62,9 @@ impl ValidationResult {
 pub fn field_value(node: &VElement) -> String {
     match &node.kind {
         NodeKind::TextField { value, .. } => value.clone(),
+        #[cfg(feature = "elements-checkbox")]
         NodeKind::Checkbox { checked, .. } => checked.to_string(),
+        #[cfg(feature = "elements-radio")]
         NodeKind::Radio {
             selected, value, ..
         } => {
@@ -72,6 +74,7 @@ pub fn field_value(node: &VElement) -> String {
                 String::new()
             }
         }
+        #[cfg(feature = "elements-select")]
         NodeKind::Select { value, .. } => value.clone(),
         _ => String::new(),
     }
@@ -160,21 +163,24 @@ pub fn find_submit_button<'a>(root: &'a VElement, focused_key: &str) -> Option<&
 }
 
 fn check_required(node: &VElement, errors: &mut Vec<FieldError>) {
-    let required_radios: Vec<&VElement> = node
-        .children
-        .iter()
-        .filter(|child| child.style.required && matches!(child.kind, NodeKind::Radio { .. }))
-        .collect();
-    if !required_radios.is_empty() {
-        let any_selected = node
+    #[cfg(feature = "elements-radio")]
+    {
+        let required_radios: Vec<&VElement> = node
             .children
             .iter()
-            .any(|child| matches!(child.kind, NodeKind::Radio { selected: true, .. }));
-        if !any_selected {
-            errors.push(FieldError {
-                key: required_radios[0].key.to_owned(),
-                message: REQUIRED_RADIO.to_owned(),
-            });
+            .filter(|child| child.style.required && matches!(child.kind, NodeKind::Radio { .. }))
+            .collect();
+        if !required_radios.is_empty() {
+            let any_selected = node
+                .children
+                .iter()
+                .any(|child| matches!(child.kind, NodeKind::Radio { selected: true, .. }));
+            if !any_selected {
+                errors.push(FieldError {
+                    key: required_radios[0].key.to_owned(),
+                    message: REQUIRED_RADIO.to_owned(),
+                });
+            }
         }
     }
 
@@ -193,7 +199,9 @@ fn check_required(node: &VElement, errors: &mut Vec<FieldError>) {
                     None
                 }
             }
+            #[cfg(feature = "elements-checkbox")]
             NodeKind::Checkbox { checked, .. } => (!*checked).then_some(REQUIRED_CHECK),
+            #[cfg(feature = "elements-select")]
             NodeKind::Select { value, .. } => value.is_empty().then_some(REQUIRED_SELECT),
             _ => None,
         };
@@ -215,13 +223,18 @@ fn apply_field_validators(
     component: &dyn Component,
     result: &mut ValidationResult,
 ) {
-    if matches!(
-        node.kind,
-        NodeKind::TextField { .. }
-            | NodeKind::Checkbox { .. }
-            | NodeKind::Radio { .. }
-            | NodeKind::Select { .. }
-    ) && result.message_for(node.key).is_none()
+    let is_field = match node.kind {
+        NodeKind::TextField { .. } => true,
+        #[cfg(feature = "elements-checkbox")]
+        NodeKind::Checkbox { .. } => true,
+        #[cfg(feature = "elements-radio")]
+        NodeKind::Radio { .. } => true,
+        #[cfg(feature = "elements-select")]
+        NodeKind::Select { .. } => true,
+        _ => false,
+    };
+    if is_field
+        && result.message_for(node.key).is_none()
         && let Err(message) = component.validate_field(node.key, &field_value(node))
     {
         result.errors.push(FieldError {

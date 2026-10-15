@@ -104,8 +104,11 @@ pub fn default_role(kind: &NodeKind) -> Role {
             multiline: true, ..
         } => Role::MultilineTextInput,
         NodeKind::TextField { .. } => Role::TextInput,
+        #[cfg(feature = "elements-checkbox")]
         NodeKind::Checkbox { .. } => Role::CheckBox,
+        #[cfg(feature = "elements-radio")]
         NodeKind::Radio { .. } => Role::RadioButton,
+        #[cfg(feature = "elements-select")]
         NodeKind::Select { .. } => Role::ComboBox,
     }
 }
@@ -190,6 +193,7 @@ mod tests {
 
     #[test]
     fn kind_defaults_cover_form_controls() {
+        #[cfg(feature = "elements-checkbox")]
         assert_eq!(
             default_role(&NodeKind::Checkbox {
                 label: String::new(),
@@ -198,6 +202,7 @@ mod tests {
             }),
             Role::CheckBox
         );
+        #[cfg(feature = "elements-select")]
         assert_eq!(
             default_role(&NodeKind::Select {
                 value: String::new(),

@@ -1,5 +1,11 @@
 //! Тесты сравнения виртуальных деревьев: точечные обновления.
 
+#![cfg(all(
+    feature = "elements-checkbox",
+    feature = "elements-radio",
+    feature = "elements-select"
+))]
+
 use relay::vdom::{NodeKind, Op, Patch, SelectOption, VElement, diff};
 
 fn text(key: &'static str, content: &str) -> VElement {

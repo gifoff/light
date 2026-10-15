@@ -3,6 +3,12 @@
 //! Каждый тест строит дерево, доставляет событие и проверяет через
 //! [`diff`], что обновились **только** изменившиеся элементы.
 
+#![cfg(all(
+    feature = "elements-checkbox",
+    feature = "elements-radio",
+    feature = "elements-select"
+))]
+
 use relay::prelude::*;
 use relay::vdom::{Event, NodeKind, Op, Size, VElement, diff};
 

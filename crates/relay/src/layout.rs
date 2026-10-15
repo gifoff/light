@@ -205,14 +205,16 @@ pub struct PlacedNode {
 impl PlacedNode {
     /// Интерактивен ли узел (кнопка, поле или элемент формы).
     pub fn is_interactive(&self) -> bool {
-        matches!(
-            self.kind,
-            NodeKind::Button { .. }
-                | NodeKind::TextField { .. }
-                | NodeKind::Checkbox { .. }
-                | NodeKind::Radio { .. }
-                | NodeKind::Select { .. }
-        )
+        match self.kind {
+            NodeKind::Button { .. } | NodeKind::TextField { .. } => true,
+            #[cfg(feature = "elements-checkbox")]
+            NodeKind::Checkbox { .. } => true,
+            #[cfg(feature = "elements-radio")]
+            NodeKind::Radio { .. } => true,
+            #[cfg(feature = "elements-select")]
+            NodeKind::Select { .. } => true,
+            _ => false,
+        }
     }
 }
 
@@ -586,7 +588,8 @@ impl Layout {
                 self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
                 (w, h)
             }
-            NodeKind::Checkbox { label, .. } | NodeKind::Radio { label, .. } => {
+            #[cfg(feature = "elements-checkbox")]
+            NodeKind::Checkbox { label, .. } => {
                 let (label_w, label_h) = metrics.measure(label, font_size);
                 let content_w = CHECKBOX_BOX + CHECKBOX_GAP + label_w;
                 let content_h = CHECKBOX_BOX.max(label_h);
@@ -595,6 +598,17 @@ impl Layout {
                 self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
                 (w, h)
             }
+            #[cfg(feature = "elements-radio")]
+            NodeKind::Radio { label, .. } => {
+                let (label_w, label_h) = metrics.measure(label, font_size);
+                let content_w = CHECKBOX_BOX + CHECKBOX_GAP + label_w;
+                let content_h = CHECKBOX_BOX.max(label_h);
+                let w = style.resolve_width(content_w + inset.horizontal(), avail_w);
+                let h = style.resolve_height(content_h + inset.vertical(), avail_h);
+                self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
+                (w, h)
+            }
+            #[cfg(feature = "elements-select")]
             NodeKind::Select { options, .. } => {
                 let widest = options
                     .iter()
@@ -869,14 +883,16 @@ impl Layout {
 
 /// Заблокирован ли узел директивой `:disabled`.
 fn is_disabled(kind: &NodeKind) -> bool {
-    matches!(
-        kind,
-        NodeKind::Button { disabled: true, .. }
-            | NodeKind::TextField { disabled: true, .. }
-            | NodeKind::Checkbox { disabled: true, .. }
-            | NodeKind::Radio { disabled: true, .. }
-            | NodeKind::Select { disabled: true, .. }
-    )
+    match kind {
+        NodeKind::Button { disabled, .. } | NodeKind::TextField { disabled, .. } => *disabled,
+        #[cfg(feature = "elements-checkbox")]
+        NodeKind::Checkbox { disabled, .. } => *disabled,
+        #[cfg(feature = "elements-radio")]
+        NodeKind::Radio { disabled, .. } => *disabled,
+        #[cfg(feature = "elements-select")]
+        NodeKind::Select { disabled, .. } => *disabled,
+        _ => false,
+    }
 }
 
 /// Вычисляет области перерисовки между двумя раскладками.

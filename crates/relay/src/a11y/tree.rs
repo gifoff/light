@@ -203,6 +203,7 @@ fn apply_value(node: &mut Node, element: &VElement) {
                 node.set_placeholder(placeholder.as_str());
             }
         }
+        #[cfg(feature = "elements-select")]
         NodeKind::Select { value, .. } => node.set_value(value.as_str()),
         _ => {}
     }
@@ -213,7 +214,9 @@ fn checked_state(element: &VElement) -> Option<Toggled> {
         return Some(toggled);
     }
     match &element.kind {
+        #[cfg(feature = "elements-checkbox")]
         NodeKind::Checkbox { checked, .. } => Some(Toggled::from(*checked)),
+        #[cfg(feature = "elements-radio")]
         NodeKind::Radio { selected, .. } => Some(Toggled::from(*selected)),
         _ => None,
     }
@@ -265,9 +268,10 @@ fn collect_text_into(element: &VElement, out: &mut String) {
 
 fn intrinsic_name(element: &VElement) -> Option<String> {
     match &element.kind {
-        NodeKind::Checkbox { label, .. } | NodeKind::Radio { label, .. } if !label.is_empty() => {
-            Some(label.clone())
-        }
+        #[cfg(feature = "elements-checkbox")]
+        NodeKind::Checkbox { label, .. } if !label.is_empty() => Some(label.clone()),
+        #[cfg(feature = "elements-radio")]
+        NodeKind::Radio { label, .. } if !label.is_empty() => Some(label.clone()),
         NodeKind::Text { content } if !content.is_empty() => Some(content.clone()),
         NodeKind::Window => element.titlebar_text(),
         NodeKind::TextField { placeholder, .. } if !placeholder.is_empty() => {
@@ -397,6 +401,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "elements-checkbox")]
     fn checkbox_state_is_reported() {
         let checked = VElement::leaf(
             "c1",

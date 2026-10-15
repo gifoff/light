@@ -52,10 +52,22 @@ pub fn default_actions(element: &VElement) -> Vec<accesskit::Action> {
         actions.push(Action::Focus);
     }
     match &element.kind {
-        NodeKind::Button { .. } | NodeKind::Checkbox { .. } | NodeKind::Radio { .. } => {
+        NodeKind::Button { .. } => {
             actions.push(Action::Click);
         }
-        NodeKind::TextField { .. } | NodeKind::Select { .. } => {
+        #[cfg(feature = "elements-checkbox")]
+        NodeKind::Checkbox { .. } => {
+            actions.push(Action::Click);
+        }
+        #[cfg(feature = "elements-radio")]
+        NodeKind::Radio { .. } => {
+            actions.push(Action::Click);
+        }
+        NodeKind::TextField { .. } => {
+            actions.push(Action::SetValue);
+        }
+        #[cfg(feature = "elements-select")]
+        NodeKind::Select { .. } => {
             actions.push(Action::SetValue);
         }
         _ => {}

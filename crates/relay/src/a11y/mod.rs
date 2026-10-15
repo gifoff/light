@@ -86,11 +86,13 @@ pub fn is_disabled(element: &crate::vdom::VElement) -> bool {
         return true;
     }
     match &element.kind {
-        NodeKind::Button { disabled, .. }
-        | NodeKind::TextField { disabled, .. }
-        | NodeKind::Checkbox { disabled, .. }
-        | NodeKind::Radio { disabled, .. }
-        | NodeKind::Select { disabled, .. } => *disabled,
+        NodeKind::Button { disabled, .. } | NodeKind::TextField { disabled, .. } => *disabled,
+        #[cfg(feature = "elements-checkbox")]
+        NodeKind::Checkbox { disabled, .. } => *disabled,
+        #[cfg(feature = "elements-radio")]
+        NodeKind::Radio { disabled, .. } => *disabled,
+        #[cfg(feature = "elements-select")]
+        NodeKind::Select { disabled, .. } => *disabled,
         _ => false,
     }
 }

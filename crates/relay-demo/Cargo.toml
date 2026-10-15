@@ -8,7 +8,26 @@ publish = false
 description = "Демонстрационное приложение библиотеки Relay"
 
 [dependencies]
-relay.workspace = true
+relay = { workspace = true, features = [
+    "elements-form",
+    "align-content",
+    "z-order",
+    "cursor-theming",
+    "offset-position",
+    "dynamic-attrs",
+    "required-fields",
+    "validation",
+    "min-max-size",
+    "include",
+    "window-transparent",
+    "window-modal",
+    "window-multi",
+    "window-by-id",
+    "window-resize",
+    "a11y-live",
+    "a11y-focus",
+    "a11y-keyboard",
+] }
 
 [dev-dependencies]
 serde_json = "1"

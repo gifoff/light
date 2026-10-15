@@ -113,6 +113,7 @@ enum ClickAction {
         value: String,
         caret: usize,
     },
+    #[cfg(feature = "elements-select")]
     ToggleSelect(&'static str),
 }
 
@@ -179,7 +180,9 @@ struct WindowState {
     redo: Vec<String>,
     cursor_icon: Option<CursorIcon>,
     last_click: Option<(Instant, Point)>,
+    #[cfg(feature = "elements-select")]
     open_select: Option<&'static str>,
+    #[cfg(feature = "elements-select")]
     select_hover: Option<usize>,
     /// Адаптер AccessKit этого окна (если фича и поддержка включены).
     #[cfg(feature = "a11y-winit")]
@@ -300,21 +303,24 @@ impl WindowState {
 
     /// Сбрасывает состояние раскрытого списка, если его узел исчез из дерева.
     fn sync_select_after_redraw(&mut self) {
-        let Some(key) = self.open_select else {
-            return;
-        };
-        let alive = self.layout.as_ref().is_some_and(|layout| {
-            matches!(
-                layout.node(key).map(|node| &node.kind),
-                Some(NodeKind::Select {
-                    disabled: false,
-                    ..
-                })
-            )
-        });
-        if !alive {
-            self.open_select = None;
-            self.select_hover = None;
+        #[cfg(feature = "elements-select")]
+        {
+            let Some(key) = self.open_select else {
+                return;
+            };
+            let alive = self.layout.as_ref().is_some_and(|layout| {
+                matches!(
+                    layout.node(key).map(|node| &node.kind),
+                    Some(NodeKind::Select {
+                        disabled: false,
+                        ..
+                    })
+                )
+            });
+            if !alive {
+                self.open_select = None;
+                self.select_hover = None;
+            }
         }
     }
 
@@ -343,6 +349,14 @@ impl WindowState {
         let focus_ring: Option<&str> = None;
         let hover = self.hover;
         let selection = self.selection();
+        #[cfg(feature = "elements-select")]
+        let open_select = self.open_select;
+        #[cfg(not(feature = "elements-select"))]
+        let open_select: Option<&'static str> = None;
+        #[cfg(feature = "elements-select")]
+        let select_hover = self.select_hover;
+        #[cfg(not(feature = "elements-select"))]
+        let select_hover: Option<usize> = None;
         let background = self.config.background;
         let font = self.font.font();
         let scale = self.scale;
@@ -360,8 +374,8 @@ impl WindowState {
                     caret_pos: self.caret,
                     selection,
                     hover,
-                    open_select: self.open_select,
-                    select_hover: self.select_hover,
+                    open_select,
+                    select_hover,
                 },
                 background,
             );
@@ -532,14 +546,17 @@ impl WindowState {
             return None;
         }
         match &node.kind {
-            NodeKind::Button { .. } | NodeKind::Checkbox { .. } | NodeKind::Radio { .. } => {
-                Some(ClickAction::Click(node.key))
-            }
+            NodeKind::Button { .. } => Some(ClickAction::Click(node.key)),
+            #[cfg(feature = "elements-checkbox")]
+            NodeKind::Checkbox { .. } => Some(ClickAction::Click(node.key)),
+            #[cfg(feature = "elements-radio")]
+            NodeKind::Radio { .. } => Some(ClickAction::Click(node.key)),
             NodeKind::TextField { value, .. } => Some(ClickAction::FocusField {
                 key: node.key,
                 value: value.clone(),
                 caret: self.caret_from_pointer(node, self.cursor),
             }),
+            #[cfg(feature = "elements-select")]
             NodeKind::Select { .. } => Some(ClickAction::ToggleSelect(node.key)),
             _ => None,
         }
@@ -657,6 +674,7 @@ impl WindowState {
                 self.redo.clear();
                 self.invalidate();
             }
+            #[cfg(feature = "elements-select")]
             Some(ClickAction::ToggleSelect(key)) => {
                 self.open_select = Some(key);
                 self.select_hover = None;
@@ -682,6 +700,18 @@ impl WindowState {
     /// Возвращает `true`, если клик поглощён (выбор пункта, закрытие списка);
     /// `false`, если список закрыт и клик следует обработать обычным путём.
     fn handle_open_select(&mut self) -> bool {
+        #[cfg(feature = "elements-select")]
+        {
+            self.handle_open_select_impl()
+        }
+        #[cfg(not(feature = "elements-select"))]
+        {
+            false
+        }
+    }
+
+    #[cfg(feature = "elements-select")]
+    fn handle_open_select_impl(&mut self) -> bool {
         let Some(key) = self.open_select else {
             return false;
         };
@@ -714,6 +744,7 @@ impl WindowState {
     }
 
     /// Индекс пункта раскрытого списка под точкой.
+    #[cfg(feature = "elements-select")]
     fn select_option_at(&self, key: &str) -> Option<usize> {
         let layout = self.layout.as_ref()?;
         let node = layout.node(key)?;
@@ -784,6 +815,7 @@ impl WindowState {
             return;
         }
 
+        #[cfg(feature = "elements-select")]
         if let Some(key) = self.open_select {
             let hover = self.select_option_at(key);
             if hover != self.select_hover {
@@ -1208,6 +1240,7 @@ impl WindowState {
     }
 
     fn on_key(&mut self, event: &KeyEvent) {
+        #[cfg(feature = "elements-select")]
         if self.open_select.is_some() && matches!(&event.logical_key, Key::Named(NamedKey::Escape))
         {
             self.open_select = None;
@@ -1885,7 +1918,9 @@ impl App {
             redo: Vec::new(),
             cursor_icon: None,
             last_click: None,
+            #[cfg(feature = "elements-select")]
             open_select: None,
+            #[cfg(feature = "elements-select")]
             select_hover: None,
             #[cfg(feature = "a11y-winit")]
             adapter,
@@ -2272,10 +2307,13 @@ pub fn default_cursor_for(element: &VElement) -> Cursor {
         return Cursor::Pointer;
     }
     match &element.kind {
-        NodeKind::Button { .. }
-        | NodeKind::Checkbox { .. }
-        | NodeKind::Radio { .. }
-        | NodeKind::Select { .. } => Cursor::Pointer,
+        NodeKind::Button { .. } => Cursor::Pointer,
+        #[cfg(feature = "elements-checkbox")]
+        NodeKind::Checkbox { .. } => Cursor::Pointer,
+        #[cfg(feature = "elements-radio")]
+        NodeKind::Radio { .. } => Cursor::Pointer,
+        #[cfg(feature = "elements-select")]
+        NodeKind::Select { .. } => Cursor::Pointer,
         NodeKind::TextField { .. } => Cursor::Text,
         _ => Cursor::Default,
     }

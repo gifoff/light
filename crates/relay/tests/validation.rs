@@ -1,6 +1,12 @@
 //! Валидация форм: стандартный `required`, пользовательские `:validator`
 //! и `@validate`, а также атрибуты `required`/`type` в разметке.
 
+#![cfg(all(
+    feature = "elements-checkbox",
+    feature = "elements-radio",
+    feature = "elements-select"
+))]
+
 use relay::prelude::*;
 use relay::validation::{self, REQUIRED_CHECK, REQUIRED_SELECT, REQUIRED_TEXT};
 use relay::vdom::{ButtonType, NodeKind, VElement};
