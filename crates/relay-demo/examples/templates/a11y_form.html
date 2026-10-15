@@ -1,12 +1,13 @@
 <window id="a11y-form" width="420" height="480" min-width="200" min-height="200" max-width="800" max-height="800" resizable="true">
-    <titlebar width="100%" height="40" background="#333333" >
-        <h3 width="100%" height="100%" justify-content="center" align-items="center" background="#c9938f">
+    <titlebar width="100%" height="30" background="#333333" >
+        <h3 :width="title_width" padding-left="20" padding-top="5" height="100%" justify-content="center" align-items="center" :background="accent">
             Доступная форма
         </h3>
         <button
                 position-x="right" position-y="center"
+                justify-content="center"
                 background="#9c9a32"
-                padding="10"
+                height="100%"
                 type="button" aria-label="Закрыть" tabindex="50" @click="Dom::window().map(|window| window.close())">x</button>
     </titlebar>
     <div direction="vertical" padding="12" role="form" aria-label="Регистрация">
