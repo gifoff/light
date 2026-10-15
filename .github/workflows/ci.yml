@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  fmt:
+    name: Форматирование
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: Clippy (все фичи)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Тесты (все фичи)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-features
+
+  # Матрица наборов фич: проверяем, что каждая комбинация собирается и проходит
+  # тесты, а не только `--all-features`. Ловит забытые `#[cfg]`.
+  features:
+    name: Фичи (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: без фич
+            args: --no-default-features
+          - name: базовые элементы
+            args: --no-default-features --features elements-basic
+          - name: базовые + окно + a11y
+            args: --no-default-features --features "elements-basic,window,a11y-winit"
+          - name: формы + окно + a11y
+            args: --no-default-features --features "elements-form,window,a11y-winit"
+          - name: a11y без клавиатуры
+            args: --no-default-features --features "elements-basic,window,a11y"
+          - name: кросс-элементные
+            args: >-
+              --no-default-features
+              --features "elements-form,window,a11y-winit,include,align-content,z-order,cursor-theming,offset-position,dynamic-attrs,required-fields,validation,min-max-size"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Сборка и тесты
+        run: cargo test -p relay ${{ matrix.args }}
