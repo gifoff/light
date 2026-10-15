@@ -1447,57 +1447,75 @@ fn style_token(
     default_font: Option<f32>,
     visible: TokenStream,
 ) -> syn::Result<TokenStream> {
-    let width = size_token(element, "width", quote!(::relay::vdom::Size::Auto))?;
-    let height = size_token(element, "height", quote!(::relay::vdom::Size::Auto))?;
-    let min_width = optional_size_token(element, "min-width")?;
-    let min_height = optional_size_token(element, "min-height")?;
-    let max_width = optional_size_token(element, "max-width")?;
-    let max_height = optional_size_token(element, "max-height")?;
-    let align_x = align_token(
+    let width = size_attr(
+        generator,
+        element,
+        "width",
+        quote!(::relay::vdom::Size::Auto),
+    )?;
+    let height = size_attr(
+        generator,
+        element,
+        "height",
+        quote!(::relay::vdom::Size::Auto),
+    )?;
+    let min_width = optional_size_attr(generator, element, "min-width")?;
+    let min_height = optional_size_attr(generator, element, "min-height")?;
+    let max_width = optional_size_attr(generator, element, "max-width")?;
+    let max_height = optional_size_attr(generator, element, "max-height")?;
+    let align_x = align_attr(
+        generator,
         element,
         "position-x",
         "left",
         "right",
+        quote!(::relay::vdom::parse_align_x),
         quote!(::relay::vdom::Align::Start),
     )?;
-    let align_y = align_token(
+    let align_y = align_attr(
+        generator,
         element,
         "position-y",
         "top",
         "bottom",
+        quote!(::relay::vdom::parse_align_y),
         quote!(::relay::vdom::Align::Start),
     )?;
-    let offset_x = offset_token(element, "position-offset-x")?;
-    let offset_y = offset_token(element, "position-offset-y")?;
-    let justify_content = align_token(
+    let offset_x = offset_attr(generator, element, "position-offset-x")?;
+    let offset_y = offset_attr(generator, element, "position-offset-y")?;
+    let justify_content = align_attr(
+        generator,
         element,
         "justify-content",
         "start",
         "end",
+        quote!(::relay::vdom::parse_justify),
         quote!(::relay::vdom::Align::Start),
     )?;
-    let align_items = align_token(
+    let align_items = align_attr(
+        generator,
         element,
         "align-items",
         "start",
         "end",
+        quote!(::relay::vdom::parse_align_items),
         quote!(::relay::vdom::Align::Start),
     )?;
-    let padding = edges_token(element, "padding")?;
-    let margin = edges_token(element, "margin")?;
-    let border_size = parse_px_attr(element, "border-size")?.unwrap_or(0.0);
-    let font_size = match parse_px_attr(element, "font-size")? {
+    let padding = edges_attr(generator, element, "padding")?;
+    let margin = edges_attr(generator, element, "margin")?;
+    let border_size = px_attr(generator, element, "border-size")?.unwrap_or_else(|| quote!(0.0));
+    let font_size = match px_attr(generator, element, "font-size")? {
         Some(value) => quote!(::std::option::Option::Some(#value)),
         None => match default_font {
             Some(default) => quote!(::std::option::Option::Some(#default)),
             None => quote!(::std::option::Option::None),
         },
     };
-    let required = required_token(element);
-    let required_indicator = required_indicator_token(element)?;
-    let background = color_token(parse_color_attr(element, "background")?);
-    let font_color = color_token(parse_color_attr(element, "font-color")?);
-    let border_color = color_token(parse_color_attr(element, "border-color")?);
+    let required = required_attr(generator, element)?;
+    let required_indicator = required_indicator_attr(generator, element)?;
+    let background = color_attr(generator, element, "background")?;
+    let font_color = color_attr(generator, element, "font-color")?;
+    let border_color = color_attr(generator, element, "border-color")?;
     let z = generator.z_token(element)?;
     Ok(quote!(::relay::vdom::Style {
         width: #width,
@@ -1591,9 +1609,142 @@ fn offset_token(element: &Element, name: &str) -> syn::Result<TokenStream> {
     Ok(token)
 }
 
-/// Атрибут размера (`left`/`top`/`width`/`height`) или значение по умолчанию.
-fn size_token(element: &Element, name: &str, default: TokenStream) -> syn::Result<TokenStream> {
+/// Значение динамической привязки `:name="путь"` как `String`.
+///
+/// Возвращает `None`, если динамическая привязка не задана. Статический атрибут
+/// `name` при этом игнорируется — динамическое значение имеет приоритет.
+fn dynamic_value(
+    generator: &Generator,
+    element: &Element,
+    name: &str,
+) -> syn::Result<Option<TokenStream>> {
+    let Some(path) = attr_value(&element.attrs, &format!(":{name}")) else {
+        return Ok(None);
+    };
+    let expr = generator.path_expr(path)?;
+    Ok(Some(quote!(
+        ::std::string::ToString::to_string(&(#expr))
+    )))
+}
+
+/// Атрибут размера (`width`/`height`): динамический `:name="путь"` или
+/// статический `name` с значением по умолчанию.
+fn size_attr(
+    generator: &Generator,
+    element: &Element,
+    name: &str,
+    default: TokenStream,
+) -> syn::Result<TokenStream> {
+    if let Some(value) = dynamic_value(generator, element, name)? {
+        return Ok(quote!(::relay::vdom::parse_size_or_auto(&#value)));
+    }
     Ok(parse_size_attr(element, name)?.unwrap_or(default))
+}
+
+/// Необязательный размер (`min-width`/`max-width` и т. п.) как
+/// `Option<::relay::vdom::Size>` с учётом динамической привязки.
+fn optional_size_attr(
+    generator: &Generator,
+    element: &Element,
+    name: &str,
+) -> syn::Result<TokenStream> {
+    if let Some(value) = dynamic_value(generator, element, name)? {
+        return Ok(quote!(::std::option::Option::Some(
+            ::relay::vdom::parse_size_or_auto(&#value)
+        )));
+    }
+    optional_size_token(element, name)
+}
+
+/// Атрибут выравнивания (`position-x`, `justify-content`, …): динамический
+/// `:name="путь"` (через `parse`) или статический `name` с значениями
+/// `start`/`end`.
+fn align_attr(
+    generator: &Generator,
+    element: &Element,
+    name: &str,
+    start: &str,
+    end: &str,
+    parse: TokenStream,
+    default: TokenStream,
+) -> syn::Result<TokenStream> {
+    if let Some(value) = dynamic_value(generator, element, name)? {
+        return Ok(quote!(#parse(&#value)));
+    }
+    align_token(element, name, start, end, default)
+}
+
+/// Атрибут смещения (`position-offset-x`/`position-offset-y`): динамический
+/// `:name="путь"` или статический `name`.
+fn offset_attr(generator: &Generator, element: &Element, name: &str) -> syn::Result<TokenStream> {
+    if let Some(value) = dynamic_value(generator, element, name)? {
+        return Ok(quote!(::relay::vdom::parse_offset(&#value)));
+    }
+    offset_token(element, name)
+}
+
+/// Отступы (`padding`/`margin`): динамический `:name="путь"` задаёт базовое
+/// значение для всех сторон, статические `name-*` переопределяют отдельные.
+fn edges_attr(generator: &Generator, element: &Element, base: &str) -> syn::Result<TokenStream> {
+    let Some(value) = dynamic_value(generator, element, base)? else {
+        return edges_token(element, base);
+    };
+    let scalar = quote!(::relay::vdom::parse_px(&#value));
+    let side = |suffix: &str| -> syn::Result<TokenStream> {
+        Ok(match parse_px_attr(element, &format!("{base}-{suffix}"))? {
+            Some(value) => quote!(#value),
+            None => scalar.clone(),
+        })
+    };
+    let top = side("top")?;
+    let right = side("right")?;
+    let bottom = side("bottom")?;
+    let left = side("left")?;
+    Ok(quote!(::relay::vdom::Edges {
+        top: #top,
+        right: #right,
+        bottom: #bottom,
+        left: #left,
+    }))
+}
+
+/// Атрибут в пикселях (`border-size`/`font-size`): динамический `:name="путь"`
+/// или статический `name`.
+fn px_attr(
+    generator: &Generator,
+    element: &Element,
+    name: &str,
+) -> syn::Result<Option<TokenStream>> {
+    if let Some(value) = dynamic_value(generator, element, name)? {
+        return Ok(Some(quote!(::relay::vdom::parse_px(&#value))));
+    }
+    Ok(parse_px_attr(element, name)?.map(|value| quote!(#value)))
+}
+
+/// Цветовой атрибут (`background`/`font-color`/`border-color`) как `Option<u32>`
+/// с учётом динамической привязки.
+fn color_attr(generator: &Generator, element: &Element, name: &str) -> syn::Result<TokenStream> {
+    if let Some(value) = dynamic_value(generator, element, name)? {
+        return Ok(quote!(::relay::vdom::parse_color(&#value)));
+    }
+    Ok(color_token(parse_color_attr(element, name)?))
+}
+
+/// Выражение флага `required` с учётом динамической привязки `:required`.
+fn required_attr(generator: &Generator, element: &Element) -> syn::Result<TokenStream> {
+    if let Some(value) = dynamic_value(generator, element, "required")? {
+        return Ok(quote!(::relay::vdom::parse_bool(&#value)));
+    }
+    Ok(required_token(element))
+}
+
+/// Выражение индикатора обязательности с учётом динамической привязки
+/// `:required-indicator`.
+fn required_indicator_attr(generator: &Generator, element: &Element) -> syn::Result<TokenStream> {
+    if let Some(value) = dynamic_value(generator, element, "required-indicator")? {
+        return Ok(quote!(::relay::vdom::parse_required_indicator(&#value)));
+    }
+    required_indicator_token(element)
 }
 
 /// Необязательный цвет как `Option<u32>`.

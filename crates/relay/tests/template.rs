@@ -993,3 +993,65 @@ fn accessibility_tree_from_template() {
         "aria-disabled отражается как Disabled"
     );
 }
+
+/// Компонент из `templates/dynamic.html`: динамические привязки `:attr`.
+#[template("tests/templates/dynamic.html")]
+#[proxy]
+struct DynamicApp {
+    w: i64,
+    h: String,
+    px: String,
+    py: String,
+    off_x: i64,
+    off_y: String,
+    justify: String,
+    align_items: String,
+    pad: i64,
+    margin: i64,
+    border: i64,
+    font: i64,
+    bg: String,
+    fg: String,
+    bc: String,
+}
+
+/// Динамические `:attr` переопределяют статические значения стиля.
+#[test]
+fn dynamic_style_attrs_bind_values() {
+    use relay::vdom::{Align, Offset, Size};
+    let app = DynamicApp::new();
+    app.set_w(200);
+    app.set_h("50%".to_owned());
+    app.set_px("right".to_owned());
+    app.set_py("bottom".to_owned());
+    app.set_off_x(-8);
+    app.set_off_y("10%".to_owned());
+    app.set_justify("end".to_owned());
+    app.set_align_items("center".to_owned());
+    app.set_pad(7);
+    app.set_margin(3);
+    app.set_border(2);
+    app.set_font(20);
+    app.set_bg("#112233".to_owned());
+    app.set_fg("#445566".to_owned());
+    app.set_bc("#778899".to_owned());
+    let tree = app.render();
+    let div = tree.get("0").expect("div");
+    let style = div.style;
+    assert_eq!(style.width, Size::Px(200.0));
+    assert_eq!(style.height, Size::Percent(50.0));
+    assert_eq!(style.align_x, Align::End);
+    assert_eq!(style.align_y, Align::End);
+    assert_eq!(style.offset_x, Offset::Px(-8.0));
+    assert_eq!(style.offset_y, Offset::Percent(10.0));
+    assert_eq!(style.justify_content, Align::End);
+    assert_eq!(style.align_items, Align::Center);
+    assert_eq!(style.padding, relay::vdom::Edges::all(7.0));
+    assert_eq!(style.margin, relay::vdom::Edges::all(3.0));
+    assert_eq!(style.border_size, 2.0);
+    assert_eq!(style.font_size, Some(20.0));
+    assert_eq!(style.background, Some(0x112233FF));
+    assert_eq!(style.font_color, Some(0x445566FF));
+    assert_eq!(style.border_color, Some(0x778899FF));
+    assert_eq!(div.attr("width"), Some("200"));
+}
