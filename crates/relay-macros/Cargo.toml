@@ -9,6 +9,32 @@ description = "Процедурные макросы библиотеки Relay:
 [lib]
 proc-macro = true
 
+[features]
+# Сетка фич синхронизирована с `relay`: фичи включаются форвардом из relay
+# (`relay` → `relay-macros/…`), чтобы `#[template]` знал, какие элементы и
+# атрибуты доступны. Подробнее — `docs/DESIGN_PRINCIPLES.md`.
+default = []
+# Элементы разметки.
+elements-basic = []
+elements-input = []
+elements-checkbox = []
+elements-radio = []
+elements-select = []
+resize-grip = []
+# Кросс-элементные возможности.
+align-content = []
+z-order = []
+cursor-theming = []
+offset-position = []
+dynamic-attrs = []
+required-fields = []
+validation = []
+min-max-size = []
+# Прочее.
+include = []
+template-modal = []
+template-window = []
+
 [dependencies]
 syn.workspace = true
 quote.workspace = true
