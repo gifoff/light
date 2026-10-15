@@ -1,5 +1,5 @@
 //! Тесты встроенных клавиатурных сокращений.
-#![cfg(feature = "a11y")]
+#![cfg(feature = "a11y-keyboard")]
 
 use relay::a11y::keyboard::{builtin_action, is_activation_key, is_builtin};
 

@@ -70,8 +70,8 @@ window-resize = ["window"]
 # --- Доступность -------------------------------------------------------
 # Построение дерева доступности AccessKit.
 a11y = ["dep:accesskit"]
-# Интеграция с `accesskit_winit`.
-a11y-winit = ["a11y", "window", "dep:accesskit_winit"]
+# Интеграция с `accesskit_winit` (включает полный набор подсистем a11y).
+a11y-winit = ["a11y", "a11y-live", "a11y-keyboard", "window", "dep:accesskit_winit"]
 # Живые регионы (`aria-live`).
 a11y-live = ["a11y"]
 # Программный фокус и кольцо фокуса.

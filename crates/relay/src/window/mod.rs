@@ -500,7 +500,10 @@ impl WindowState {
             {
                 self.a11y_focus = Some(field);
             }
+            #[cfg(feature = "a11y-live")]
             crate::a11y::announce(message, crate::a11y::Politeness::Assertive);
+            #[cfg(not(feature = "a11y-live"))]
+            let _ = message;
         }
         self.invalidate();
         true
@@ -1463,6 +1466,7 @@ impl WindowState {
             return;
         };
         let focus = self.a11y_focus.clone().or_else(|| self.focused.clone());
+        #[cfg(feature = "a11y-live")]
         let _ = crate::a11y::take_announcements();
         adapter.update_if_active(|| crate::a11y::tree::build_update(&tree, focus.as_deref()));
     }
@@ -1592,6 +1596,7 @@ impl WindowState {
     ///
     /// Возвращает `true`, если клавиша обработана и не должна попадать
     /// в логику редактирования текста.
+    #[cfg(feature = "a11y-keyboard")]
     fn handle_builtin_key(&mut self, event: &KeyEvent) -> bool {
         if !crate::a11y::is_enabled() {
             return false;
@@ -1607,6 +1612,11 @@ impl WindowState {
             KeyAction::Activate => self.activate_a11y_focus(),
             KeyAction::Escape | KeyAction::MovePrev | KeyAction::MoveNext => false,
         }
+    }
+
+    #[cfg(not(feature = "a11y-keyboard"))]
+    fn handle_builtin_key(&mut self, _event: &KeyEvent) -> bool {
+        false
     }
 }
 

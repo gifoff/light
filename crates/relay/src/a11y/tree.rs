@@ -10,6 +10,7 @@ use std::sync::{Mutex, OnceLock};
 
 use accesskit::{Invalid, Node, NodeId, Role, Toggled, TreeId, TreeInfo, TreeUpdate};
 
+#[cfg(feature = "a11y-live")]
 use super::Politeness;
 use super::focus;
 use super::roles;
@@ -179,6 +180,7 @@ fn apply_state(node: &mut Node, element: &VElement) {
     if is_invalid(element) {
         node.set_invalid(Invalid::True);
     }
+    #[cfg(feature = "a11y-live")]
     if let Some(live) = element.attr("aria-live").and_then(Politeness::parse) {
         node.set_live(live.to_live());
     }

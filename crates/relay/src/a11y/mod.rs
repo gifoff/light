@@ -22,7 +22,9 @@
 //! фичи `a11y` все функции-аксессоры возвращают `None`, а атрибуты шаблонов
 //! просто игнорируются.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
+#[cfg(feature = "a11y-live")]
+use std::cell::RefCell;
 
 #[cfg(feature = "a11y")]
 pub use accesskit::Role as AriaRole;
@@ -41,7 +43,7 @@ pub use fallback::NodeId;
 pub mod actions;
 #[cfg(feature = "a11y")]
 pub mod focus;
-#[cfg(feature = "a11y")]
+#[cfg(all(feature = "a11y", feature = "a11y-keyboard"))]
 pub mod keyboard;
 #[cfg(feature = "a11y")]
 pub mod roles;
@@ -98,6 +100,7 @@ pub fn is_disabled(element: &crate::vdom::VElement) -> bool {
 }
 
 /// Срочность объявления изменений live-региона (`aria-live`).
+#[cfg(feature = "a11y-live")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Politeness {
     /// Не объявлять (`off`).
@@ -109,7 +112,7 @@ pub enum Politeness {
     Assertive,
 }
 
-#[cfg(feature = "a11y")]
+#[cfg(all(feature = "a11y", feature = "a11y-live"))]
 impl Politeness {
     /// Преобразует срочность в тип [`accesskit::Live`].
     pub fn to_live(self) -> accesskit::Live {
@@ -132,6 +135,7 @@ impl Politeness {
 }
 
 /// Очередная просьба диктору что-то объявить.
+#[cfg(feature = "a11y-live")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Announcement {
     /// Текст объявления.
@@ -145,6 +149,10 @@ thread_local! {
     static ENABLED: Cell<bool> = Cell::new(env_default());
     /// Узел, находящийся в фокусе (идентификатор AccessKit).
     static FOCUSED: Cell<Option<NodeId>> = const { Cell::new(None) };
+}
+
+#[cfg(feature = "a11y-live")]
+thread_local! {
     /// Очередь объявлений, которые ещё не забрал оконный бэкенд.
     static ANNOUNCEMENTS: RefCell<Vec<Announcement>> = const { RefCell::new(Vec::new()) };
 }
@@ -175,6 +183,7 @@ pub fn is_enabled() -> bool {
 ///
 /// Объявление ставится в очередь и будет отправлено оконным бэкендом при
 /// следующей перерисовке. Если поддержка выключена, вызов ничего не делает.
+#[cfg(feature = "a11y-live")]
 pub fn announce(message: impl Into<String>, politeness: Politeness) {
     if !is_enabled() {
         return;
@@ -187,6 +196,7 @@ pub fn announce(message: impl Into<String>, politeness: Politeness) {
 }
 
 /// Забирает все накопленные объявления (вызывает оконный бэкенд).
+#[cfg(feature = "a11y-live")]
 pub fn take_announcements() -> Vec<Announcement> {
     ANNOUNCEMENTS.with(|queue| std::mem::take(&mut *queue.borrow_mut()))
 }
@@ -251,6 +261,7 @@ pub fn active_window() -> Option<WindowHandle> {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "a11y-live")]
     #[test]
     fn announcements_are_queued_and_drained() {
         set_enabled(true);
@@ -265,6 +276,7 @@ mod tests {
         assert!(take_announcements().is_empty());
     }
 
+    #[cfg(feature = "a11y-live")]
     #[test]
     fn disabling_suppresses_announcements_and_window() {
         set_enabled(false);
@@ -283,6 +295,7 @@ mod tests {
         assert_eq!(focused_node(), None);
     }
 
+    #[cfg(feature = "a11y-live")]
     #[test]
     fn politeness_parses_case_insensitively() {
         assert_eq!(Politeness::parse("POLITE"), Some(Politeness::Polite));
