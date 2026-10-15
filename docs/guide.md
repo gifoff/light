@@ -191,6 +191,19 @@ panic = "abort"
 opt-level = 3
 ```
 
+`strip = true` и `panic = "abort"` особенно заметно сокращают размер: Relay не
+использует панику как механизм обработки ожидаемых ошибок. `lto = "fat"` и
+`codegen-units = 1` убирают неиспользуемый generic-код между крейтами.
+
+Замер вклада фич — скрипт `scripts/bloat.ps1` (или `scripts/bloat.sh`): он
+собирает один и тот же минимальный пример с фичами `minimal` и `full` и
+печатает разницу размеров, а при наличии `cargo bloat` — разбивку по крейтам:
+
+```bash
+cargo install cargo-bloat   # один раз
+pwsh scripts/bloat.ps1      # или bash scripts/bloat.sh
+```
+
 ## Шаблоны
 
 Разметка Relay напоминает HTML, но с фиксированным набором элементов, у каждого — своё назначение.
