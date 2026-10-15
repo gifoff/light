@@ -341,3 +341,62 @@ fn checkbox_and_radio_diff_by_field() {
         }]
     );
 }
+
+/// Динамические парсеры значений атрибутов совпадают по правилам с временем
+/// компиляции шаблонов.
+#[test]
+fn runtime_parsers_match_compile_time_rules() {
+    use relay::vdom::{
+        Align, ButtonType, Offset, RequiredIndicator, Resize, Size, parse_align_items,
+        parse_align_x, parse_align_y, parse_bool, parse_button_type, parse_color, parse_justify,
+        parse_offset, parse_px, parse_required_indicator, parse_resize, parse_size_or_auto,
+    };
+
+    assert_eq!(parse_size_or_auto("auto"), Size::Auto);
+    assert_eq!(parse_size_or_auto(""), Size::Auto);
+    assert_eq!(parse_size_or_auto("120"), Size::Px(120.0));
+    assert_eq!(parse_size_or_auto("120px"), Size::Px(120.0));
+    assert_eq!(parse_size_or_auto("50%"), Size::Percent(50.0));
+
+    assert_eq!(parse_offset("-8"), Offset::Px(-8.0));
+    assert_eq!(parse_offset("12px"), Offset::Px(12.0));
+    assert_eq!(parse_offset("10%"), Offset::Percent(10.0));
+
+    assert_eq!(parse_align_x("left"), Align::Start);
+    assert_eq!(parse_align_x("center"), Align::Center);
+    assert_eq!(parse_align_x("right"), Align::End);
+    assert_eq!(parse_align_y("top"), Align::Start);
+    assert_eq!(parse_align_y("bottom"), Align::End);
+    assert_eq!(parse_justify("start"), Align::Start);
+    assert_eq!(parse_justify("end"), Align::End);
+    assert_eq!(parse_align_items("center"), Align::Center);
+
+    assert_eq!(parse_px("12"), 12.0);
+    assert_eq!(parse_px("12px"), 12.0);
+
+    assert_eq!(parse_color("#f00"), Some(0xFF0000FF));
+    assert_eq!(parse_color("#FF0000"), Some(0xFF0000FF));
+    assert_eq!(parse_color("#FF000080"), Some(0xFF000080));
+    assert_eq!(parse_color("#0f08"), Some(0x00FF0088));
+    assert_eq!(parse_color("0x112233"), Some(0x112233FF));
+
+    assert!(parse_bool("true"));
+    assert!(parse_bool("1"));
+    assert!(parse_bool("yes"));
+    assert!(!parse_bool("false"));
+
+    assert_eq!(parse_required_indicator("*"), RequiredIndicator::Asterisk);
+    assert_eq!(parse_required_indicator("none"), RequiredIndicator::None);
+    assert_eq!(
+        parse_required_indicator("#FF0000"),
+        RequiredIndicator::Accent(0xFF0000FF)
+    );
+
+    assert_eq!(parse_button_type("button"), ButtonType::Button);
+    assert_eq!(parse_button_type("reset"), ButtonType::Reset);
+    assert_eq!(parse_button_type("submit"), ButtonType::Submit);
+
+    assert_eq!(parse_resize("horizontal"), Resize::Horizontal);
+    assert_eq!(parse_resize("both"), Resize::Both);
+    assert_eq!(parse_resize("none"), Resize::None);
+}
