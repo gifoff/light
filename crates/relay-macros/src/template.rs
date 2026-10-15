@@ -1043,19 +1043,22 @@ impl Generator {
             }
             None => quote!(false),
         };
-        let button_type = match attr_value(&element.attrs, "type").map(str::trim) {
-            None | Some("") | Some("submit") => quote!(::relay::vdom::ButtonType::Submit),
-            Some("button") => quote!(::relay::vdom::ButtonType::Button),
-            Some("reset") => quote!(::relay::vdom::ButtonType::Reset),
-            Some(other) => {
-                return Err(syn::Error::new(
-                    Span::call_site(),
-                    format!(
-                        "invalid type=\"{other}\" on <button>: expected \"submit\", \"button\" \
-                         or \"reset\""
-                    ),
-                ));
-            }
+        let button_type = match dynamic_value(self, element, "type")? {
+            Some(value) => quote!(::relay::vdom::parse_button_type(&#value)),
+            None => match attr_value(&element.attrs, "type").map(str::trim) {
+                None | Some("") | Some("submit") => quote!(::relay::vdom::ButtonType::Submit),
+                Some("button") => quote!(::relay::vdom::ButtonType::Button),
+                Some("reset") => quote!(::relay::vdom::ButtonType::Reset),
+                Some(other) => {
+                    return Err(syn::Error::new(
+                        Span::call_site(),
+                        format!(
+                            "invalid type=\"{other}\" on <button>: expected \"submit\", \"button\" \
+                             or \"reset\""
+                        ),
+                    ));
+                }
+            },
         };
 
         let pushes = self.gen_children(&element.children, Some(key))?;
@@ -1120,7 +1123,13 @@ impl Generator {
         })?;
         let read = self.path_expr(model)?;
         let write = setter_expr(model, &quote!(__value.clone()))?;
-        let placeholder = attr_value(&element.attrs, "placeholder").unwrap_or("");
+        let placeholder = match dynamic_value(self, element, "placeholder")? {
+            Some(value) => value,
+            None => {
+                let value = attr_value(&element.attrs, "placeholder").unwrap_or("");
+                quote!(::std::string::String::from(#value))
+            }
+        };
         let disabled = match attr_value(&element.attrs, ":disabled") {
             Some(disabled) => {
                 let expr = self.path_expr(disabled)?;
@@ -1129,31 +1138,40 @@ impl Generator {
             None => quote!(false),
         };
         let multiline = if masked {
-            false
+            quote!(false)
         } else {
-            match attr_value(&element.attrs, "textarea") {
-                None => false,
-                Some("") => true,
-                Some(value) => parse_bool(value),
+            match dynamic_value(self, element, "textarea")? {
+                Some(value) => quote!(::relay::vdom::parse_bool(&#value)),
+                None => {
+                    let value = match attr_value(&element.attrs, "textarea") {
+                        None => false,
+                        Some("") => true,
+                        Some(value) => parse_bool(value),
+                    };
+                    quote!(#value)
+                }
             }
         };
         let resize = if masked {
             quote!(::relay::vdom::Resize::None)
         } else {
-            match attr_value(&element.attrs, "resize").map(str::trim) {
-                None | Some("none") => quote!(::relay::vdom::Resize::None),
-                Some("horizontal") => quote!(::relay::vdom::Resize::Horizontal),
-                Some("vertical") => quote!(::relay::vdom::Resize::Vertical),
-                Some("both") => quote!(::relay::vdom::Resize::Both),
-                Some(other) => {
-                    return Err(syn::Error::new(
-                        Span::call_site(),
-                        format!(
-                            "invalid resize=\"{other}\" on <{}>: expected \"horizontal\", \"vertical\" or \"both\"",
-                            element.name
-                        ),
-                    ));
-                }
+            match dynamic_value(self, element, "resize")? {
+                Some(value) => quote!(::relay::vdom::parse_resize(&#value)),
+                None => match attr_value(&element.attrs, "resize").map(str::trim) {
+                    None | Some("none") => quote!(::relay::vdom::Resize::None),
+                    Some("horizontal") => quote!(::relay::vdom::Resize::Horizontal),
+                    Some("vertical") => quote!(::relay::vdom::Resize::Vertical),
+                    Some("both") => quote!(::relay::vdom::Resize::Both),
+                    Some(other) => {
+                        return Err(syn::Error::new(
+                            Span::call_site(),
+                            format!(
+                                "invalid resize=\"{other}\" on <{}>: expected \"horizontal\", \"vertical\" or \"both\"",
+                                element.name
+                            ),
+                        ));
+                    }
+                },
             }
         };
 
@@ -1175,7 +1193,7 @@ impl Generator {
                 #key,
                 ::relay::vdom::NodeKind::TextField {
                     value: ::std::string::ToString::to_string(&(#read)),
-                    placeholder: ::std::string::String::from(#placeholder),
+                    placeholder: #placeholder,
                     disabled: #disabled,
                     multiline: #multiline,
                     resize: #resize,
@@ -1268,14 +1286,23 @@ impl Generator {
             )
         })?;
         self.record_field_validator(element, key)?;
-        let value = attr_value(&element.attrs, "value").ok_or_else(|| {
-            syn::Error::new(
-                Span::call_site(),
-                "<radio> требует атрибут value=\"значение\"",
-            )
-        })?;
+        let (value, compare) = match dynamic_value(self, element, "value")? {
+            Some(value) => (value.clone(), value),
+            None => {
+                let literal = attr_value(&element.attrs, "value").ok_or_else(|| {
+                    syn::Error::new(
+                        Span::call_site(),
+                        "<radio> требует атрибут value=\"значение\"",
+                    )
+                })?;
+                (
+                    quote!(::std::string::String::from(#literal)),
+                    quote!(#literal),
+                )
+            }
+        };
         let read = self.path_expr(model)?;
-        let write = setter_expr(model, &quote!(::std::string::String::from(#value)))?;
+        let write = setter_expr(model, &quote!(#value))?;
         let label = self.content_expr(&text_segments(&element.children, "radio")?)?;
         let disabled = self.disabled_token(element)?;
 
@@ -1297,8 +1324,8 @@ impl Generator {
                 #key,
                 ::relay::vdom::NodeKind::Radio {
                     label: #label,
-                    value: ::std::string::String::from(#value),
-                    selected: #read == #value,
+                    value: #value,
+                    selected: #read == #compare,
                     disabled: #disabled,
                 },
             )
@@ -1349,9 +1376,12 @@ impl Generator {
                 ));
             }
             let label = self.content_expr(&text_segments(&option.children, "option")?)?;
-            let value = match attr_value(&option.attrs, "value") {
-                Some(value) => quote!(::std::string::String::from(#value)),
-                None => quote!(#label),
+            let value = match dynamic_value(self, option, "value")? {
+                Some(value) => value,
+                None => match attr_value(&option.attrs, "value") {
+                    Some(value) => quote!(::std::string::String::from(#value)),
+                    None => label.clone(),
+                },
             };
             options.push(quote! {
                 ::relay::vdom::SelectOption {

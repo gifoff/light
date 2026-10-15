@@ -1055,3 +1055,78 @@ fn dynamic_style_attrs_bind_values() {
     assert_eq!(style.border_color, Some(0x778899FF));
     assert_eq!(div.attr("width"), Some("200"));
 }
+
+/// Компонент из `templates/dynamic_kinds.html`: динамические `:attr` у типов узлов.
+#[template("tests/templates/dynamic_kinds.html")]
+#[proxy]
+struct DynamicKindsApp {
+    kind: String,
+    locked: bool,
+    name: String,
+    hint: String,
+    multi: bool,
+    resize_mode: String,
+    choice: String,
+    radio_value: String,
+    opt_value: String,
+}
+
+/// Динамические `:attr` работают для `NodeKind`: `type`, `placeholder`,
+/// `textarea`, `resize`, `value`.
+#[test]
+fn dynamic_node_kind_attrs_bind_values() {
+    use relay::vdom::{ButtonType, NodeKind, Resize};
+    let app = DynamicKindsApp::new();
+    app.set_kind("reset".to_owned());
+    app.set_locked(true);
+    app.set_hint("Подсказка".to_owned());
+    app.set_multi(true);
+    app.set_resize_mode("both".to_owned());
+    app.set_choice("b".to_owned());
+    app.set_radio_value("a".to_owned());
+    app.set_opt_value("o1".to_owned());
+    let tree = app.render();
+
+    let button = tree.find_by_tag("button").expect("button");
+    assert!(matches!(
+        button.kind,
+        NodeKind::Button {
+            disabled: true,
+            button_type: ButtonType::Reset,
+        }
+    ));
+
+    let field = find_field(&tree);
+    match &field.kind {
+        NodeKind::TextField {
+            placeholder,
+            multiline,
+            resize,
+            ..
+        } => {
+            assert_eq!(placeholder, "Подсказка");
+            assert!(*multiline);
+            assert_eq!(*resize, Resize::Both);
+        }
+        other => panic!("ожидалось поле, найдено {other:?}"),
+    }
+
+    let radio = tree.find_by_tag("radio").expect("radio");
+    match &radio.kind {
+        NodeKind::Radio {
+            value, selected, ..
+        } => {
+            assert_eq!(value, "a");
+            assert!(!selected);
+        }
+        other => panic!("ожидалось радио, найдено {other:?}"),
+    }
+
+    let select = tree.find_by_tag("select").expect("select");
+    match &select.kind {
+        NodeKind::Select { options, .. } => {
+            assert_eq!(options[0].value, "o1");
+        }
+        other => panic!("ожидался список, найдено {other:?}"),
+    }
+}
