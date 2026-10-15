@@ -1469,6 +1469,20 @@ fn style_token(
     )?;
     let offset_x = offset_token(element, "position-offset-x")?;
     let offset_y = offset_token(element, "position-offset-y")?;
+    let justify_content = align_token(
+        element,
+        "justify-content",
+        "start",
+        "end",
+        quote!(::relay::vdom::Align::Start),
+    )?;
+    let align_items = align_token(
+        element,
+        "align-items",
+        "start",
+        "end",
+        quote!(::relay::vdom::Align::Start),
+    )?;
     let padding = edges_token(element, "padding")?;
     let margin = edges_token(element, "margin")?;
     let border_size = parse_px_attr(element, "border-size")?.unwrap_or(0.0);
@@ -1496,6 +1510,8 @@ fn style_token(
         align_y: #align_y,
         offset_x: #offset_x,
         offset_y: #offset_y,
+        justify_content: #justify_content,
+        align_items: #align_items,
         padding: #padding,
         margin: #margin,
         background: #background,

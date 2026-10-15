@@ -1043,3 +1043,107 @@ fn percent_child_fills_sized_button_without_padding() {
         "100% от контентной области кнопки"
     );
 }
+
+#[test]
+fn justify_content_center_centers_children_vertically_in_column() {
+    let mut root = column("", vec![sized_column("0", Size::Px(50.0), Size::Px(20.0))]);
+    root.style = Style {
+        justify_content: Align::Center,
+        ..Style::default()
+    };
+    let layout = layout_at(&root, 200.0, 100.0);
+    assert_eq!(layout.rect_of("0").unwrap().y, 40.0, "(100 - 20) / 2");
+}
+
+#[test]
+fn justify_content_end_pushes_children_to_end() {
+    let mut root = column("", vec![sized_column("0", Size::Px(50.0), Size::Px(20.0))]);
+    root.style = Style {
+        justify_content: Align::End,
+        ..Style::default()
+    };
+    let layout = layout_at(&root, 200.0, 100.0);
+    assert_eq!(layout.rect_of("0").unwrap().y, 80.0, "100 - 20");
+}
+
+#[test]
+fn align_items_center_centers_children_horizontally_in_column() {
+    let mut root = column("", vec![sized_column("0", Size::Px(50.0), Size::Px(20.0))]);
+    root.style = Style {
+        align_items: Align::Center,
+        ..Style::default()
+    };
+    let layout = layout_at(&root, 200.0, 100.0);
+    assert_eq!(layout.rect_of("0").unwrap().x, 75.0, "(200 - 50) / 2");
+}
+
+#[test]
+fn justify_content_in_row_centers_horizontally() {
+    let mut root = VElement::container(
+        "",
+        NodeKind::Row,
+        vec![sized_column("0", Size::Px(50.0), Size::Px(20.0))],
+    );
+    root.style = Style {
+        justify_content: Align::Center,
+        ..Style::default()
+    };
+    let layout = layout_at(&root, 200.0, 100.0);
+    assert_eq!(layout.rect_of("0").unwrap().x, 75.0);
+}
+
+#[test]
+fn align_items_in_row_centers_vertically() {
+    let mut root = VElement::container(
+        "",
+        NodeKind::Row,
+        vec![sized_column("0", Size::Px(50.0), Size::Px(20.0))],
+    );
+    root.style = Style {
+        align_items: Align::Center,
+        ..Style::default()
+    };
+    let layout = layout_at(&root, 200.0, 100.0);
+    assert_eq!(layout.rect_of("0").unwrap().y, 40.0);
+}
+
+#[test]
+fn position_self_overrides_align_items() {
+    let mut child = sized_column("0", Size::Px(50.0), Size::Px(20.0));
+    child.attrs.push(("position-x", "left".to_owned()));
+    let mut root = column("", vec![child]);
+    root.style = Style {
+        align_items: Align::Center,
+        ..Style::default()
+    };
+    let layout = layout_at(&root, 200.0, 100.0);
+    assert_eq!(
+        layout.rect_of("0").unwrap().x,
+        0.0,
+        "position-x переопределяет align-items"
+    );
+}
+
+#[test]
+fn justify_content_centers_bare_text_in_h3() {
+    let mut h3 = column("h3", vec![text("t", "Привет")]);
+    h3.style = Style {
+        width: Size::Percent(100.0),
+        height: Size::Percent(100.0),
+        justify_content: Align::Center,
+        align_items: Align::Center,
+        ..Style::default()
+    };
+    let root = VElement::container("", NodeKind::Row, vec![h3]);
+    let layout = layout_at(&root, 200.0, 60.0);
+    let h3_rect = layout.rect_of("h3").unwrap();
+    let text_rect = layout.rect_of("t").unwrap();
+    assert!(
+        (h3_rect.y + h3_rect.h / 2.0 - text_rect.y - text_rect.h / 2.0).abs() < 0.5,
+        "текст по центру h3 по вертикали"
+    );
+    assert!(
+        (h3_rect.x + h3_rect.w / 2.0 - text_rect.x - text_rect.w / 2.0).abs() < 0.5,
+        "текст по центру h3 по горизонтали"
+    );
+}

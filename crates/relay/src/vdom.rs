@@ -377,6 +377,12 @@ pub struct Style {
     pub offset_x: Offset,
     /// Вертикальное смещение (`position-offset-y`).
     pub offset_y: Offset,
+    /// Выравнивание **содержимого** по main-оси контейнера (`justify-content`):
+    /// у `Column` — вертикаль, у `Row` — горизонталь. По умолчанию — начало оси.
+    pub justify_content: Align,
+    /// Выравнивание **содержимого** по cross-оси контейнера (`align-items`):
+    /// у `Column` — горизонталь, у `Row` — вертикаль. По умолчанию — начало оси.
+    pub align_items: Align,
     /// Внутренние отступы (`padding`/`padding-*`), по умолчанию `0`.
     pub padding: Edges,
     /// Внешние отступы (`margin`/`margin-*`), по умолчанию `0`.
@@ -419,6 +425,8 @@ impl Default for Style {
             align_y: Align::Start,
             offset_x: Offset::Px(0.0),
             offset_y: Offset::Px(0.0),
+            justify_content: Align::Start,
+            align_items: Align::Start,
             padding: Edges::ZERO,
             margin: Edges::ZERO,
             background: None,

@@ -18,6 +18,7 @@
 - Режим `--dump-a11y` в примерах `a11y_form` и `a11y_dialog`: печатает дерево доступности в JSON.
 - Атрибут `z` (и динамический `:z`) задаёт порядок отрисовки и попадания среди соседей: больший `z` рисуется поверх и первым перехватывает события. При равных `z` сохраняется порядок в разметке. `z` не влияет на раскладку и действует локально для родителя.
 - Построчные отступы `padding-top`/`padding-right`/`padding-bottom`/`padding-left` и `margin-top`/`margin-right`/`margin-bottom`/`margin-left`: переопределяют соответствующую сторону базовых `padding`/`margin`. Тип отступов — `relay::vdom::Edges` (`Style::padding`/`Style::margin`), а `Style::inset()` теперь возвращает отступы по сторонам.
+- Выравнивание **содержимого** контейнера: `justify-content` (main-ось) и `align-items` (cross-ось) со значениями `start`/`center`/`end`. `Column`/`<window>` — main по вертикали, `Row`/`<titlebar>` — по горизонтали. `position-x`/`position-y` конкретного ребёнка переопределяют `align-items` родителя (поля `Style::justify_content`, `Style::align_items`).
 
 ### Changed
 

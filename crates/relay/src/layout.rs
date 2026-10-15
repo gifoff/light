@@ -667,6 +667,25 @@ impl Layout {
                 node.rect = Rect::new(flow_x, flow_y, w, h);
                 // Выравниваем прямых детей относительно итогового content box.
                 let content = ContentBox::from_rect(node.rect, inset);
+                let used_main = if horizontal { content_w } else { content_h };
+                let cross_attr = if horizontal {
+                    "position-y"
+                } else {
+                    "position-x"
+                };
+                let explicit_cross: Vec<bool> = vnode
+                    .children
+                    .iter()
+                    .filter(|child| child.style.visible)
+                    .map(|child| child.attr(cross_attr).is_some())
+                    .collect();
+                self.align_container_content(
+                    index,
+                    content,
+                    horizontal,
+                    used_main,
+                    &explicit_cross,
+                );
                 self.align_children(index, content);
                 (w, h)
             }
@@ -681,6 +700,70 @@ impl Layout {
             self.nodes[start].style.font_color = Some(color);
         }
         (w + step_w, h + step_h)
+    }
+
+    /// Выравнивает прямых детей узла `index` по `justify-content`/`align-items`
+    /// относительно его контентной области `content` и доступного размера `used_main`.
+    ///
+    /// `explicit_cross` — для каждого прямого ребёнка указывает, задан ли у него
+    /// собственный `position-x`/`position-y` по cross-оси: такие дети не сдвигаются
+    /// здесь, чтобы их `position` переопределял `align-items` родителя.
+    fn align_container_content(
+        &mut self,
+        index: usize,
+        content: ContentBox,
+        horizontal: bool,
+        used_main: f32,
+        explicit_cross: &[bool],
+    ) {
+        let style = self.nodes[index].style;
+        let justify = style.justify_content;
+        let align_items = style.align_items;
+        if justify == Align::Start && align_items == Align::Start {
+            return;
+        }
+        let (main_avail, cross_avail) = if horizontal {
+            (content.width, content.height)
+        } else {
+            (content.height, content.width)
+        };
+        let free_main = main_avail - used_main;
+        let delta_main = match justify {
+            Align::Start => 0.0,
+            Align::Center => free_main / 2.0,
+            Align::End => free_main,
+        };
+        let children = self.nodes[index].children.clone();
+        let end = self.nodes.len();
+        for (position, &child) in children.iter().enumerate() {
+            let child_end = children.get(position + 1).copied().unwrap_or(end);
+            let rect = self.nodes[child].rect;
+            let delta_cross = if explicit_cross.get(position).copied().unwrap_or(false) {
+                0.0
+            } else {
+                let free_cross = if horizontal {
+                    cross_avail - rect.h
+                } else {
+                    cross_avail - rect.w
+                };
+                match align_items {
+                    Align::Start => 0.0,
+                    Align::Center => free_cross / 2.0,
+                    Align::End => free_cross,
+                }
+            };
+            let (dx, dy) = if horizontal {
+                (delta_main, delta_cross)
+            } else {
+                (delta_cross, delta_main)
+            };
+            if dx != 0.0 || dy != 0.0 {
+                for node in &mut self.nodes[child..child_end] {
+                    node.rect.x += dx;
+                    node.rect.y += dy;
+                }
+            }
+        }
     }
 
     /// Выравнивает прямых детей узла `index` по `position-x`/`position-y` и

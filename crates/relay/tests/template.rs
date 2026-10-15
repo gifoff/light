@@ -432,6 +432,16 @@ fn style_attributes_are_compiled_into_vnode() {
         "position-offset-x"
     );
     assert_eq!(span.style.z, 5, "динамический :z=\"depth\"");
+    assert_eq!(
+        span.style.justify_content,
+        relay::vdom::Align::End,
+        "justify-content=end"
+    );
+    assert_eq!(
+        span.style.align_items,
+        relay::vdom::Align::Center,
+        "align-items=center"
+    );
     assert!(
         tree.find_by_content("Стиль").is_some(),
         "голый текст внутри <span>"
