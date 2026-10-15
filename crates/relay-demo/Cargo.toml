@@ -8,26 +8,40 @@ publish = false
 description = "Демонстрационное приложение библиотеки Relay"
 
 [dependencies]
-relay = { workspace = true, features = [
-    "elements-form",
-    "align-content",
-    "z-order",
-    "cursor-theming",
-    "offset-position",
-    "dynamic-attrs",
-    "required-fields",
-    "validation",
-    "min-max-size",
-    "include",
-    "window-transparent",
-    "window-modal",
-    "window-multi",
-    "window-by-id",
-    "window-resize",
-    "a11y-live",
-    "a11y-focus",
-    "a11y-keyboard",
+# Базовая подсистема демо всегда включает окно и доступность; конкретные
+# элементы и возможности добавляются через фичи крейта (см. `[features]`).
+relay = { workspace = true, default-features = false, features = [
+    "elements-basic",
+    "window",
+    "a11y-winit",
 ] }
+
+[features]
+default = ["full"]
+# Полный набор возможностей, используемый основным демо-приложением.
+full = [
+    "relay/elements-form",
+    "relay/align-content",
+    "relay/z-order",
+    "relay/cursor-theming",
+    "relay/offset-position",
+    "relay/dynamic-attrs",
+    "relay/required-fields",
+    "relay/validation",
+    "relay/min-max-size",
+    "relay/include",
+    "relay/window-transparent",
+    "relay/window-modal",
+    "relay/window-multi",
+    "relay/window-by-id",
+    "relay/window-resize",
+    "relay/a11y-live",
+    "relay/a11y-focus",
+    "relay/a11y-keyboard",
+]
+# Минимальная сборка — только базовые элементы, окно и a11y. Используется для
+# замера размера бинарника (пример `minimal`).
+minimal = []
 
 [dev-dependencies]
 serde_json = "1"
