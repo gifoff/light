@@ -782,9 +782,44 @@ impl Generator {
         })
     }
 
+    /// Имя выключенной Cargo-фичи, которой принадлежит элемент `name`.
+    ///
+    /// Используется для понятной ошибки компиляции: если фича выключена, элемент
+    /// не должен молча превращаться в «неизвестный».
+    fn disabled_element_feature(name: &str) -> Option<&'static str> {
+        let feature = match name {
+            "password" => "elements-input",
+            "checkbox" => "elements-checkbox",
+            "radio" => "elements-radio",
+            "select" => "elements-select",
+            _ => return None,
+        };
+        let enabled = [
+            ("elements-input", cfg!(feature = "elements-input")),
+            ("elements-checkbox", cfg!(feature = "elements-checkbox")),
+            ("elements-radio", cfg!(feature = "elements-radio")),
+            ("elements-select", cfg!(feature = "elements-select")),
+        ]
+        .into_iter()
+        .find(|(name, _)| *name == feature)
+        .is_none_or(|(_, enabled)| enabled);
+        (!enabled).then_some(feature)
+    }
+
     /// Строит выражение `VElement` для элемента (без учёта `v-if`).
     fn gen_element(&mut self, element: &Element, key: &KeyExpr) -> syn::Result<TokenStream> {
         validate_a11y_attrs(element)?;
+        if let Some(feature) = Self::disabled_element_feature(&element.name) {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                format!(
+                    "элемент <{}> недоступен: Cargo-фича `{}` выключена у крейта `relay`\n\
+                     help: включите её в зависимости, например \
+                     `relay = {{ features = [\"{}\"] }}`",
+                    element.name, feature, feature
+                ),
+            ));
+        }
         match element.name.as_str() {
             "div" => self.gen_container(element, key, None),
             "span" => self.gen_container(element, key, None),
