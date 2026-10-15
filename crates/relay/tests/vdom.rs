@@ -400,3 +400,63 @@ fn runtime_parsers_match_compile_time_rules() {
     assert_eq!(parse_resize("both"), Resize::Both);
     assert_eq!(parse_resize("none"), Resize::None);
 }
+
+/// Изменение атрибутов помечает узел как изменившийся, а совпадение — нет.
+#[test]
+fn diff_marks_attr_changes() {
+    let before = VElement::leaf("n", NodeKind::Column).with_attr("class", "a");
+    let after = VElement::leaf("n", NodeKind::Column).with_attr("class", "b");
+    let patch = diff(&before, &after);
+    assert!(patch.ops.is_empty());
+    assert!(patch.changed.contains("n"));
+
+    let same = VElement::leaf("n", NodeKind::Column).with_attr("role", "form");
+    let patch = diff(&before, &same);
+    assert!(patch.changed.contains("n"));
+
+    let identical = diff(&before, &before);
+    assert!(!identical.changed.contains("n"));
+
+    let no_attr = diff(
+        &VElement::leaf("n", NodeKind::Column),
+        &VElement::leaf("n", NodeKind::Column),
+    );
+    assert!(!no_attr.changed.contains("n"));
+}
+
+/// Изменения `multiline`/`resize`/`value`, не имеющих отдельной операции,
+/// помечают узел как изменившийся.
+#[test]
+fn diff_marks_unmapped_node_kind_fields() {
+    use relay::vdom::Resize;
+
+    let field = |multiline, resize| {
+        VElement::leaf(
+            "f",
+            NodeKind::TextField {
+                value: "v".to_owned(),
+                placeholder: String::new(),
+                disabled: false,
+                multiline,
+                resize,
+                masked: false,
+            },
+        )
+    };
+    let patch = diff(&field(false, Resize::None), &field(true, Resize::Both));
+    assert!(patch.changed.contains("f"));
+
+    let radio = |value: &str| {
+        VElement::leaf(
+            "r",
+            NodeKind::Radio {
+                label: "A".to_owned(),
+                value: value.to_owned(),
+                selected: false,
+                disabled: false,
+            },
+        )
+    };
+    let patch = diff(&radio("a"), &radio("b"));
+    assert!(patch.changed.contains("r"));
+}

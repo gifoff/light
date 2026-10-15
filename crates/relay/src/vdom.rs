@@ -1420,6 +1420,9 @@ fn diff_node(old: &VElement, new: &VElement, patch: &mut Patch) {
     if old.style != new.style {
         patch.changed.insert(new.key);
     }
+    if old.attrs != new.attrs {
+        patch.changed.insert(new.key);
+    }
     diff_kind(&old.kind, &new.kind, new.key, patch);
     diff_children(old, new, patch);
 }
@@ -1478,15 +1481,17 @@ fn diff_kind(old: &NodeKind, new: &NodeKind, key: &'static str, patch: &mut Patc
                 value: value_a,
                 placeholder: placeholder_a,
                 disabled: disabled_a,
+                multiline: multiline_a,
+                resize: resize_a,
                 masked: masked_a,
-                ..
             },
             NodeKind::TextField {
                 value: value_b,
                 placeholder: placeholder_b,
                 disabled: disabled_b,
+                multiline: multiline_b,
+                resize: resize_b,
                 masked: masked_b,
-                ..
             },
         ) => {
             if value_a != value_b {
@@ -1508,6 +1513,12 @@ fn diff_kind(old: &NodeKind, new: &NodeKind, key: &'static str, patch: &mut Patc
                     key,
                     disabled: *disabled_b,
                 });
+                patch.changed.insert(key);
+            }
+            if multiline_a != multiline_b {
+                patch.changed.insert(key);
+            }
+            if resize_a != resize_b {
                 patch.changed.insert(key);
             }
             if masked_a != masked_b {
@@ -1555,15 +1566,15 @@ fn diff_kind(old: &NodeKind, new: &NodeKind, key: &'static str, patch: &mut Patc
         (
             NodeKind::Radio {
                 label: label_a,
+                value: value_a,
                 selected: selected_a,
                 disabled: disabled_a,
-                ..
             },
             NodeKind::Radio {
                 label: label_b,
+                value: value_b,
                 selected: selected_b,
                 disabled: disabled_b,
-                ..
             },
         ) => {
             if label_a != label_b {
@@ -1571,6 +1582,9 @@ fn diff_kind(old: &NodeKind, new: &NodeKind, key: &'static str, patch: &mut Patc
                     key,
                     label: label_b.clone(),
                 });
+                patch.changed.insert(key);
+            }
+            if value_a != value_b {
                 patch.changed.insert(key);
             }
             if selected_a != selected_b {
