@@ -8,7 +8,7 @@ use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::{Ident, ItemStruct, LitStr, Token};
 
-use crate::html::{self, Attr, Element, Node, Segment};
+use relay_html::{Attr, Element, Node, Segment};
 
 /// Аргументы атрибута
 /// `#[template("путь.html", modal = Компонент, window = Компонент, windows = [A, B])]`.
@@ -319,7 +319,7 @@ fn load_nodes(path: &Path, stack: &mut Vec<PathBuf>) -> syn::Result<Loaded> {
             ),
         )
     })?;
-    let nodes = html::parse(&source).map_err(|error| {
+    let nodes = relay_html::parse(&source).map_err(|error| {
         syn::Error::new(
             Span::call_site(),
             format!("С€Р°Р±Р»РѕРЅ `{}`: {error}", path.display()),

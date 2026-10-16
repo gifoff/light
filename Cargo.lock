@@ -1935,11 +1935,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "relay-html"
+version = "0.1.0"
+
+[[package]]
 name = "relay-macros"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
+ "relay-html",
  "syn 2.0.119",
 ]
 

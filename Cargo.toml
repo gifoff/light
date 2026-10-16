@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/relay",
     "crates/relay-macros",
+    "crates/relay-html",
     "crates/relay-demo",
 ]
 exclude = ["egui-main"]
