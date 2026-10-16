@@ -8,12 +8,16 @@ publish = false
 description = "Демонстрационное приложение библиотеки Relay"
 
 [dependencies]
-# Базовый набор — элементы и окно. Доступность и остальные возможности
-# добавляются через фичи крейта (см. `[features]`).
+# Базовый набор — элементы и окно. Компоненты и остальные возможности
+# добавляются через фичи (см. `[features]`).
 relay = { workspace = true, default-features = false, features = [
     "elements-basic",
     "window",
 ] }
+# Компоненты подключаются явными зависимостями: так `relay check` видит, что
+# элементы формы и валидация установлены, а сборка без них не тянет их код.
+relay-element-form = { workspace = true, optional = true }
+relay-behavior-validation = { workspace = true, optional = true }
 
 [features]
 default = ["full"]
@@ -22,14 +26,14 @@ a11y = ["relay/a11y-winit"]
 # Полный набор возможностей, используемый основным демо-приложением.
 full = [
     "a11y",
-    "relay/elements-form",
+    "dep:relay-element-form",
+    "dep:relay-behavior-validation",
     "relay/align-content",
     "relay/z-order",
     "relay/cursor-theming",
     "relay/offset-position",
     "relay/dynamic-attrs",
     "relay/required-fields",
-    "relay/validation",
     "relay/min-max-size",
     "relay/include",
     "relay/window-transparent",
