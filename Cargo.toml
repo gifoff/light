@@ -5,6 +5,7 @@ members = [
     "crates/relay-macros",
     "crates/relay-html",
     "crates/relay-demo",
+    "crates/relay-cli-core",
 ]
 exclude = ["egui-main"]
 
