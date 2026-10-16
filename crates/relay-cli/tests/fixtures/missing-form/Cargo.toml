@@ -1,0 +1,10 @@
+[package]
+name = "missing-form"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+relay = "0.3"
+relay-element-text = "0.3"
