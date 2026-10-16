@@ -7,13 +7,9 @@ rust-version.workspace = true
 description = "Реактивный графический интерфейс для Rust: Proxy-обозреватели и HTML-шаблоны в духе Vue 3"
 
 [dependencies]
-relay-macros.workspace = true
-thiserror = "2"
-winit = { workspace = true, optional = true }
-pixels = { workspace = true, optional = true }
-ab_glyph = { workspace = true, optional = true }
-accesskit = { version = "0.25", optional = true, features = ["serde"] }
-accesskit_winit = { version = "0.34", optional = true }
+relay-core = { workspace = true, default-features = false }
+relay-element-form = { workspace = true, optional = true }
+relay-behavior-validation = { workspace = true, optional = true }
 
 [features]
 # Набор по умолчанию: базовые элементы + окно + интеграция a11y с winit.
@@ -21,68 +17,67 @@ default = ["elements-basic", "window", "a11y-winit"]
 
 # --- Элементы разметки -------------------------------------------------
 # `<div>`, `<span>`, `<h1>`–`<h5>`, `<titlebar>`, `<text>` и `<button>`.
-elements-basic = ["relay-macros/elements-basic"]
+elements-basic = ["relay-core/elements-basic"]
 # Пароль (`<password>`), многострочное поле (`textarea`) и маркер изменения размера.
-elements-input = ["relay-macros/elements-input", "resize-grip"]
+elements-input = ["relay-core/elements-input"]
 # Флажок (`<checkbox>`).
-elements-checkbox = ["relay-macros/elements-checkbox"]
+elements-checkbox = ["relay-core/elements-checkbox"]
 # Переключатель (`<radio>`).
-elements-radio = ["relay-macros/elements-radio"]
+elements-radio = ["relay-core/elements-radio"]
 # Выпадающий список (`<select>`/`<option>`).
-elements-select = ["relay-macros/elements-select"]
-# Группа элементов формы (input + checkbox + radio + select).
-elements-form = ["elements-input", "elements-checkbox", "elements-radio", "elements-select"]
+elements-select = ["relay-core/elements-select"]
+# Компонент `relay-element-form`: флажок, переключатель и список.
+elements-form = ["relay-core/elements-form", "dep:relay-element-form"]
 # Маркер изменения размера текстового поля (`resize`).
-resize-grip = ["relay-macros/resize-grip"]
+resize-grip = ["relay-core/resize-grip"]
 
 # --- Кросс-элементные возможности --------------------------------------
 # Выравнивание содержимого контейнера (`align-items`/`justify-content`).
-align-content = ["relay-macros/align-content"]
+align-content = ["relay-core/align-content"]
 # Порядок отрисовки и попадания (`z`).
-z-order = ["relay-macros/z-order"]
+z-order = ["relay-core/z-order"]
 # Курсоры мыши (`cursor` и автоматический выбор по роли).
-cursor-theming = ["relay-macros/cursor-theming"]
+cursor-theming = ["relay-core/cursor-theming"]
 # Смещение после выравнивания (`position-offset-x`/`position-offset-y`).
-offset-position = ["relay-macros/offset-position"]
+offset-position = ["relay-core/offset-position"]
 # Динамические привязки `:attr`.
-dynamic-attrs = ["relay-macros/dynamic-attrs"]
+dynamic-attrs = ["relay-core/dynamic-attrs"]
 # Обязательные поля (`required`/`required-indicator`) и стандартная проверка.
-required-fields = ["relay-macros/required-fields"]
-# Пользовательская валидация (`:validator`/`@validate`).
-validation = ["relay-macros/validation"]
+required-fields = ["relay-core/required-fields"]
+# Компонент `relay-behavior-validation` (`:validator`/`@validate`).
+validation = ["relay-core/validation", "dep:relay-behavior-validation"]
 # Ограничения размера (`min-width`/`max-width`/`min-height`/`max-height`).
-min-max-size = ["relay-macros/min-max-size"]
+min-max-size = ["relay-core/min-max-size"]
 
 # --- Окно --------------------------------------------------------------
 # Базовое окно на winit с программной отрисовкой.
-window = ["dep:winit", "dep:pixels", "dep:ab_glyph"]
+window = ["relay-core/window"]
 # Прозрачность окна (per-pixel alpha).
-window-transparent = ["window"]
+window-transparent = ["relay-core/window-transparent"]
 # Модальные окна (`modal`).
-window-modal = ["window"]
+window-modal = ["relay-core/window-modal"]
 # Несколько окон (`open_window`).
-window-multi = ["window"]
+window-multi = ["relay-core/window-multi"]
 # Адресация окон по идентификатору (`open("id")`).
-window-by-id = ["window"]
+window-by-id = ["relay-core/window-by-id"]
 # Изменение размера окна (`resizable`).
-window-resize = ["window"]
+window-resize = ["relay-core/window-resize"]
 
 # --- Доступность -------------------------------------------------------
 # Построение дерева доступности AccessKit.
-a11y = ["dep:accesskit"]
+a11y = ["relay-core/a11y"]
 # Интеграция с `accesskit_winit` (включает полный набор подсистем a11y).
-a11y-winit = ["a11y", "a11y-live", "a11y-keyboard", "window", "dep:accesskit_winit"]
+a11y-winit = ["relay-core/a11y-winit"]
 # Живые регионы (`aria-live`).
-a11y-live = ["a11y"]
+a11y-live = ["relay-core/a11y-live"]
 # Программный фокус и кольцо фокуса.
-a11y-focus = ["a11y"]
+a11y-focus = ["relay-core/a11y-focus"]
 # Клавиатурная навигация (`Tab`/`Enter`/`Space`/`Escape`).
-a11y-keyboard = ["a11y"]
+a11y-keyboard = ["relay-core/a11y-keyboard"]
 
 # --- Прочее ------------------------------------------------------------
 # Включение шаблонов `<include src="...">`.
-include = ["relay-macros/include"]
+include = ["relay-core/include"]
 
 [dev-dependencies]
-insta = { version = "1", features = ["json"] }
 serde_json = "1"

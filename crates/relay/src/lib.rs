@@ -16,6 +16,16 @@
 //! * шаблоны могут включать другие шаблоны через `<include src="...">` —
 //!   так главная форма собирается из внутренних страниц и разделов.
 //!
+//! ## Компоненты
+//!
+//! Ядро библиотеки — крейт [`relay-core`](relay_core). Дополнительные
+//! возможности подключаются как отдельные компоненты и фичи:
+//!
+//! * [`relay-element-form`](relay_element_form) (фича `elements-form`) —
+//!   элементы `<checkbox>`, `<radio>`, `<select>`/`<option>`;
+//! * [`relay-behavior-validation`](relay_behavior_validation)
+//!   (фича `validation`) — `required`, `:validator` и `@validate`.
+//!
 //! ## Пример
 //!
 //! ```no_run
@@ -71,37 +81,9 @@
 // Позволяет генерируемому коду обращаться к `::relay::…` изнутри самой библиотеки.
 extern crate self as relay;
 
-pub mod a11y;
-pub mod collection;
-pub mod component;
-pub mod control;
-pub mod dom;
-pub mod error;
-pub mod layout;
-pub mod prelude;
-pub mod reactive;
-pub mod validation;
-pub mod vdom;
+pub use relay_core::*;
 
-#[cfg(feature = "window")]
-pub mod window;
-
-pub use collection::Collection;
-pub use component::{Component, WindowConfig};
-pub use control::{FocusCommand, WindowCommand, blur, focus, focused_key};
-pub use dom::Dom;
-pub use error::{Error, Result};
-pub use reactive::{Property, Proxy, ProxyState, Watcher, watch};
-pub use relay_macros::{proxy, template};
-pub use vdom::{
-    Align, Edges, Event, KeyInfo, MouseButton, NodeKind, Offset, Resize, SelectOption, Size, Style,
-    VElement, VNode, VWindow,
-};
-
-/// Открывает окно с интерфейсом компонента и запускает цикл событий.
-///
-/// Возвращает только при закрытии окна или ошибке.
-#[cfg(feature = "window")]
-pub fn run(component: impl Component + 'static) -> Result<()> {
-    window::run(component)
-}
+#[cfg(feature = "validation")]
+pub use relay_behavior_validation;
+#[cfg(feature = "elements-form")]
+pub use relay_element_form;
