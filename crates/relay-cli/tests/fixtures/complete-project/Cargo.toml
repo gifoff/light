@@ -6,7 +6,6 @@ edition = "2021"
 [workspace]
 
 [dependencies]
-relay = "0.3"
-relay-element-text = "0.3"
-relay-element-form = "0.3"
-relay-behavior-validation = "0.2"
+relay = "0.1"
+relay-element-form = "0.1"
+relay-behavior-validation = "0.1"

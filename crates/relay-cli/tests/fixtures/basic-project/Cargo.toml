@@ -6,5 +6,4 @@ edition = "2021"
 [workspace]
 
 [dependencies]
-relay = { version = "0.3", features = ["elements-input"] }
-relay-element-text = "0.3"
+relay = { version = "0.1", features = ["elements-input"] }

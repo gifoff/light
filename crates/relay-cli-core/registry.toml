@@ -7,29 +7,23 @@
 # Каждая запись описывает компонент (§3 модели компонентов) и то, какие
 # теги, атрибуты и директивы он предоставляет. CLI использует это, чтобы
 # по шаблонам проекта понять, какие компоненты нужны.
+#
+# Текст (`<text>`, `<password>`, `<textarea>`) входит в ядро `relay-core`
+# и отдельного компонента не требует.
 
 [[components]]
 name = "relay-element-form"
 kind = "element"
 display-name = "Form elements"
-version = "0.3.0"
-core = "^0.3"
+version = "0.1.0"
+core = "^0.1"
 elements = ["select", "checkbox", "radio", "option"]
-
-[[components]]
-name = "relay-element-text"
-kind = "element"
-display-name = "Text inputs"
-version = "0.3.0"
-core = "^0.3"
-elements = ["text", "password"]
-attributes = ["textarea", "resize"]
 
 [[components]]
 name = "relay-behavior-validation"
 kind = "behavior"
 display-name = "Form validation"
-version = "0.2.0"
-core = "^0.3"
+version = "0.1.0"
+core = "^0.1"
 attributes = [":validator", "required"]
 directives = ["@validate"]

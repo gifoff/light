@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn builtin_registry_is_valid() {
         let r = ComponentRegistry::builtin();
-        assert!(r.all().len() >= 3);
+        assert!(r.all().len() >= 2);
         assert!(r.by_name("relay-element-form").is_some());
     }
 
@@ -165,8 +165,10 @@ mod tests {
         let r = ComponentRegistry::builtin();
         let form = r.component_for_element("checkbox").expect("checkbox");
         assert_eq!(form.name, "relay-element-form");
-        let text = r.component_for_element("text").expect("text");
-        assert_eq!(text.name, "relay-element-text");
+        assert!(
+            r.component_for_element("text").is_none(),
+            "текстовые поля входят в ядро и компонента не требуют"
+        );
     }
 
     #[test]

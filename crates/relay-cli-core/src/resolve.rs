@@ -70,8 +70,8 @@ mod tests {
         let names: Vec<_> = needed.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(
             names,
-            vec!["relay-element-form", "relay-element-text"],
-            "div не сопоставляется ни с одним компонентом"
+            vec!["relay-element-form"],
+            "text и div входят в ядро и не сопоставляются с компонентами"
         );
     }
 

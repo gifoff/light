@@ -6,4 +6,4 @@ edition = "2021"
 [workspace]
 
 [dependencies]
-relay = "0.3"
+relay = "0.1"
