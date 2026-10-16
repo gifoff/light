@@ -8,18 +8,20 @@ publish = false
 description = "Демонстрационное приложение библиотеки Relay"
 
 [dependencies]
-# Базовая подсистема демо всегда включает окно и доступность; конкретные
-# элементы и возможности добавляются через фичи крейта (см. `[features]`).
+# Базовый набор — элементы и окно. Доступность и остальные возможности
+# добавляются через фичи крейта (см. `[features]`).
 relay = { workspace = true, default-features = false, features = [
     "elements-basic",
     "window",
-    "a11y-winit",
 ] }
 
 [features]
 default = ["full"]
+# Доступность (AccessKit) поверх окна.
+a11y = ["relay/a11y-winit"]
 # Полный набор возможностей, используемый основным демо-приложением.
 full = [
+    "a11y",
     "relay/elements-form",
     "relay/align-content",
     "relay/z-order",
@@ -35,12 +37,9 @@ full = [
     "relay/window-multi",
     "relay/window-by-id",
     "relay/window-resize",
-    "relay/a11y-live",
-    "relay/a11y-focus",
-    "relay/a11y-keyboard",
 ]
-# Минимальная сборка — только базовые элементы, окно и a11y. Используется для
-# замера размера бинарника (пример `minimal`).
+# Минимальная сборка — базовые элементы и окно, без AccessKit и форм.
+# Используется для замера размера бинарника (пример `minimal`).
 minimal = []
 
 [dev-dependencies]
