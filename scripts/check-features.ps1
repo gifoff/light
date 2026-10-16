@@ -18,9 +18,12 @@ $combos = @(
 
 foreach ($combo in $combos) {
     Write-Host "==> $($combo.Name)" -ForegroundColor Cyan
-    & cargo test -p relay @($combo.Args)
-    if ($LASTEXITCODE -ne 0) {
-        throw "Набор фич «$($combo.Name)» завершился с ошибкой"
+    foreach ($pkg in @("relay-core", "relay")) {
+        Write-Host "    -> $pkg" -ForegroundColor DarkCyan
+        & cargo test -p $pkg @($combo.Args)
+        if ($LASTEXITCODE -ne 0) {
+            throw "Набор фич «$($combo.Name)» ($pkg) завершился с ошибкой"
+        }
     }
 }
 

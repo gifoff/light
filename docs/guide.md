@@ -113,6 +113,24 @@ Relay собран по принципу «платите только за то
 relay = { path = "crates/relay" } # default = ["elements-basic", "window", "a11y-winit"]
 ```
 
+### Компоненты и крейты
+
+Начиная с этой версии библиотека разбита на ядро и компоненты:
+
+| Крейт                       | Роль                                                                 | Как подключается |
+| --------------------------- | -------------------------------------------------------------------- | ---------------- |
+| `relay-core`                | Ядро: vdom, реактивность, раскладка, paint, окно, доступность        | фичи крейта      |
+| `relay`                     | Тонкая мета-обёртка: реэкспортирует ядро, макросы и компоненты        | обычная зависимость |
+| `relay-element-form`        | Компонент-элемент: `<checkbox>`, `<radio>`, `<select>`/`<option>`    | фича `elements-form` или прямая зависимость |
+| `relay-behavior-validation` | Компонент-поведение: `required`, `:validator`, `@validate`           | фича `validation` или прямая зависимость |
+
+Крейт `relay` транслирует свои фичи в фичи `relay-core` (например,
+`relay/elements-form` → `relay-core/elements-form` и `relay-element-form`),
+поэтому прикладной код продолжает писать `use relay::prelude::*;`. Базовые
+элементы и текстовые поля (`<text>`, `<password>`, `<textarea>`) входят в
+ядро и компонентов не требуют. Подробнее — в
+[docs/COMPONENT_MODEL.md](COMPONENT_MODEL.md).
+
 ### Элементы разметки
 
 | Фича                | Что включает                                                        |
@@ -252,7 +270,7 @@ cargo run -p relay-cli -- suggest   # что стоит добавить
   relay-element-form
 
 Рекомендации:
-  добавить relay-element-form ^0.3
+  добавить relay-element-form ^0.1
 ```
 
 ### `relay suggest [путь]`

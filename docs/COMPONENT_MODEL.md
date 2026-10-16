@@ -73,6 +73,17 @@
 Ядро **не может быть выключено** — без него нет приложения.
 Версия ядра — это версия, с которой сверяются все компоненты.
 
+Бесплатно (без отдельного компонента) в ядре живут базовые элементы:
+`<div>`, `<span>`, `<h1>`–`<h5>`, `<titlebar>`, `<window>`, `<button>`,
+а также текстовые поля `<text>`, `<password>` и `<textarea>`.
+Способы отрисовки `window`/`a11y` и элементы `elements-basic`/
+`elements-input` включаются Cargo-фичами `relay-core`, а не отдельными
+крейтами: для них фич достаточно.
+
+Крейт `relay` — тонкая мета-обёртка: он реэкспортирует `relay-core`,
+макросы и подключённые компоненты, а его фичи транслируются в фичи
+`relay-core` (см. `docs/guide.md`).
+
 ### 3.2. Element (элемент)
 
 Примитивные сущности разметки: теги, доступные в HTML-шаблонах.
@@ -80,8 +91,7 @@
 
 Примеры:
 - `relay-element-basic` — `<div>`, `<span>`, `<h1>`–`<h5>`,
-  `<titlebar>`, `<window>`.
-- `relay-element-text` — `<text>`, `<password>`, `<textarea>`.
+  `<titlebar>`, `<window>` (в текущей реализации — фича `relay-core`).
 - `relay-element-form` — `<checkbox>`, `<radio>`, `<select>`,
   `<option>`.
 - `relay-element-media` — `<img>`, `<video>`, `<canvas>`.
@@ -93,7 +103,7 @@
   с подсказкой, какой компонент включить.
 - Element-компонент может зависеть от других element-компонентов
   (например, `relay-element-form` может требовать
-  `relay-element-text`).
+  `relay-element-basic`).
 
 ### 3.3. Behavior (поведение)
 
@@ -252,9 +262,8 @@ directives = []                        # новые директивы (v-*)
 [package.metadata.relay.requires]
 # Компоненты, которые обязательны
 components = [
-    "relay-element-form ^0.3",
-    "relay-element-text ^0.3",
-    "relay-behavior-validation ^0.2",
+    "relay-element-form ^0.1",
+    "relay-behavior-validation ^0.1",
 ]
 # Rust-зависимости, помимо Cargo-секции [dependencies]
 # (обычно не нужно — используется [dependencies])
