@@ -3,6 +3,8 @@ resolver = "2"
 members = [
     "crates/relay",
     "crates/relay-core",
+    "crates/relay-element-form",
+    "crates/relay-behavior-validation",
     "crates/relay-macros",
     "crates/relay-html",
     "crates/relay-demo",
@@ -24,6 +26,8 @@ ab_glyph = "0.2"
 
 relay = { path = "crates/relay", version = "0.1.0" }
 relay-core = { path = "crates/relay-core", version = "0.1.0" }
+relay-element-form = { path = "crates/relay-element-form", version = "0.1.0" }
+relay-behavior-validation = { path = "crates/relay-behavior-validation", version = "0.1.0" }
 relay-macros = { path = "crates/relay-macros", version = "0.1.0" }
 
 syn = { version = "2", features = ["full"] }

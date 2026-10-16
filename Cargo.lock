@@ -2204,15 +2204,17 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 name = "relay"
 version = "0.1.0"
 dependencies = [
- "ab_glyph",
- "accesskit",
- "accesskit_winit",
- "insta",
- "pixels",
- "relay-macros",
+ "relay-behavior-validation",
+ "relay-core",
+ "relay-element-form",
  "serde_json",
- "thiserror 2.0.21",
- "winit",
+]
+
+[[package]]
+name = "relay-behavior-validation"
+version = "0.1.0"
+dependencies = [
+ "relay-core",
 ]
 
 [[package]]
@@ -2262,7 +2264,16 @@ name = "relay-demo"
 version = "0.1.0"
 dependencies = [
  "relay",
+ "relay-behavior-validation",
+ "relay-element-form",
  "serde_json",
+]
+
+[[package]]
+name = "relay-element-form"
+version = "0.1.0"
+dependencies = [
+ "relay-core",
 ]
 
 [[package]]

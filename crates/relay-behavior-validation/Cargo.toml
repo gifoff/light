@@ -1,0 +1,17 @@
+[package]
+name = "relay-behavior-validation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Компонент Relay: валидация форм — required, :validator и @validate"
+
+[dependencies]
+relay-core = { workspace = true, default-features = false, features = ["validation", "required-fields"] }
+
+[package.metadata.relay]
+kind = "behavior"
+display-name = "Form validation"
+core = "^0.1"
+provides.attributes = [":validator", "required"]
+provides.directives = ["@validate"]

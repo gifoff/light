@@ -1,0 +1,16 @@
+[package]
+name = "relay-element-form"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Компонент Relay: элементы формы — флажок, переключатель и список"
+
+[dependencies]
+relay-core = { workspace = true, default-features = false, features = ["elements-form"] }
+
+[package.metadata.relay]
+kind = "element"
+display-name = "Form elements"
+core = "^0.1"
+provides.elements = ["checkbox", "radio", "select", "option"]
