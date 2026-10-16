@@ -1,0 +1,9 @@
+<div>
+    <div>{{ title }}</div>
+    <div>Счётчик: {{ count }}</div>
+    <button @click="increment">+1</button>
+    <button @click="reset" :disabled="is_zero">Сброс</button>
+    <text v-model="name" placeholder="Введите имя" />
+    <div v-if="show_greeting">Привет, {{ name }}!</div>
+    <button @click="toggle_greeting">Переключить приветствие</button>
+</div>

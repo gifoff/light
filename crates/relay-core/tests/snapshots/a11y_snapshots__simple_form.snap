@@ -1,0 +1,45 @@
+---
+source: crates/relay/tests/a11y_snapshots.rs
+expression: "summarize(&update, tree)"
+---
+{
+  "focus": "0.0",
+  "nodes": [
+    {
+      "key": "0.0",
+      "label": "Имя",
+      "role": "TextInput"
+    },
+    {
+      "key": "0.1",
+      "label": "Email",
+      "role": "TextInput"
+    },
+    {
+      "key": "0.2",
+      "label": "Согласен с условиями",
+      "role": "CheckBox"
+    },
+    {
+      "key": "0.3.t",
+      "label": "Отправить",
+      "role": "Label"
+    },
+    {
+      "key": "0.3",
+      "label": "Отправить",
+      "role": "Button"
+    },
+    {
+      "key": "0",
+      "label": null,
+      "role": "GenericContainer"
+    },
+    {
+      "key": "",
+      "label": null,
+      "role": "Window"
+    }
+  ],
+  "root": ""
+}

@@ -1,0 +1,30 @@
+---
+source: crates/relay/tests/a11y_snapshots.rs
+expression: "summarize(&update, tree)"
+---
+{
+  "focus": "0",
+  "nodes": [
+    {
+      "key": "0",
+      "label": "Бесплатный",
+      "role": "RadioButton"
+    },
+    {
+      "key": "1",
+      "label": "Pro",
+      "role": "RadioButton"
+    },
+    {
+      "key": "2",
+      "label": "Команда",
+      "role": "RadioButton"
+    },
+    {
+      "key": "",
+      "label": null,
+      "role": "Window"
+    }
+  ],
+  "root": ""
+}

@@ -2243,6 +2243,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "relay-core"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "accesskit",
+ "accesskit_winit",
+ "insta",
+ "pixels",
+ "relay-macros",
+ "serde_json",
+ "thiserror 2.0.21",
+ "winit",
+]
+
+[[package]]
 name = "relay-demo"
 version = "0.1.0"
 dependencies = [

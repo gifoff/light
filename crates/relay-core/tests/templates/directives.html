@@ -1,0 +1,12 @@
+<div>
+    <template v-if="empty">
+        <div>пусто</div>
+    </template>
+    <div v-else-if="single">один</div>
+    <div v-else>много</div>
+</div>
+<div v-if="show_list" position-x="right">
+    <div v-for="item in items">
+        <div>{{ item }}</div>
+    </div>
+</div>

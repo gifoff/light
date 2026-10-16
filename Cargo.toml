@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/relay",
+    "crates/relay-core",
     "crates/relay-macros",
     "crates/relay-html",
     "crates/relay-demo",
@@ -22,6 +23,7 @@ pixels = "0.17"
 ab_glyph = "0.2"
 
 relay = { path = "crates/relay", version = "0.1.0" }
+relay-core = { path = "crates/relay-core", version = "0.1.0" }
 relay-macros = { path = "crates/relay-macros", version = "0.1.0" }
 
 syn = { version = "2", features = ["full"] }
