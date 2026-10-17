@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use serde::Deserialize;
@@ -149,6 +149,218 @@ pub fn collect_dependencies(cargo_toml: &str) -> Result<Vec<Dependency>> {
     }
     dependencies.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(dependencies)
+}
+
+/// Подробности одной зависимости (`[dependencies]` или `[workspace.dependencies]`).
+#[derive(Debug, Clone)]
+pub struct DepDetail {
+    /// Имя крейта.
+    pub name: String,
+    /// Строковое требование версии (`"0.1"`, `"^0.1"`, `">=0.1,<0.2"`).
+    pub version: Option<String>,
+    /// Путь (`path = "..."`), относительный к каталогу манифеста.
+    pub path: Option<PathBuf>,
+    /// Ссылка на workspace-зависимость (`workspace = true`).
+    pub workspace: bool,
+    /// Необязательная зависимость (`optional = true`).
+    pub optional: bool,
+}
+
+fn details_from_table(table: &dyn toml_edit::TableLike, base_dir: &Path) -> Vec<DepDetail> {
+    let mut out = Vec::new();
+    for (name, item) in table.iter() {
+        if let Some(version) = item.as_str() {
+            out.push(DepDetail {
+                name: name.to_string(),
+                version: Some(version.to_string()),
+                path: None,
+                workspace: false,
+                optional: false,
+            });
+            continue;
+        }
+        let Some(tbl) = item.as_table_like() else {
+            continue;
+        };
+        let version = tbl
+            .get("version")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let path = tbl
+            .get("path")
+            .and_then(|v| v.as_str())
+            .map(|p| base_dir.join(p));
+        let workspace = tbl
+            .get("workspace")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let optional = tbl
+            .get("optional")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        out.push(DepDetail {
+            name: name.to_string(),
+            version,
+            path,
+            workspace,
+            optional,
+        });
+    }
+    out
+}
+
+/// Собирает подробности из секции `[dependencies]` манифеста.
+pub fn collect_dependency_details(cargo_toml: &str, base_dir: &Path) -> Result<Vec<DepDetail>> {
+    let doc: DocumentMut = cargo_toml
+        .parse::<DocumentMut>()
+        .map_err(|e| Error::Manifest(e.to_string()))?;
+    let mut out = Vec::new();
+    if let Some(deps) = doc.get("dependencies").and_then(|d| d.as_table_like()) {
+        out.extend(details_from_table(deps, base_dir));
+    }
+    Ok(out)
+}
+
+/// Читает `[workspace.dependencies]` корневого манифеста.
+pub fn read_workspace_dependencies(workspace_root: &Path) -> Result<Vec<DepDetail>> {
+    let cargo = workspace_root.join("Cargo.toml");
+    let text = read_cargo_toml(&cargo)?;
+    let doc: DocumentMut = text
+        .parse::<DocumentMut>()
+        .map_err(|e| Error::Manifest(e.to_string()))?;
+    let mut out = Vec::new();
+    if let Some(deps) = doc
+        .get("workspace")
+        .and_then(|w| w.as_table_like())
+        .and_then(|w| w.get("dependencies"))
+        .and_then(|d| d.as_table_like())
+    {
+        out.extend(details_from_table(deps, workspace_root));
+    }
+    Ok(out)
+}
+
+/// Проверяет наличие секции `[package]` в манифесте.
+pub fn has_package_section(cargo_toml: &str) -> Result<bool> {
+    let doc: DocumentMut = cargo_toml
+        .parse::<DocumentMut>()
+        .map_err(|e| Error::Manifest(e.to_string()))?;
+    Ok(doc.get("package").is_some())
+}
+
+/// Находит корень workspace, поднимаясь от `start` вверх по каталогам.
+///
+/// Возвращает первый каталог с `Cargo.toml`, содержащим секцию `[workspace]`.
+pub fn find_workspace_root(start: &Path) -> Option<PathBuf> {
+    let mut dir = if start.is_file() {
+        start.parent().map(Path::to_path_buf)?
+    } else {
+        start.to_path_buf()
+    };
+    loop {
+        let cargo = dir.join("Cargo.toml");
+        if cargo.is_file()
+            && let Ok(text) = std::fs::read_to_string(&cargo)
+            && let Ok(doc) = text.parse::<DocumentMut>()
+            && doc.get("workspace").is_some()
+        {
+            return Some(dir);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
+/// Читает версию пакета из манифеста, разрешая `version.workspace = true`.
+pub fn read_package_version(crate_dir: &Path) -> Result<Option<semver::Version>> {
+    let cargo = crate_dir.join("Cargo.toml");
+    let text = read_cargo_toml(&cargo)?;
+    let doc: DocumentMut = text
+        .parse::<DocumentMut>()
+        .map_err(|e| Error::Manifest(e.to_string()))?;
+    let Some(pkg) = doc.get("package").and_then(|p| p.as_table_like()) else {
+        return Ok(None);
+    };
+    match pkg.get("version") {
+        Some(v) if v.as_str().is_some() => {
+            Ok(semver::Version::parse(v.as_str().expect("checked")).ok())
+        }
+        Some(v) if v.as_table_like().is_some() => {
+            let is_workspace = v
+                .as_table_like()
+                .and_then(|t| t.get("workspace"))
+                .and_then(|w| w.as_bool())
+                .unwrap_or(false);
+            if is_workspace && let Some(root) = find_workspace_root(crate_dir) {
+                return read_workspace_package_version(&root);
+            }
+            Ok(None)
+        }
+        _ => Ok(None),
+    }
+}
+
+fn read_workspace_package_version(workspace_root: &Path) -> Result<Option<semver::Version>> {
+    let cargo = workspace_root.join("Cargo.toml");
+    let text = read_cargo_toml(&cargo)?;
+    let doc: DocumentMut = text
+        .parse::<DocumentMut>()
+        .map_err(|e| Error::Manifest(e.to_string()))?;
+    let version = doc
+        .get("workspace")
+        .and_then(|w| w.as_table_like())
+        .and_then(|w| w.get("package"))
+        .and_then(|p| p.as_table_like())
+        .and_then(|p| p.get("version"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| semver::Version::parse(s).ok());
+    Ok(version)
+}
+
+/// Минимальная версия, удовлетворяющая требованию (нижняя граница первого компаратора).
+pub fn min_version(req: &semver::VersionReq) -> Option<semver::Version> {
+    let c = req.comparators.first()?;
+    Some(semver::Version::new(
+        c.major,
+        c.minor.unwrap_or(0),
+        c.patch.unwrap_or(0),
+    ))
+}
+
+/// Разрешает версию зависимости `name` в проекте `project_dir`.
+///
+/// Учитывает `version = "..."`, `path = "..."` и `workspace = true`.
+pub fn resolve_dependency_version(
+    project_dir: &Path,
+    name: &str,
+) -> Result<Option<semver::Version>> {
+    let cargo = project_dir.join("Cargo.toml");
+    let text = read_cargo_toml(&cargo)?;
+    let details = collect_dependency_details(&text, project_dir)?;
+    let Some(dep) = details.into_iter().find(|d| d.name == name) else {
+        return Ok(None);
+    };
+    if dep.workspace
+        && let Some(root) = find_workspace_root(project_dir)
+    {
+        let ws = read_workspace_dependencies(&root)?;
+        if let Some(ws_dep) = ws.into_iter().find(|d| d.name == name) {
+            return resolve_detail_version(&ws_dep);
+        }
+    }
+    resolve_detail_version(&dep)
+}
+
+fn resolve_detail_version(dep: &DepDetail) -> Result<Option<semver::Version>> {
+    if let Some(path) = &dep.path {
+        return read_package_version(path);
+    }
+    if let Some(req) = &dep.version {
+        let req = semver::VersionReq::parse(req)?;
+        return Ok(min_version(&req));
+    }
+    Ok(None)
 }
 
 #[cfg(test)]

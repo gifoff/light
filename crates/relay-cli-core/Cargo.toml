@@ -15,6 +15,17 @@ ignore = "0.4"
 thiserror = "2"
 glob = "0.3"
 relay-html = { path = "../relay-html" }
+sha2 = "0.10"
+hex = "0.4"
+dirs = "5"
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "json",
+    "blocking",
+], optional = true }
 
 [features]
 default = []
+# Сетевой доступ к crates.io (обёртка над `reqwest`). Выключен по умолчанию,
+# чтобы `check`/`suggest`/`doctor` и тесты собирались без тяжёлых зависимостей.
+network = ["dep:reqwest"]
