@@ -144,6 +144,72 @@ impl Lockfile {
     }
 }
 
+/// Разница между двумя `relay.lock`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LockDiff {
+    /// Компоненты, появившиеся в новом lock.
+    pub added: Vec<String>,
+    /// Компоненты, исчезнувшие из нового lock.
+    pub removed: Vec<String>,
+    /// Компоненты с изменившейся версией.
+    pub changed: Vec<String>,
+}
+
+impl LockDiff {
+    /// Нет ли изменений.
+    pub fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.removed.is_empty() && self.changed.is_empty()
+    }
+
+    /// Человекочитаемое описание.
+    pub fn to_text(&self) -> String {
+        let mut out = String::new();
+        for name in &self.added {
+            out.push_str(&format!("  + {name}\n"));
+        }
+        for name in &self.removed {
+            out.push_str(&format!("  - {name}\n"));
+        }
+        for name in &self.changed {
+            out.push_str(&format!("  ~ {name}\n"));
+        }
+        out
+    }
+}
+
+/// Сравнивает два lock-файла по составу компонентов и их версиям.
+pub fn diff(old: &Lockfile, new: &Lockfile) -> LockDiff {
+    use std::collections::BTreeMap;
+
+    let old_map: BTreeMap<&str, &str> = old
+        .components
+        .iter()
+        .map(|c| (c.name.as_str(), c.version.as_str()))
+        .collect();
+    let new_map: BTreeMap<&str, &str> = new
+        .components
+        .iter()
+        .map(|c| (c.name.as_str(), c.version.as_str()))
+        .collect();
+
+    let mut diff = LockDiff::default();
+    for (name, version) in &new_map {
+        match old_map.get(name) {
+            None => diff.added.push((*name).to_string()),
+            Some(old_version) if old_version != version => {
+                diff.changed.push((*name).to_string());
+            }
+            Some(_) => {}
+        }
+    }
+    for name in old_map.keys() {
+        if !new_map.contains_key(name) {
+            diff.removed.push((*name).to_string());
+        }
+    }
+    diff
+}
+
 /// Актуален ли существующий `relay.lock` относительно `Cargo.toml`.
 pub fn is_actual(project_root: &Path) -> Result<bool> {
     let path = Lockfile::path_in(project_root);
@@ -154,7 +220,6 @@ pub fn is_actual(project_root: &Path) -> Result<bool> {
     let expected = Lockfile::from_project(project_root)?;
     Ok(current.same_components(&expected) && current.core == expected.core)
 }
-
 /// Читает установленные компоненты проекта (только известные реестру).
 fn collect_project_components(project_root: &Path) -> Result<Vec<crate::manifest::DepDetail>> {
     let cargo = project_root.join("Cargo.toml");
@@ -267,6 +332,43 @@ mod tests {
         )
         .expect("write");
         assert!(!is_actual(&dir).expect("is_actual"));
+    }
+
+    #[test]
+    fn diff_reports_added_removed_changed() {
+        let base = Lockfile {
+            version: 1,
+            core: "0.1.0".to_string(),
+            components: vec![
+                component("relay-element-form", "0.1.0"),
+                component("relay-behavior-validation", "0.1.0"),
+            ],
+        };
+        let updated = Lockfile {
+            version: 1,
+            core: "0.1.0".to_string(),
+            components: vec![
+                component("relay-element-form", "0.2.0"),
+                component("relay-widget-datepicker", "0.3.0"),
+            ],
+        };
+        let changes = diff(&base, &updated);
+        assert_eq!(changes.changed, vec!["relay-element-form"]);
+        assert_eq!(changes.added, vec!["relay-widget-datepicker"]);
+        assert_eq!(changes.removed, vec!["relay-behavior-validation"]);
+        assert!(!changes.is_empty());
+        assert!(changes.to_text().contains("~ relay-element-form"));
+        assert!(diff(&base, &base).is_empty());
+    }
+
+    fn component(name: &str, version: &str) -> LockComponent {
+        LockComponent {
+            name: name.to_string(),
+            version: version.to_string(),
+            source: "workspace".to_string(),
+            path: None,
+            dependencies: Vec::new(),
+        }
     }
 
     #[test]

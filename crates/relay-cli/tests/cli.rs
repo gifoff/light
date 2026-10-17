@@ -285,3 +285,35 @@ fn add_then_remove_roundtrip() {
     let text = std::fs::read_to_string(app.join("Cargo.toml")).expect("read app manifest");
     assert!(!text.contains("relay-element-form"), "{text}");
 }
+
+#[test]
+fn lock_creates_then_reports_actual() {
+    let project = temp_copy("complete-project");
+    relay()
+        .arg("lock")
+        .arg(&project)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("relay.lock обновлён"));
+    assert!(project.join("relay.lock").exists());
+
+    relay()
+        .arg("lock")
+        .arg(&project)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("актуален"));
+}
+
+#[test]
+fn lock_dry_run_does_not_write() {
+    let project = temp_copy("complete-project");
+    relay()
+        .arg("lock")
+        .arg(&project)
+        .arg("--dry-run")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("dry-run"));
+    assert!(!project.join("relay.lock").exists());
+}
