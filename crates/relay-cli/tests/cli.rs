@@ -349,3 +349,32 @@ fn update_applies_new_version() {
     let text = std::fs::read_to_string(project.join("Cargo.toml")).expect("read");
     assert!(text.contains("relay-element-form = \"0.1.0\""), "{text}");
 }
+
+#[test]
+fn vendor_copies_component_sources() {
+    let app = temp_copy("installed-workspace").join("app");
+    relay()
+        .arg("vendor")
+        .arg(&app)
+        .arg("--offline")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("relay-element-form"));
+    assert!(
+        app.join("vendor/relay-element-form/Cargo.toml").is_file(),
+        "исходники скопированы"
+    );
+}
+
+#[test]
+fn vendor_dry_run_does_not_copy() {
+    let app = temp_copy("installed-workspace").join("app");
+    relay()
+        .arg("vendor")
+        .arg(&app)
+        .arg("--dry-run")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("dry-run"));
+    assert!(!app.join("vendor").exists());
+}

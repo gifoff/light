@@ -15,5 +15,6 @@ pub mod report;
 pub mod resolve;
 pub mod scan;
 pub mod update;
+pub mod vendor;
 
 pub use error::{Error, Result};
