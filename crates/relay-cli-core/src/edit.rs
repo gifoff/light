@@ -144,7 +144,8 @@ pub fn features_with_relay_component_dep(text: &str) -> Result<Vec<String>> {
 
 /// Удаляет зависимость `name` и её `dep:`-токены из всех фич.
 ///
-/// Возвращает имена затронутых фич. Пустые (кроме `default`) фичи удаляются.
+/// Возвращает имена затронутых фич. Фичи, опустевшие в результате удаления
+/// (кроме `default`), также удаляются; изначально пустые фичи сохраняются.
 pub fn remove_dependency(doc: &mut DocumentMut, name: &str) -> Result<Vec<String>> {
     if let Some(deps) = doc.get_mut("dependencies").and_then(Item::as_table_mut) {
         deps.remove(name);
@@ -171,7 +172,7 @@ pub fn remove_dependency(doc: &mut DocumentMut, name: &str) -> Result<Vec<String
         if arr.len() != before {
             touched.push(key.clone());
         }
-        if arr.is_empty() && key != "default" {
+        if arr.len() != before && arr.is_empty() && key != "default" {
             features.remove(&key);
         }
     }
@@ -247,6 +248,23 @@ mod tests {
         assert!(
             out.contains("features = [\"x\"]"),
             "features сохранены: {out}"
+        );
+    }
+
+    #[test]
+    fn remove_keeps_preexisting_empty_features() {
+        let mut doc = parse(
+            "[dependencies]\nrelay-element-form = { workspace = true, optional = true }\n\n\
+             [features]\nminimal = []\nelement-form = [\"dep:relay-element-form\"]\n",
+        )
+        .unwrap();
+        let touched = remove_dependency(&mut doc, "relay-element-form").unwrap();
+        assert_eq!(touched, vec!["element-form"]);
+        let out = doc.to_string();
+        assert!(out.contains("minimal = []"), "пустая фича сохранена: {out}");
+        assert!(
+            !out.contains("element-form"),
+            "опустевшая из-за удаления фича удалена: {out}"
         );
     }
 
