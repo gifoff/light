@@ -53,6 +53,14 @@ pub fn run(args: AddArgs) -> anyhow::Result<i32> {
     let plan = plan_add(&args.path, &args.component, &opts)?;
     print!("{}", plan.to_text());
 
+    if plan.already_installed {
+        println!(
+            "Компонент {} уже установлен (версия {}).",
+            plan.component.name, plan.component.version
+        );
+        return Ok(0);
+    }
+
     if opts.dry_run {
         println!("(dry-run: изменения не применены)");
         return Ok(0);

@@ -49,10 +49,6 @@ pub enum Error {
     #[error("компонент `{component}` несовместим: {reason}")]
     Incompatible { component: String, reason: String },
 
-    /// Компонент уже подключён к проекту.
-    #[error("компонент `{0}` уже установлен")]
-    AlreadyInstalled(String),
-
     /// Компонент не подключён к проекту.
     #[error("компонент `{0}` не установлен")]
     NotInstalled(String),

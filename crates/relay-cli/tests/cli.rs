@@ -234,7 +234,7 @@ fn add_unknown_component_fails_offline() {
 }
 
 #[test]
-fn add_already_installed_fails() {
+fn add_already_installed_is_idempotent() {
     let project = temp_copy("complete-project");
     relay()
         .arg("add")
@@ -243,9 +243,8 @@ fn add_already_installed_fails() {
         .arg("--yes")
         .arg("--offline")
         .assert()
-        .failure()
-        .code(1)
-        .stderr(predicate::str::contains("уже установлен"));
+        .success()
+        .stdout(predicate::str::contains("уже установлен"));
 }
 
 #[test]

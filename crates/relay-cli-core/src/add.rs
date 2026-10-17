@@ -8,7 +8,7 @@
 use std::path::Path;
 
 use crate::error::{Error, Result};
-use crate::fetch::{Catalog, DependencyEntry, ResolvedComponent};
+use crate::fetch::{Catalog, DependencyEntry, ResolvedComponent, SourceKind};
 use crate::manifest::{
     collect_dependency_details, has_package_section, read_cargo_toml, resolve_dependency_version,
 };
@@ -52,6 +52,8 @@ pub struct AddPlan {
     pub feature: String,
     /// Будет ли фича создана (иначе — уже существует).
     pub creates_feature: bool,
+    /// Компонент уже установлен (повторный `add` — не ошибка).
+    pub already_installed: bool,
     /// Дополнительные компоненты из `requires`.
     pub requires: Vec<RequiredComponent>,
 }
@@ -70,6 +72,10 @@ impl AddPlan {
             }
         ));
         out.push_str(&format!("  версия:      {}\n", self.component.version));
+        if self.already_installed {
+            out.push_str("  статус:      уже установлен\n");
+            return out;
+        }
         out.push_str(&format!(
             "  фича:        {}{}\n",
             self.feature,
@@ -126,11 +132,12 @@ pub fn plan_add(project_root: &Path, name: &str, opts: &AddOptions) -> Result<Ad
     let installed = collect_dependency_details(&text, project_root)?;
     let installed_names: Vec<&str> = installed.iter().map(|d| d.name.as_str()).collect();
 
+    let catalog = Catalog::discover(project_root, opts.offline);
+
     if installed_names.contains(&name) {
-        return Err(Error::AlreadyInstalled(name.to_string()));
+        return already_installed_plan(project_root, &text, name, opts, &catalog);
     }
 
-    let catalog = Catalog::discover(project_root, opts.offline);
     let mut component = catalog.resolve(name)?;
     if let Some(version) = &opts.version {
         component.version = semver::Version::parse(version)?;
@@ -187,7 +194,52 @@ pub fn plan_add(project_root: &Path, name: &str, opts: &AddOptions) -> Result<Ad
         dependency,
         feature,
         creates_feature,
+        already_installed: false,
         requires,
+    })
+}
+
+/// План для уже установленного компонента: ничего не меняет, но и не ошибка.
+fn already_installed_plan(
+    project_root: &Path,
+    text: &str,
+    name: &str,
+    opts: &AddOptions,
+    catalog: &Catalog,
+) -> Result<AddPlan> {
+    let current = resolve_dependency_version(project_root, name)?;
+    if let (Some(requested), Some(current)) = (&opts.version, &current)
+        && current.to_string() != *requested
+    {
+        return Err(Error::Conflict(format!(
+            "{name} уже установлен (версия {current}), запрошена {requested}"
+        )));
+    }
+    let version = current.unwrap_or_else(|| semver::Version::new(0, 0, 0));
+    let info = catalog.registry().by_name(name);
+    let component = ResolvedComponent {
+        name: name.to_string(),
+        version: version.clone(),
+        core: info
+            .map(|i| i.core_requirement.clone())
+            .unwrap_or(semver::VersionReq::STAR),
+        provides: info.map(|i| i.provides.clone()).unwrap_or_default(),
+        requires: Vec::new(),
+        conflicts: Vec::new(),
+        source: SourceKind::CratesIo,
+        path: None,
+    };
+    let feature = match &opts.feature {
+        Some(feature) => feature.clone(),
+        None => choose_feature(text, name)?,
+    };
+    Ok(AddPlan {
+        component,
+        dependency: DependencyEntry::Version(version.to_string()),
+        feature,
+        creates_feature: false,
+        already_installed: true,
+        requires: Vec::new(),
     })
 }
 
@@ -198,7 +250,7 @@ pub fn apply_add(
     plan: &AddPlan,
     opts: &AddOptions,
 ) -> Result<AddOutcome> {
-    if opts.dry_run {
+    if opts.dry_run || plan.already_installed {
         return Ok(AddOutcome {
             component: plan.component.clone(),
             feature: plan.feature.clone(),
@@ -417,7 +469,7 @@ mod tests {
     }
 
     #[test]
-    fn already_installed_is_error() {
+    fn already_installed_is_idempotent() {
         let app = workspace_fixture("installed");
         let opts = AddOptions {
             no_verify: true,
@@ -425,8 +477,35 @@ mod tests {
         };
         let plan = plan_add(&app, "relay-element-form", &opts).expect("plan");
         apply_add(&app, &MockRunner::default(), &plan, &opts).expect("apply");
-        let err = plan_add(&app, "relay-element-form", &opts).expect_err("already installed");
-        assert!(matches!(err, Error::AlreadyInstalled(_)));
+
+        let again = plan_add(&app, "relay-element-form", &opts).expect("idempotent");
+        assert!(again.already_installed);
+        assert_eq!(again.component.version, semver::Version::new(0, 1, 0));
+        // Применение повторного плана ничего не меняет.
+        let before = std::fs::read_to_string(app.join("Cargo.toml")).expect("read");
+        apply_add(&app, &MockRunner::default(), &again, &opts).expect("re-apply");
+        assert_eq!(
+            std::fs::read_to_string(app.join("Cargo.toml")).expect("read"),
+            before
+        );
+    }
+
+    #[test]
+    fn already_installed_with_different_version_conflicts() {
+        let app = workspace_fixture("installed-conflict");
+        let opts = AddOptions {
+            no_verify: true,
+            ..Default::default()
+        };
+        let plan = plan_add(&app, "relay-element-form", &opts).expect("plan");
+        apply_add(&app, &MockRunner::default(), &plan, &opts).expect("apply");
+
+        let conflicting = AddOptions {
+            version: Some("0.2.0".to_string()),
+            ..opts
+        };
+        let err = plan_add(&app, "relay-element-form", &conflicting).expect_err("conflict");
+        assert!(matches!(err, Error::Conflict(_)));
     }
 
     #[test]
