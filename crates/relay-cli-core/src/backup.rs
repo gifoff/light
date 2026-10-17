@@ -65,6 +65,10 @@ pub fn create(project_root: &Path) -> Result<Backup> {
 }
 
 /// Восстанавливает файлы из снимка.
+///
+/// Файлы, которые существовали на момент снимка, возвращаются к прежнему
+/// содержимому; файлы, которых тогда не было (например, только что созданный
+/// `relay.lock`), удаляются, чтобы откат был полным.
 pub fn restore(backup: &Backup) -> Result<()> {
     for (original, saved) in &backup.entries {
         std::fs::copy(saved, original).map_err(|e| {
@@ -73,6 +77,15 @@ pub fn restore(backup: &Backup) -> Result<()> {
                 original.display()
             ))
         })?;
+    }
+    for file in TRACKED_FILES {
+        let original = backup.project_root.join(file);
+        let existed = backup.entries.iter().any(|(path, _)| path == &original);
+        if !existed && original.exists() {
+            std::fs::remove_file(&original).map_err(|e| {
+                Error::Backup(format!("не удалось удалить {}: {e}", original.display()))
+            })?;
+        }
     }
     Ok(())
 }
@@ -138,6 +151,16 @@ mod tests {
             fs::read_to_string(dir.join("Cargo.toml")).expect("read"),
             "original"
         );
+    }
+
+    #[test]
+    fn restore_removes_created_files() {
+        let dir = temp_dir("restore-new");
+        fs::write(dir.join("Cargo.toml"), "c").expect("write");
+        let backup = create(&dir).expect("create");
+        fs::write(dir.join("relay.lock"), "generated").expect("write");
+        restore(&backup).expect("restore");
+        assert!(!dir.join("relay.lock").exists(), "созданный lock удалён");
     }
 
     #[test]
