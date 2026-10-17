@@ -102,6 +102,49 @@ fn check_json_reports_missing() {
 }
 
 #[test]
+fn doctor_reports_healthy_project() {
+    relay()
+        .arg("doctor")
+        .arg("--offline")
+        .arg(fixture("basic-project"))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Relay doctor"))
+        .stdout(predicate::str::contains("Компоненты"));
+}
+
+#[test]
+fn doctor_json_has_sections() {
+    let output = relay()
+        .arg("doctor")
+        .arg("--offline")
+        .arg("--format")
+        .arg("json")
+        .arg(fixture("complete-project"))
+        .output()
+        .expect("run relay");
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid json");
+    assert!(json["environment"].is_object());
+    assert!(json["project"].is_object());
+    assert!(json["components"].is_array());
+    assert!(json["issues"].is_array());
+}
+
+#[test]
+fn doctor_fails_without_manifest() {
+    let dir = std::env::temp_dir().join("relay-cli-doctor-missing");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create dir");
+    relay()
+        .arg("doctor")
+        .arg("--offline")
+        .arg(&dir)
+        .assert()
+        .failure()
+        .code(1);
+}
+
+#[test]
 fn suggest_lists_recommendations_and_succeeds() {
     relay()
         .arg("suggest")
