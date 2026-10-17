@@ -123,17 +123,17 @@ pub fn plan_add(project_root: &Path, name: &str, opts: &AddOptions) -> Result<Ad
         ));
     }
 
-    let catalog = Catalog::discover(project_root, opts.offline);
-    let mut component = catalog.resolve(name)?;
-    if let Some(version) = &opts.version {
-        component.version = semver::Version::parse(version)?;
-    }
-
     let installed = collect_dependency_details(&text, project_root)?;
     let installed_names: Vec<&str> = installed.iter().map(|d| d.name.as_str()).collect();
 
     if installed_names.contains(&name) {
         return Err(Error::AlreadyInstalled(name.to_string()));
+    }
+
+    let catalog = Catalog::discover(project_root, opts.offline);
+    let mut component = catalog.resolve(name)?;
+    if let Some(version) = &opts.version {
+        component.version = semver::Version::parse(version)?;
     }
 
     let core = resolve_dependency_version(project_root, "relay-core")?
