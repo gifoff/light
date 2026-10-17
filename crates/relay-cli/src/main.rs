@@ -1,7 +1,9 @@
 use clap::Parser;
 
+mod cmd_add;
 mod cmd_check;
 mod cmd_doctor;
+mod cmd_remove;
 mod cmd_suggest;
 
 #[derive(Parser)]
@@ -19,6 +21,10 @@ enum Command {
     Suggest(cmd_suggest::SuggestArgs),
     /// Диагностика окружения и проекта.
     Doctor(cmd_doctor::DoctorArgs),
+    /// Установить компонент в проект.
+    Add(cmd_add::AddArgs),
+    /// Удалить компонент из проекта.
+    Remove(cmd_remove::RemoveArgs),
 }
 
 /// Формат вывода отчёта.
@@ -34,6 +40,8 @@ fn main() {
         Command::Check(args) => cmd_check::run(args),
         Command::Suggest(args) => cmd_suggest::run(args),
         Command::Doctor(args) => cmd_doctor::run(args),
+        Command::Add(args) => cmd_add::run(args),
+        Command::Remove(args) => cmd_remove::run(args),
     };
     match result {
         Ok(code) => std::process::exit(code),

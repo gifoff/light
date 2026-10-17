@@ -1,0 +1,12 @@
+[package]
+name = "relay-element-form"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.relay]
+kind = "element"
+display-name = "Form elements"
+core = "^0.1"
+
+[package.metadata.relay.provides]
+elements = ["checkbox", "radio", "select", "option"]

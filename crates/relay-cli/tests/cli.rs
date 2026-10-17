@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -12,6 +13,34 @@ fn fixture(name: &str) -> PathBuf {
 
 fn relay() -> Command {
     Command::cargo_bin("relay").expect("bin relay")
+}
+
+static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn copy_dir_all(src: &Path, dst: &Path) {
+    std::fs::create_dir_all(dst).expect("create dst");
+    for entry in std::fs::read_dir(src).expect("read dir") {
+        let entry = entry.expect("entry");
+        let target = dst.join(entry.file_name());
+        if entry.file_type().expect("file type").is_dir() {
+            copy_dir_all(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).expect("copy file");
+        }
+    }
+}
+
+/// Копирует фикстуру в уникальный временный каталог, чтобы тесты могли
+/// мутировать проект, не трогая репозиторий.
+fn temp_copy(name: &str) -> PathBuf {
+    let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!(
+        "relay-cli-it-{name}-{}-{unique}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    copy_dir_all(&fixture(name), &dir);
+    dir
 }
 
 #[test]
@@ -171,4 +200,88 @@ fn suggest_always_exits_zero_even_with_broken_template() {
         .arg(fixture("broken-template"))
         .assert()
         .success();
+}
+
+#[test]
+fn add_dry_run_plans_workspace_component() {
+    let app = temp_copy("component-workspace").join("app");
+    relay()
+        .arg("add")
+        .arg("relay-element-form")
+        .arg(&app)
+        .arg("--dry-run")
+        .arg("--offline")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "План добавления relay-element-form",
+        ))
+        .stdout(predicate::str::contains("dry-run"));
+    assert!(!app.join("relay.lock").exists(), "dry-run не создаёт lock");
+}
+
+#[test]
+fn add_unknown_component_fails_offline() {
+    let app = temp_copy("component-workspace").join("app");
+    relay()
+        .arg("add")
+        .arg("relay-widget-datepicker")
+        .arg(&app)
+        .arg("--offline")
+        .assert()
+        .failure()
+        .code(1);
+}
+
+#[test]
+fn add_already_installed_fails() {
+    let project = temp_copy("complete-project");
+    relay()
+        .arg("add")
+        .arg("relay-element-form")
+        .arg(&project)
+        .arg("--yes")
+        .arg("--offline")
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("уже установлен"));
+}
+
+#[test]
+fn add_then_remove_roundtrip() {
+    let root = temp_copy("component-workspace");
+    let app = root.join("app");
+
+    relay()
+        .arg("add")
+        .arg("relay-element-form")
+        .arg(&app)
+        .arg("--yes")
+        .arg("--no-verify")
+        .arg("--offline")
+        .assert()
+        .success();
+
+    let text = std::fs::read_to_string(app.join("Cargo.toml")).expect("read app manifest");
+    assert!(
+        text.contains("relay-element-form = { workspace = true, optional = true }"),
+        "{text}"
+    );
+    assert!(
+        text.contains("element-form = [\"dep:relay-element-form\"]"),
+        "{text}"
+    );
+    assert!(app.join("relay.lock").exists());
+
+    relay()
+        .arg("remove")
+        .arg("relay-element-form")
+        .arg(&app)
+        .arg("--yes")
+        .assert()
+        .success();
+
+    let text = std::fs::read_to_string(app.join("Cargo.toml")).expect("read app manifest");
+    assert!(!text.contains("relay-element-form"), "{text}");
 }
