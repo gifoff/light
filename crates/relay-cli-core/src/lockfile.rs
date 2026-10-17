@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 use crate::manifest::{
     collect_dependency_details, find_workspace_root, read_workspace_dependencies,
-    resolve_dependency_version,
+    resolve_core_version as detect_core_version, resolve_dependency_version,
 };
 use crate::registry::ComponentRegistry;
 use crate::scan::scan_templates;
@@ -233,9 +233,7 @@ fn collect_project_components(project_root: &Path) -> Result<Vec<crate::manifest
 }
 
 fn resolve_core_version(project_root: &Path) -> Result<String> {
-    let version = resolve_dependency_version(project_root, "relay-core")?
-        .or(resolve_dependency_version(project_root, "relay")?);
-    Ok(version
+    Ok(detect_core_version(project_root)?
         .map(|v| v.to_string())
         .unwrap_or_else(|| "0.0.0".to_string()))
 }
@@ -292,6 +290,38 @@ mod tests {
         assert!(text.contains("not edit") || text.contains("не редактировать"));
         let parsed = Lockfile::from_toml(&text).expect("from_toml");
         assert_eq!(parsed, lock);
+    }
+
+    #[test]
+    fn resolves_core_from_workspace_meta_crate() {
+        let root = temp_dir("core-workspace");
+        fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"app\", \"relay\"]\nresolver = \"2\"\n\n\
+             [workspace.package]\nversion = \"0.2.3\"\n\n\
+             [workspace.dependencies]\nrelay = { path = \"relay\" }\n",
+        )
+        .expect("root manifest");
+        let app = root.join("app");
+        fs::create_dir_all(&app).expect("app");
+        fs::write(
+            app.join("Cargo.toml"),
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n\
+             [dependencies]\nrelay = { workspace = true }\n",
+        )
+        .expect("app manifest");
+        let relay = root.join("relay");
+        fs::create_dir_all(relay.join("src")).expect("relay src");
+        fs::write(relay.join("src/lib.rs"), "").expect("relay lib");
+        fs::write(
+            relay.join("Cargo.toml"),
+            "[package]\nname = \"relay\"\nversion.workspace = true\nedition = \"2021\"\n",
+        )
+        .expect("relay manifest");
+
+        let lock = Lockfile::from_project(&app).expect("from_project");
+        assert_eq!(lock.core, "0.2.3", "версия ядра из workspace");
+        assert!(lock.components.is_empty());
     }
 
     #[test]

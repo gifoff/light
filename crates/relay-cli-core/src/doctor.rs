@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::error::Result;
-use crate::manifest::{has_package_section, read_cargo_toml, resolve_dependency_version};
+use crate::manifest::{
+    has_package_section, read_cargo_toml, resolve_core_version, resolve_dependency_version,
+};
 use crate::process::{CommandRunner, SystemRunner, parse_program_version};
 use crate::project::analyze_project;
 use crate::registry::ComponentRegistry;
@@ -389,8 +391,7 @@ fn check_project(
     }
 
     let core_version = if cargo_toml {
-        resolve_dependency_version(project_root, "relay-core")?
-            .or(resolve_dependency_version(project_root, "relay")?)
+        resolve_core_version(project_root)?
     } else {
         None
     };
@@ -511,6 +512,44 @@ mod tests {
                 fs::write(tdir.join(name), content).expect("write template");
             }
         }
+    }
+
+    #[test]
+    fn detects_core_version_in_workspace() {
+        let root = temp_dir("workspace-core");
+        fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"app\", \"relay\"]\nresolver = \"2\"\n\n\
+             [workspace.package]\nversion = \"0.2.3\"\n\n\
+             [workspace.dependencies]\nrelay = { path = \"relay\" }\n",
+        )
+        .expect("root manifest");
+        let app = root.join("app");
+        fs::create_dir_all(&app).expect("app");
+        fs::write(
+            app.join("Cargo.toml"),
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n\
+             [dependencies]\nrelay = { workspace = true }\n",
+        )
+        .expect("app manifest");
+        let relay = root.join("relay");
+        fs::create_dir_all(relay.join("src")).expect("relay src");
+        fs::write(relay.join("src/lib.rs"), "").expect("relay lib");
+        fs::write(
+            relay.join("Cargo.toml"),
+            "[package]\nname = \"relay\"\nversion.workspace = true\nedition = \"2021\"\n",
+        )
+        .expect("relay manifest");
+
+        let report = doctor(&app, &ok_probe()).expect("doctor");
+        assert_eq!(report.project.core_version.as_deref(), Some("0.2.3"));
+        assert!(
+            !report.issues.iter().any(|i| i
+                .message
+                .contains("не удалось определить версию relay-core")),
+            "ядро определено: {:?}",
+            report.issues
+        );
     }
 
     #[test]

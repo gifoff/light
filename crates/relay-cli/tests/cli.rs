@@ -430,3 +430,54 @@ fn add_from_project_dir_resolves_workspace_source() {
         .success()
         .stdout(predicate::str::contains("источник:    workspace"));
 }
+
+#[test]
+fn doctor_reports_core_version_from_workspace() {
+    let app = temp_copy("core-workspace").join("app");
+    relay()
+        .arg("doctor")
+        .arg("--offline")
+        .arg(&app)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("relay-core 0.1.5"));
+}
+
+#[test]
+fn remove_dry_run_reports_installed_version() {
+    let app = temp_copy("core-workspace").join("app");
+    relay()
+        .arg("remove")
+        .arg("relay-element-form")
+        .arg(&app)
+        .arg("--dry-run")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("версия: 0.1.0"));
+}
+
+#[test]
+fn remove_updates_lockfile() {
+    let app = temp_copy("core-workspace").join("app");
+    relay().arg("lock").arg(&app).assert().success();
+    let before = std::fs::read_to_string(app.join("relay.lock")).expect("read lock");
+    assert!(
+        before.contains("relay-element-form"),
+        "до удаления: {before}"
+    );
+
+    relay()
+        .arg("remove")
+        .arg("relay-element-form")
+        .arg(&app)
+        .arg("--yes")
+        .assert()
+        .success();
+
+    let after = std::fs::read_to_string(app.join("relay.lock")).expect("read lock");
+    assert!(
+        !after.contains("relay-element-form"),
+        "компонент убран из lock: {after}"
+    );
+    assert!(after.contains("core = \"0.1.5\""), "ядро в lock: {after}");
+}

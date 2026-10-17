@@ -392,6 +392,15 @@ fn resolve_detail_version(dep: &DepDetail) -> Result<Option<semver::Version>> {
     Ok(None)
 }
 
+/// Версия ядра Relay в проекте: явный `relay-core` или мета-крейт `relay`.
+///
+/// Разрешает `path`-/`workspace`-зависимости, поэтому корректно работает и в
+/// кладках-workspace, где `relay` подключается как `workspace = true`.
+pub fn resolve_core_version(project_dir: &Path) -> Result<Option<semver::Version>> {
+    Ok(resolve_dependency_version(project_dir, "relay-core")?
+        .or(resolve_dependency_version(project_dir, "relay")?))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

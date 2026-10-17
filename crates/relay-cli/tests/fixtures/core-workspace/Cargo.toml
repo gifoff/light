@@ -1,0 +1,11 @@
+[workspace]
+members = ["app", "relay", "relay-core", "form"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.5"
+
+[workspace.dependencies]
+relay-core = { path = "relay-core" }
+relay = { path = "relay" }
+relay-element-form = { path = "form" }
