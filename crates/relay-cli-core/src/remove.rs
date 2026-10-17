@@ -271,6 +271,14 @@ mod tests {
         assert!(!text.contains("relay-element-form"));
         assert!(text.contains("full = [\"relay/x\"]") || text.contains("default = [\"full\"]"));
         assert!(app.join("relay.lock").exists());
+
+        let lock = std::fs::read_to_string(app.join("relay.lock")).expect("read lock");
+        assert!(
+            !lock.contains("relay-element-form"),
+            "удалённый компонент убран из relay.lock: {lock}"
+        );
+        assert!(lock.contains("core = \"0.1.0\""), "ядро в lock: {lock}");
+
         let calls = runner.calls.lock().expect("lock").clone();
         assert!(calls.iter().any(|c| c == "cargo check --quiet"));
     }
