@@ -1,3 +1,11 @@
 /target
 
 .idea/
+
+# Артефакты relay-cli
+.relay/
+target/.relay/
+vendor/
+vendor-test/
+vendor-*/
+bloat-*.txt
