@@ -6,6 +6,7 @@ mod cmd_doctor;
 mod cmd_lock;
 mod cmd_remove;
 mod cmd_suggest;
+mod cmd_update;
 
 #[derive(Parser)]
 #[command(name = "relay", version, about = "Менеджер компонентов Relay")]
@@ -28,6 +29,8 @@ enum Command {
     Remove(cmd_remove::RemoveArgs),
     /// Сгенерировать или обновить `relay.lock`.
     Lock(cmd_lock::LockArgs),
+    /// Обновить компоненты до актуальных версий.
+    Update(cmd_update::UpdateArgs),
 }
 
 /// Формат вывода отчёта.
@@ -46,6 +49,7 @@ fn main() {
         Command::Add(args) => cmd_add::run(args),
         Command::Remove(args) => cmd_remove::run(args),
         Command::Lock(args) => cmd_lock::run(args),
+        Command::Update(args) => cmd_update::run(args),
     };
     match result {
         Ok(code) => std::process::exit(code),

@@ -1,0 +1,10 @@
+[package]
+name = "outdated-project"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+relay = "0.1"
+relay-element-form = "0.0.1"

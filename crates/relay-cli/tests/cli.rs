@@ -317,3 +317,35 @@ fn lock_dry_run_does_not_write() {
         .stdout(predicate::str::contains("dry-run"));
     assert!(!project.join("relay.lock").exists());
 }
+
+#[test]
+fn update_dry_run_reports_change() {
+    let project = temp_copy("outdated-project");
+    relay()
+        .arg("update")
+        .arg(&project)
+        .arg("--dry-run")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("→ 0.1.0"));
+    let text = std::fs::read_to_string(project.join("Cargo.toml")).expect("read");
+    assert!(
+        text.contains("relay-element-form = \"0.0.1\""),
+        "не изменено: {text}"
+    );
+}
+
+#[test]
+fn update_applies_new_version() {
+    let project = temp_copy("outdated-project");
+    relay()
+        .arg("update")
+        .arg(&project)
+        .arg("--yes")
+        .arg("--no-verify")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("обновлено"));
+    let text = std::fs::read_to_string(project.join("Cargo.toml")).expect("read");
+    assert!(text.contains("relay-element-form = \"0.1.0\""), "{text}");
+}

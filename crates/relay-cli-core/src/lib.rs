@@ -14,5 +14,6 @@ pub mod remove;
 pub mod report;
 pub mod resolve;
 pub mod scan;
+pub mod update;
 
 pub use error::{Error, Result};

@@ -74,6 +74,24 @@ pub fn add_dep_to_feature(doc: &mut DocumentMut, feature: &str, name: &str) -> R
     Ok(!existed)
 }
 
+/// Меняет версию зависимости: строку `name = "0.1"` или поле `version`.
+pub fn set_dependency_version(doc: &mut DocumentMut, name: &str, version: &str) -> Result<()> {
+    let entry = dependencies_table(doc)?
+        .get_mut(name)
+        .ok_or_else(|| Error::Manifest(format!("зависимость `{name}` не найдена")))?;
+    if entry.is_str() {
+        *entry = Item::Value(Value::from(version));
+        return Ok(());
+    }
+    if let Some(table) = entry.as_table_like_mut() {
+        table.insert("version", Item::Value(Value::from(version)));
+        return Ok(());
+    }
+    Err(Error::Manifest(format!(
+        "не удалось обновить версию зависимости `{name}`"
+    )))
+}
+
 /// Есть ли фича с таким именем.
 pub fn has_feature(text: &str, feature: &str) -> Result<bool> {
     let doc = parse(text)?;
@@ -191,6 +209,23 @@ mod tests {
         assert!(out.contains("relay/x"));
         assert!(out.contains("default"));
         assert!(out.contains("full"));
+    }
+
+    #[test]
+    fn sets_dependency_version_string_and_table() {
+        let mut doc = parse(
+            "[dependencies]\nrelay-element-form = \"0.0.1\"\nrelay = { version = \"0.1\", features = [\"x\"] }\n",
+        )
+        .unwrap();
+        set_dependency_version(&mut doc, "relay-element-form", "0.1.0").unwrap();
+        set_dependency_version(&mut doc, "relay", "0.2.0").unwrap();
+        let out = doc.to_string();
+        assert!(out.contains("relay-element-form = \"0.1.0\""));
+        assert!(out.contains("version = \"0.2.0\""));
+        assert!(
+            out.contains("features = [\"x\"]"),
+            "features сохранены: {out}"
+        );
     }
 
     #[test]
