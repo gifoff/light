@@ -378,3 +378,45 @@ fn vendor_dry_run_does_not_copy() {
         .stdout(predicate::str::contains("dry-run"));
     assert!(!app.join("vendor").exists());
 }
+
+#[test]
+fn add_workspace_component_joins_aggregating_feature() {
+    let app = temp_copy("aggregated-workspace").join("app");
+    relay()
+        .arg("add")
+        .arg("relay-behavior-validation")
+        .arg(&app)
+        .arg("--yes")
+        .arg("--no-verify")
+        .arg("--offline")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("источник:    workspace"))
+        .stdout(predicate::str::contains("фича:        full"));
+
+    let text = std::fs::read_to_string(app.join("Cargo.toml")).expect("read app manifest");
+    assert!(
+        text.contains("relay-behavior-validation = { workspace = true, optional = true }"),
+        "зависимость из workspace: {text}"
+    );
+    assert!(
+        text.contains("dep:relay-behavior-validation"),
+        "компонент в агрегирующей фиче: {text}"
+    );
+    assert!(app.join("relay.lock").exists(), "lock создан");
+}
+
+#[test]
+fn add_from_project_dir_resolves_workspace_source() {
+    let app = temp_copy("component-workspace").join("app");
+    // Путь по умолчанию "." — раньше относительный путь ломал поиск workspace.
+    relay()
+        .arg("add")
+        .arg("relay-element-form")
+        .arg("--dry-run")
+        .arg("--offline")
+        .current_dir(&app)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("источник:    workspace"));
+}

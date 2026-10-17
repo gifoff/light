@@ -155,8 +155,10 @@ pub fn plan_add(project_root: &Path, name: &str, opts: &AddOptions) -> Result<Ad
         }
     }
 
-    let default_feature = default_feature_name(name);
-    let feature = opts.feature.clone().unwrap_or(default_feature);
+    let feature = match &opts.feature {
+        Some(feature) => feature.clone(),
+        None => choose_feature(&text, name)?,
+    };
     let creates_feature = !edit::has_feature(&text, &feature)?;
 
     let dependency = catalog.dependency_entry(&component)?;
@@ -295,6 +297,25 @@ fn dependency_line(name: &str, dependency: &DependencyEntry) -> String {
 /// Имя фичи по умолчанию: `relay-element-form` → `element-form`.
 pub fn default_feature_name(name: &str) -> String {
     name.strip_prefix("relay-").unwrap_or(name).to_string()
+}
+
+/// Выбирает фичу, к которой привязать компонент.
+///
+/// Порядок: фича `<component>` из манифеста → существующая агрегирующая фича
+/// (`dep:relay-*`, предпочитая `full`) → новая фича [`default_feature_name`].
+fn choose_feature(text: &str, name: &str) -> Result<String> {
+    let default = default_feature_name(name);
+    if edit::has_feature(text, &default)? {
+        return Ok(default);
+    }
+    let aggregators = edit::features_with_relay_component_dep(text)?;
+    if let Some(full) = aggregators.iter().find(|f| f.as_str() == "full") {
+        return Ok(full.clone());
+    }
+    if let Some(first) = aggregators.first() {
+        return Ok(first.clone());
+    }
+    Ok(default)
 }
 
 /// Разбирает `"relay-element-form ^0.3"` → `("relay-element-form", Some("^0.3"))`.
@@ -468,5 +489,28 @@ mod tests {
     fn default_feature_name_strips_prefix() {
         assert_eq!(default_feature_name("relay-element-form"), "element-form");
         assert_eq!(default_feature_name("custom-widget"), "custom-widget");
+    }
+
+    #[test]
+    fn choose_feature_prefers_own_then_aggregator_then_new() {
+        // Собственная фича компонента — приоритетнее агрегатора.
+        let with_own = "[features]\nfull = [\"dep:relay-element-form\"]\n\
+                        element-form = [\"dep:relay-element-form\"]\n";
+        assert_eq!(
+            choose_feature(with_own, "relay-element-form").unwrap(),
+            "element-form"
+        );
+        // Нет собственной — берём существующий агрегирующий (`full`).
+        let with_aggregator =
+            "[features]\ndefault = [\"full\"]\nfull = [\"dep:relay-element-form\"]\n";
+        assert_eq!(
+            choose_feature(with_aggregator, "relay-behavior-validation").unwrap(),
+            "full"
+        );
+        // Агрегаторов нет — создаём новую фичу по умолчанию.
+        assert_eq!(
+            choose_feature("[features]\nnone = []\n", "relay-behavior-validation").unwrap(),
+            "behavior-validation"
+        );
     }
 }

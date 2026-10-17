@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 use crate::manifest::{
-    DepDetail, Provides, find_workspace_root, parse_manifest_from_text, read_cargo_toml,
-    read_package_version, read_workspace_dependencies,
+    DepDetail, Provides, absolute, find_workspace_root, parse_manifest_from_text, read_cargo_toml,
+    read_package_name_from_text, read_package_version, read_workspace_dependencies,
 };
 use crate::registry::ComponentRegistry;
 
@@ -84,11 +84,12 @@ pub struct Catalog {
 impl Catalog {
     /// Создаёт каталог для проекта, автоматически находя workspace и `vendor/`.
     pub fn discover(project_root: &Path, offline: bool) -> Self {
+        let project_root = absolute(project_root);
         let vendor = project_root.join("vendor");
         Self {
-            project_root: project_root.to_path_buf(),
-            workspace_root: find_workspace_root(project_root),
+            workspace_root: find_workspace_root(&project_root),
             vendor_dir: vendor.is_dir().then_some(vendor),
+            project_root,
             offline,
             registry: ComponentRegistry::builtin(),
         }
@@ -115,14 +116,32 @@ impl Catalog {
             return Ok(None);
         };
         let deps = read_workspace_dependencies(root)?;
-        let Some(dep) = deps.into_iter().find(|d| d.name == name) else {
+        let dir = match deps.into_iter().find(|d| d.name == name) {
+            Some(dep) => match dep.path {
+                Some(p) => p,
+                None => root.join("crates").join(name),
+            },
+            // Даже если зависимости нет в `[workspace.dependencies]`, компонент
+            // может быть членом workspace по соглашению `crates/<name>`.
+            None => {
+                let candidate = root.join("crates").join(name);
+                if candidate.join("Cargo.toml").is_file() {
+                    candidate
+                } else {
+                    return Ok(None);
+                }
+            }
+        };
+        let cargo = dir.join("Cargo.toml");
+        if !cargo.is_file() {
             return Ok(None);
-        };
-        let dir = match &dep.path {
-            Some(p) => p.clone(),
-            None => root.join("crates").join(name),
-        };
-        if !dir.join("Cargo.toml").is_file() {
+        }
+        // Убеждаемся, что это тот самый компонент (а не одноимённый каталог).
+        let text = read_cargo_toml(&cargo)?;
+        if read_package_name_from_text(&text)?.as_deref() != Some(name) {
+            return Ok(None);
+        }
+        if parse_manifest_from_text(&text)?.is_none() {
             return Ok(None);
         }
         Ok(Some(self.component_from_dir(
@@ -235,7 +254,7 @@ impl Catalog {
             }
         }
         if let Some(path) = &component.path {
-            return Ok(DependencyEntry::Path(path.clone()));
+            return Ok(DependencyEntry::Path(relative_to(&self.project_root, path)));
         }
         Ok(DependencyEntry::Version(component.version.to_string()))
     }
@@ -264,6 +283,27 @@ impl Catalog {
     pub fn is_offline(&self) -> bool {
         self.offline
     }
+}
+
+/// Вычисляет путь `target` относительно каталога `base`.
+///
+/// Оба пути должны быть абсолютными. Результат — относительный путь с
+/// ведущими `..` при необходимости (например, `../comp`).
+fn relative_to(base: &Path, target: &Path) -> PathBuf {
+    let base: Vec<_> = base.components().collect();
+    let target: Vec<_> = target.components().collect();
+    let mut common = 0;
+    while common < base.len() && common < target.len() && base[common] == target[common] {
+        common += 1;
+    }
+    let mut result = PathBuf::new();
+    for _ in common..base.len() {
+        result.push("..");
+    }
+    for component in &target[common..] {
+        result.push(component.as_os_str());
+    }
+    result
 }
 
 /// Как записать зависимость компонента в `Cargo.toml`.

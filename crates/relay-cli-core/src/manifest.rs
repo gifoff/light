@@ -240,6 +240,19 @@ pub fn read_workspace_dependencies(workspace_root: &Path) -> Result<Vec<DepDetai
     Ok(out)
 }
 
+/// Читает имя пакета из текста `Cargo.toml`.
+pub fn read_package_name_from_text(cargo_toml: &str) -> Result<Option<String>> {
+    let doc: DocumentMut = cargo_toml
+        .parse::<DocumentMut>()
+        .map_err(|e| Error::Manifest(e.to_string()))?;
+    Ok(doc
+        .get("package")
+        .and_then(|p| p.as_table_like())
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+        .map(str::to_string))
+}
+
 /// Проверяет наличие секции `[package]` в манифесте.
 pub fn has_package_section(cargo_toml: &str) -> Result<bool> {
     let doc: DocumentMut = cargo_toml
@@ -248,14 +261,30 @@ pub fn has_package_section(cargo_toml: &str) -> Result<bool> {
     Ok(doc.get("package").is_some())
 }
 
+/// Делает путь абсолютным относительно текущего каталога, не обращаясь к ФС.
+///
+/// Нужно перед подъёмом вверх по дереву каталогов: у относительного пути вида
+/// `.` нет родительского компонента, поэтому [`Path::pop`] не может подняться
+/// выше (`crates/relay-demo` → `crates` → корень теряется).
+pub fn absolute(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    match std::env::current_dir() {
+        Ok(cwd) => cwd.join(path),
+        Err(_) => path.to_path_buf(),
+    }
+}
+
 /// Находит корень workspace, поднимаясь от `start` вверх по каталогам.
 ///
 /// Возвращает первый каталог с `Cargo.toml`, содержащим секцию `[workspace]`.
 pub fn find_workspace_root(start: &Path) -> Option<PathBuf> {
+    let start = absolute(start);
     let mut dir = if start.is_file() {
         start.parent().map(Path::to_path_buf)?
     } else {
-        start.to_path_buf()
+        start
     };
     loop {
         let cargo = dir.join("Cargo.toml");
@@ -419,6 +448,17 @@ mod tests {
             core = "not-a-range"
         "#;
         assert!(parse_manifest_from_text(toml).is_err());
+    }
+
+    #[test]
+    fn finds_workspace_root_from_relative_path() {
+        let root = find_workspace_root(Path::new(".")).expect("workspace root from '.'");
+        assert!(root.is_absolute(), "корень должен быть абсолютным");
+        assert!(root.join("Cargo.toml").is_file());
+        assert_eq!(
+            find_workspace_root(Path::new("src")).expect("workspace root from 'src'"),
+            root
+        );
     }
 
     #[test]

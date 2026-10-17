@@ -1,0 +1,13 @@
+[package]
+name = "relay-behavior-validation"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.relay]
+kind = "behavior"
+display-name = "Form validation"
+core = "^0.1"
+
+[package.metadata.relay.provides]
+attributes = [":validator", "required"]
+directives = ["@validate"]

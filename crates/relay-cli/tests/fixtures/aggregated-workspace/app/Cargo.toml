@@ -1,0 +1,11 @@
+[package]
+name = "app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+relay-element-form = { workspace = true, optional = true }
+
+[features]
+default = ["full"]
+full = ["dep:relay-element-form"]

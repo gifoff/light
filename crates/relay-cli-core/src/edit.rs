@@ -120,6 +120,28 @@ pub fn features_containing(text: &str, name: &str) -> Result<Vec<String>> {
     Ok(out)
 }
 
+/// Фичи, включающие какой-либо компонент Relay (`dep:relay-*`).
+///
+/// Используется, чтобы подключать новый компонент в существующую
+/// агрегирующую фичу (например, `full`), а не плодить отдельные.
+pub fn features_with_relay_component_dep(text: &str) -> Result<Vec<String>> {
+    let doc = parse(text)?;
+    let mut out = Vec::new();
+    if let Some(features) = doc.get("features").and_then(Item::as_table_like) {
+        for (key, item) in features.iter() {
+            if let Some(arr) = item.as_array()
+                && arr
+                    .iter()
+                    .any(|v| v.as_str().is_some_and(|s| s.starts_with("dep:relay-")))
+            {
+                out.push(key.to_string());
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
 /// Удаляет зависимость `name` и её `dep:`-токены из всех фич.
 ///
 /// Возвращает имена затронутых фич. Пустые (кроме `default`) фичи удаляются.
