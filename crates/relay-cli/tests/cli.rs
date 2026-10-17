@@ -404,6 +404,16 @@ fn add_workspace_component_joins_aggregating_feature() {
         "компонент в агрегирующей фиче: {text}"
     );
     assert!(app.join("relay.lock").exists(), "lock создан");
+
+    let backup_dir = app.join("target").join(".relay").join("backup");
+    let has_backup = std::fs::read_dir(&backup_dir)
+        .map(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .any(|e| e.file_name().to_string_lossy().starts_with("Cargo.toml."))
+        })
+        .unwrap_or(false);
+    assert!(has_backup, "снимок Cargo.toml в target/.relay/backup");
 }
 
 #[test]

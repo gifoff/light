@@ -1,8 +1,9 @@
 //! Резервное копирование `Cargo.toml` и `relay.lock` перед мутациями.
 //!
-//! Копии складываются в `.relay/backup/` в корне проекта. Хранятся последние
+//! Копии складываются в `target/.relay/backup/` внутри проекта и именуются по
+//! RFC3339-времени (`Cargo.toml.2026-10-17T13-45-00Z`). Хранятся последние
 //! [`MAX_BACKUPS`] снимков; более старые удаляются. При ошибке мутации проект
-//! восстанавливается из последнего снимка.
+//! восстанавливается из снимка.
 
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -10,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::error::{Error, Result};
 
 /// Каталог резервных копий (относительно корня проекта).
-pub const BACKUP_DIR: &str = ".relay/backup";
+pub const BACKUP_DIR: &str = "target/.relay/backup";
 
 /// Сколько снимков хранить.
 pub const MAX_BACKUPS: usize = 10;
@@ -30,11 +31,41 @@ pub struct Backup {
 }
 
 fn now_stamp() -> String {
-    let millis = SystemTime::now()
+    let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
+        .map(|d| d.as_secs())
         .unwrap_or(0);
-    format!("{millis:013}")
+    format_timestamp(secs)
+}
+
+/// Форматирует время Unix (UTC) как `2026-10-17T13-45-00Z`.
+///
+/// Двоеточия заменены на дефисы, чтобы метка была допустимым именем файла в
+/// том числе в Windows.
+pub fn format_timestamp(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    let (year, month, day) = civil_from_days(days);
+    let hour = rem / 3_600;
+    let minute = (rem % 3_600) / 60;
+    let second = rem % 60;
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}-{minute:02}-{second:02}Z")
+}
+
+/// Преобразует число дней от 1970-01-01 в `(год, месяц, день)`.
+///
+/// Алгоритм Говарда Хиннанта «civil_from_days» (public domain).
+fn civil_from_days(z: i64) -> (i64, i64, i64) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    (if month <= 2 { year + 1 } else { year }, month, day)
 }
 
 /// Создаёт снимок `Cargo.toml` (и `relay.lock`, если есть).
@@ -183,5 +214,25 @@ mod tests {
         prune(&dir).expect("prune");
         let count = fs::read_dir(&bdir).expect("read").count();
         assert_eq!(count, MAX_BACKUPS);
+    }
+
+    #[test]
+    fn formats_rfc3339_timestamp() {
+        assert_eq!(format_timestamp(0), "1970-01-01T00-00-00Z");
+        assert_eq!(format_timestamp(1_000_000_000), "2001-09-09T01-46-40Z");
+        assert_eq!(format_timestamp(1_795_268_700), "2026-11-21T13-45-00Z");
+    }
+
+    #[test]
+    fn stores_backups_under_target_relay() {
+        let dir = temp_dir("location");
+        fs::write(dir.join("Cargo.toml"), "c").expect("write");
+        let backup = create(&dir).expect("create");
+        let saved = &backup.entries[0].1;
+        assert!(
+            saved.starts_with(dir.join("target").join(".relay").join("backup")),
+            "копия внутри target/.relay/backup: {}",
+            saved.display()
+        );
     }
 }
