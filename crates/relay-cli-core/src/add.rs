@@ -63,13 +63,14 @@ impl AddPlan {
     pub fn to_text(&self) -> String {
         let mut out = String::new();
         out.push_str(&format!("План добавления {}\n", self.component.name));
+        let location = match &self.component.path {
+            Some(p) => format!(" ({})", p.display()),
+            None => String::new(),
+        };
         out.push_str(&format!(
-            "  источник:    {} ({})\n",
+            "  источник:    {}{}\n",
             self.component.source.as_str(),
-            match &self.component.path {
-                Some(p) => p.display().to_string(),
-                None => "crates.io".to_string(),
-            }
+            location,
         ));
         out.push_str(&format!("  версия:      {}\n", self.component.version));
         if self.already_installed {
@@ -217,6 +218,11 @@ fn already_installed_plan(
     }
     let version = current.unwrap_or_else(|| semver::Version::new(0, 0, 0));
     let info = catalog.registry().by_name(name);
+    let local = catalog.resolve_local(name)?;
+    let (source, path) = match &local {
+        Some(resolved) => (resolved.source, resolved.path.clone()),
+        None => (SourceKind::CratesIo, None),
+    };
     let component = ResolvedComponent {
         name: name.to_string(),
         version: version.clone(),
@@ -226,8 +232,8 @@ fn already_installed_plan(
         provides: info.map(|i| i.provides.clone()).unwrap_or_default(),
         requires: Vec::new(),
         conflicts: Vec::new(),
-        source: SourceKind::CratesIo,
-        path: None,
+        source,
+        path,
     };
     let feature = match &opts.feature {
         Some(feature) => feature.clone(),
@@ -481,6 +487,7 @@ mod tests {
         let again = plan_add(&app, "relay-element-form", &opts).expect("idempotent");
         assert!(again.already_installed);
         assert_eq!(again.component.version, semver::Version::new(0, 1, 0));
+        assert_eq!(again.component.source, SourceKind::Workspace);
         // Применение повторного плана ничего не меняет.
         let before = std::fs::read_to_string(app.join("Cargo.toml")).expect("read");
         apply_add(&app, &MockRunner::default(), &again, &opts).expect("re-apply");

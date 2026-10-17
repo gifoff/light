@@ -102,13 +102,18 @@ impl Catalog {
 
     /// Разрешает компонент по имени.
     pub fn resolve(&self, name: &str) -> Result<ResolvedComponent> {
-        if let Some(component) = self.resolve_workspace(name)? {
-            return Ok(component);
-        }
-        if let Some(component) = self.resolve_vendor(name)? {
+        if let Some(component) = self.resolve_local(name)? {
             return Ok(component);
         }
         self.resolve_remote(name)
+    }
+
+    /// Разрешает компонент только среди локальных (workspace/vendor), без сети.
+    pub fn resolve_local(&self, name: &str) -> Result<Option<ResolvedComponent>> {
+        if let Some(component) = self.resolve_workspace(name)? {
+            return Ok(Some(component));
+        }
+        self.resolve_vendor(name)
     }
 
     fn resolve_workspace(&self, name: &str) -> Result<Option<ResolvedComponent>> {
