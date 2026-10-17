@@ -5,13 +5,13 @@ use relay_cli_core::vendor::{DEFAULT_VENDOR_DIR, VendorOptions, apply_vendor, pl
 /// Аргументы команды `relay vendor`.
 #[derive(clap::Args)]
 pub struct VendorArgs {
-    /// Каталог проекта (содержит `Cargo.toml`).
-    #[arg(default_value = ".")]
-    pub path: PathBuf,
+    /// Каталог для исходников компонентов (позиционно).
+    #[arg(value_name = "PATH", conflicts_with = "path")]
+    pub path_positional: Option<PathBuf>,
 
     /// Каталог для исходников компонентов.
-    #[arg(long, default_value = DEFAULT_VENDOR_DIR)]
-    pub output: PathBuf,
+    #[arg(long, value_name = "PATH")]
+    pub path: Option<PathBuf>,
 
     /// Показать план и не копировать.
     #[arg(long)]
@@ -22,15 +22,21 @@ pub struct VendorArgs {
     pub offline: bool,
 }
 
-/// Копирует исходники компонентов в `vendor/`.
+/// Копирует исходники компонентов в `vendor/` текущего проекта.
 pub fn run(args: VendorArgs) -> anyhow::Result<i32> {
+    let output = args
+        .path
+        .or(args.path_positional)
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_VENDOR_DIR));
+    let project = std::env::current_dir()?;
+
     let opts = VendorOptions {
-        output: args.output,
+        output,
         dry_run: args.dry_run,
         offline: args.offline,
     };
 
-    let plan = plan_vendor(&args.path, &opts)?;
+    let plan = plan_vendor(&project, &opts)?;
     print!("{}", plan.to_text());
 
     let vendored = apply_vendor(&plan, opts.dry_run)?;

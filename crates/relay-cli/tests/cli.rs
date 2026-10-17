@@ -354,8 +354,8 @@ fn vendor_copies_component_sources() {
     let app = temp_copy("installed-workspace").join("app");
     relay()
         .arg("vendor")
-        .arg(&app)
         .arg("--offline")
+        .current_dir(&app)
         .assert()
         .success()
         .stdout(predicate::str::contains("relay-element-form"));
@@ -366,12 +366,48 @@ fn vendor_copies_component_sources() {
 }
 
 #[test]
+fn vendor_path_flag_sets_output_dir() {
+    let app = temp_copy("installed-workspace").join("app");
+    relay()
+        .arg("vendor")
+        .arg("--path")
+        .arg("vendor-test")
+        .arg("--offline")
+        .current_dir(&app)
+        .assert()
+        .success();
+    assert!(
+        app.join("vendor-test/relay-element-form/Cargo.toml")
+            .is_file(),
+        "--path задаёт каталог вывода"
+    );
+    assert!(!app.join("vendor").exists());
+}
+
+#[test]
+fn vendor_positional_path_sets_output_dir() {
+    let app = temp_copy("installed-workspace").join("app");
+    relay()
+        .arg("vendor")
+        .arg("vendor-positional")
+        .arg("--offline")
+        .current_dir(&app)
+        .assert()
+        .success();
+    assert!(
+        app.join("vendor-positional/relay-element-form/Cargo.toml")
+            .is_file(),
+        "позиционный путь задаёт каталог вывода"
+    );
+}
+
+#[test]
 fn vendor_dry_run_does_not_copy() {
     let app = temp_copy("installed-workspace").join("app");
     relay()
         .arg("vendor")
-        .arg(&app)
         .arg("--dry-run")
+        .current_dir(&app)
         .assert()
         .success()
         .stdout(predicate::str::contains("dry-run"));
