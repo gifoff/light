@@ -79,9 +79,50 @@ AccessKit-семантика, обработка событий, оконные 
   и манифест проекта, находит используемые элементы и атрибуты и предлагает
   минимальный набор фич. Не реализована: требует рекурсивного разбора
   шаблонов и манифестов, не критично для основной задачи.
-- **`docs/design/footprint-report.md`**: замеры `cargo bloat — --crates`
+- **`docs/footprint-report.md`**: замеры `cargo bloat — --crates`
   (сравнение с предыдущим релизом).
 - Разделение на подкрейты (`relay-core`, `relay-element-form`,
   `relay-behavior-validation`, …) — **начато**: ядро вынесено в `relay-core`,
   компоненты формы и валидации — в отдельные крейты, `relay` стал тонкой
   мета-обёрткой (см. `docs/COMPONENT_MODEL.md`).
+
+### Пример: ошибка при использовании гейтнутого элемента
+
+Гейтинг работает на этапе компиляции: если шаблон использует элемент,
+принадлежащий выключенной фиче, `#[template]` не «молча» превращает его в
+неизвестный узел, а возвращает понятную ошибку с именем фичи и готовой
+подсказкой.
+
+Шаблон `templates/form.html`:
+
+```html
+<select v-model="country"></select>
+```
+
+`src/main.rs` без фичи `elements-select` (`relay = { default-features = false,
+features = ["elements-basic"] }`):
+
+```rust
+use relay::prelude::*;
+
+#[template("templates/form.html")]
+struct Form;
+```
+
+Компилятор сообщает:
+
+```text
+error: элемент <select> недоступен: Cargo-фича `elements-select` выключена у крейта `relay`
+help: включите её в зависимости, например `relay = { features = ["elements-select"] }`
+```
+
+Элемент нужно подключать явно:
+
+```toml
+[dependencies]
+relay = { version = "0.1", features = ["elements-basic", "elements-select"] }
+```
+
+Аналогично для `<checkbox>` (`elements-checkbox`), `<radio>` (`elements-radio`)
+и `<password>` (`elements-input`). Тег `<text>`/`<textarea>` входит в
+`elements-input` и гейтится так же.

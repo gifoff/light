@@ -33,6 +33,10 @@
 - `position-x`/`position-y` принимают значение `center` (выравнивание по центру контентной области родителя).
 - Позиционирование и размеры-проценты отсчитываются от **контентной области родителя** (границы минус `padding` и рамка), а не от окна: `position-x`/`position-y`, `position-offset-x`/`position-offset-y` и проценты в `width`/`height`/`min-*`/`max-*`. База берётся от итогового размера родителя. В вертикальном потоке (`direction="vertical"`, `<window>`) контейнер без явного `width` растягивается на доступную ширину, в горизонтальном (`direction="horizontal"`, `<titlebar>`) — без явного `height` по высоте; растяжение отключается явным размером по этой оси. Где растяжение не применяется (например, ширина контейнера в горизонтальном потоке), `Auto`-база равна `0`, и проценты по этой оси дают `0`. Корень и `<window>` занимают всё окно.
 - Текст внутри заблокированной (`:disabled`) кнопки рисуется приглушённым цветом.
+- Split `relay` into `relay-core`, `relay-element-form`, `relay-behavior-validation`.
+  Existing code using `relay` continues to work with default features.
+- Gated elements (`<select>`, `<checkbox>`, `<radio>`) now produce a clear
+  compile-time error when used without the corresponding feature.
 
 ### Fixed
 
