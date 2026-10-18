@@ -59,6 +59,33 @@ pub fn set_version_optional(doc: &mut DocumentMut, name: &str, version: &str) ->
     Ok(())
 }
 
+/// Точка вставки нового `dep:`-элемента в **многострочном** массиве и его
+/// префикс (стиль соседа). Возвращает `None` для однострочных массивов.
+///
+/// Элемент вставляется **после последнего `dep:`**, чтобы группы зависимостей
+/// не разъезжались и повторный `remove`+`add` давал byte-perfect roundtrip.
+fn multiline_dep_insertion(arr: &Array) -> Option<(usize, String)> {
+    if !arr.to_string().contains('\n') {
+        return None;
+    }
+    let after = arr
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| v.as_str().is_some_and(|s| s.starts_with("dep:")))
+        .map(|(i, _)| i + 1)
+        .last()
+        .unwrap_or_else(|| arr.iter().count());
+    let neighbor = arr
+        .iter()
+        .nth(after.saturating_sub(1))
+        .or_else(|| arr.iter().last());
+    let prefix = neighbor
+        .and_then(|v| v.decor().prefix().and_then(|p| p.as_str()))
+        .unwrap_or("\n    ")
+        .to_string();
+    Some((after, prefix))
+}
+
 /// Добавляет `dep:name` в фичу. Возвращает `true`, если фича была создана.
 pub fn add_dep_to_feature(doc: &mut DocumentMut, feature: &str, name: &str) -> Result<bool> {
     let table = features_table(doc)?;
@@ -69,7 +96,15 @@ pub fn add_dep_to_feature(doc: &mut DocumentMut, feature: &str, name: &str) -> R
         .ok_or_else(|| Error::Manifest(format!("фича `{feature}` не является массивом")))?;
     let token = format!("dep:{name}");
     if !arr.iter().any(|v| v.as_str() == Some(token.as_str())) {
-        arr.push(token);
+        match multiline_dep_insertion(arr) {
+            Some((index, prefix)) => {
+                let mut new_value = Value::from(token);
+                new_value.decor_mut().set_prefix(prefix);
+                new_value.decor_mut().set_suffix(",");
+                arr.insert(index, new_value);
+            }
+            None => arr.push(token),
+        }
     }
     Ok(!existed)
 }
