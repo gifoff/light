@@ -2,6 +2,27 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.2.0] - 2026-10-17
+
+### Added
+
+- CLI: `relay doctor`, `relay add`, `relay remove`, `relay update`, `relay lock`, `relay vendor`.
+- `relay.lock` for reproducible builds.
+- Backups and automatic rollback for all CLI mutations.
+- Workspace-component detection: `relay add` uses local path for workspace members.
+
+### Fixed
+
+- Compile-time gates for opt-in elements now show helpful error messages.
+- `relay doctor` correctly detects `relay-core` version in workspace projects.
+- `relay add` is idempotent for already-installed components (exit 0).
+- `relay remove` updates `relay.lock` and does not drop unrelated empty features.
+- `relay vendor --path` flag now parses correctly.
+
+### Changed
+
+- Split `relay` into `relay-core`, `relay-element-form`, `relay-behavior-validation`.
+
 ## [Unreleased]
 
 ### Added
@@ -77,3 +98,4 @@
 ### Notes
 
 - Поддержку доступности можно выключить переменной окружения `RELAY_A11Y=0` или программно — `relay::a11y::set_enabled(false)`.
+

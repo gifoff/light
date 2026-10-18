@@ -12,5 +12,5 @@ relay-core = { workspace = true, default-features = false, features = ["elements
 [package.metadata.relay]
 kind = "element"
 display-name = "Form elements"
-core = "^0.1"
+core = "^0.2"
 provides.elements = ["checkbox", "radio", "select", "option"]

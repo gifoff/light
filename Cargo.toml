@@ -14,7 +14,7 @@ members = [
 exclude = ["egui-main"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.95"
@@ -24,11 +24,11 @@ winit = "0.30"
 pixels = "0.17"
 ab_glyph = "0.2"
 
-relay = { path = "crates/relay", version = "0.1.0" }
-relay-core = { path = "crates/relay-core", version = "0.1.0" }
-relay-element-form = { path = "crates/relay-element-form", version = "0.1.0" }
-relay-behavior-validation = { path = "crates/relay-behavior-validation", version = "0.1.0" }
-relay-macros = { path = "crates/relay-macros", version = "0.1.0" }
+relay = { path = "crates/relay", version = "0.2.0" }
+relay-core = { path = "crates/relay-core", version = "0.2.0" }
+relay-element-form = { path = "crates/relay-element-form", version = "0.2.0" }
+relay-behavior-validation = { path = "crates/relay-behavior-validation", version = "0.2.0" }
+relay-macros = { path = "crates/relay-macros", version = "0.2.0" }
 
 syn = { version = "2", features = ["full"] }
 quote = "1"
