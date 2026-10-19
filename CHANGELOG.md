@@ -98,4 +98,13 @@
   копии добавлены в каталоги публикуемых крейтов, чтобы попадать в `.crate`.
 - Метаданные crates.io для публикуемых крейтов: `description`, `license`,
   `repository` и `readme`.
+- Команда `relay publish [крейт]`: публикует крейты воркспейса в crates.io в
+  топологическом порядке (граф строится из `cargo metadata`), пропуская
+  `publish = false`. Pre-flight гейты (`cargo build`/`test`/`clippy`/`fmt`,
+  строгая проверка шаблонов, валидация `[package.metadata.relay]`, сверка версий
+  внутренних зависимостей и проверка «уже опубликовано» через crates.io API и
+  git-теги), ретраи на устаревание индекса crates.io с экспоненциальной задержкой,
+  интерактивное подтверждение и флаги `--dry-run` (упаковка через
+  `cargo package --list` без сети и без публикации), `--yes`, `--allow-dirty`,
+  `--token`, `--verify`/`--no-verify`, `--skip-gates`, `--only`.
 

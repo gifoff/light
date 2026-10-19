@@ -516,3 +516,88 @@ fn remove_updates_lockfile() {
     );
     assert!(after.contains("core = \"0.2.0\""), "ядро в lock: {after}");
 }
+
+#[test]
+fn publish_dry_run_orders_crates_and_skips_unpublished() {
+    let ws = temp_copy("publish-workspace");
+    let output = relay()
+        .arg("publish")
+        .arg("--dry-run")
+        .arg("--skip-gates")
+        .current_dir(&ws)
+        .output()
+        .expect("run relay publish");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("skipped 1 crates (publish = false)"),
+        "{stdout}"
+    );
+    let a = stdout.find("pub-a").expect("pub-a in output");
+    let b = stdout.find("pub-b").expect("pub-b in output");
+    assert!(a < b, "pub-a должна идти раньше pub-b:\n{stdout}");
+    assert!(stdout.contains("packaged: 2/2"), "{stdout}");
+}
+
+#[test]
+fn publish_dry_run_single_crate() {
+    let ws = temp_copy("publish-workspace");
+    relay()
+        .arg("publish")
+        .arg("pub-a")
+        .arg("--dry-run")
+        .arg("--skip-gates")
+        .current_dir(&ws)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("packaged: 1/1"))
+        .stdout(predicate::str::contains("pub-a"));
+}
+
+#[test]
+fn publish_only_flag_selects_single_crate() {
+    let ws = temp_copy("publish-workspace");
+    relay()
+        .arg("publish")
+        .arg("--only")
+        .arg("pub-b")
+        .arg("--dry-run")
+        .arg("--skip-gates")
+        .current_dir(&ws)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("packaged: 1/1"));
+}
+
+#[test]
+fn publish_requires_yes_in_non_interactive_mode() {
+    let ws = temp_copy("publish-workspace");
+    relay()
+        .arg("publish")
+        .arg("--skip-gates")
+        .current_dir(&ws)
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "refusing to publish in non-interactive mode without --yes",
+        ));
+}
+
+#[test]
+fn publish_rejects_publishable_depending_on_unpublished() {
+    let ws = temp_copy("publish-broken");
+    relay()
+        .arg("publish")
+        .arg("--dry-run")
+        .arg("--skip-gates")
+        .current_dir(&ws)
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("publish = false"));
+}

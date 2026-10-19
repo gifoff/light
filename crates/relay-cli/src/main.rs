@@ -4,6 +4,7 @@ mod cmd_add;
 mod cmd_check;
 mod cmd_doctor;
 mod cmd_lock;
+mod cmd_publish;
 mod cmd_remove;
 mod cmd_suggest;
 mod cmd_update;
@@ -34,6 +35,8 @@ enum Command {
     Update(cmd_update::UpdateArgs),
     /// Скопировать исходники компонентов в `vendor/`.
     Vendor(cmd_vendor::VendorArgs),
+    /// Опубликовать крейты воркспейса в crates.io.
+    Publish(cmd_publish::PublishArgs),
 }
 
 /// Формат вывода отчёта.
@@ -54,6 +57,7 @@ fn main() {
         Command::Lock(args) => cmd_lock::run(args),
         Command::Update(args) => cmd_update::run(args),
         Command::Vendor(args) => cmd_vendor::run(args),
+        Command::Publish(args) => cmd_publish::run(args),
     };
     match result {
         Ok(code) => std::process::exit(code),

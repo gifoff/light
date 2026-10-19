@@ -1,0 +1,7 @@
+[package]
+name = "pub-a"
+version = "0.2.0"
+edition = "2021"
+description = "Test publishable crate A"
+license = "MIT"
+repository = "https://example.com/pub-a"

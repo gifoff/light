@@ -79,6 +79,16 @@ pub enum Error {
     #[error("ошибка резервной копии: {0}")]
     Backup(String),
 
+    /// Ошибка публикации: граф зависимостей, версии, pre-flight.
+    #[error("ошибка публикации: {0}")]
+    Publish(String),
+
+    /// Версия крейта уже опубликована на crates.io.
+    #[error(
+        "crate {name} v{version} already published; bump version in Cargo.toml before publishing"
+    )]
+    AlreadyPublished { name: String, version: String },
+
     /// Сетевой запрос к crates.io завершился ошибкой.
     #[cfg(feature = "network")]
     #[error("сетевой запрос не удался: {0}")]

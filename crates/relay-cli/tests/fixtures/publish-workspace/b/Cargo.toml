@@ -1,0 +1,10 @@
+[package]
+name = "pub-b"
+version = "0.2.0"
+edition = "2021"
+description = "Test publishable crate B"
+license = "MIT"
+repository = "https://example.com/pub-b"
+
+[dependencies]
+pub-a = { path = "../a", version = "0.2.0" }
