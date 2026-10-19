@@ -89,3 +89,8 @@
 
 ## [Unreleased]
 
+### Added
+
+- `docs/COMPONENT_AUTHORING.md` — практическое руководство по созданию
+  и публикации компонентов Relay.
+

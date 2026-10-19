@@ -11,7 +11,7 @@
 - Публикация компонентов в crates.io.
 - `relay publish`.
 - `relay init`.
-- `docs/COMPONENT_AUTHORING.md`.
+- `docs/COMPONENT_AUTHORING.md` ✓.
 - Добавить `repository` в Cargo.toml компонентов.
 
 ## Версия 0.4 (исследование)
