@@ -4,13 +4,16 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+description = "Утилита relay: проверка проекта и управление компонентами Relay"
 
 [[bin]]
 name = "relay"
 path = "src/main.rs"
 
 [dependencies]
-relay-cli-core = { path = "../relay-cli-core", features = ["network"] }
+relay-cli-core = { path = "../relay-cli-core", version = "0.2.0", features = ["network"] }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 serde_json = "1"

@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+description = "Ядро CLI Relay: анализ проекта, управление компонентами и relay.lock"
 
 [dependencies]
 toml_edit = { version = "0.22", features = ["serde"] }
@@ -14,7 +17,7 @@ walkdir = "2"
 ignore = "0.4"
 thiserror = "2"
 glob = "0.3"
-relay-html = { path = "../relay-html" }
+relay-html = { path = "../relay-html", version = "0.2.0" }
 sha2 = "0.10"
 hex = "0.4"
 dirs = "5"

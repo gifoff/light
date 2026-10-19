@@ -17,6 +17,7 @@ exclude = ["egui-main"]
 version = "0.2.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/relay-rs/relay"
 rust-version = "1.95"
 
 [workspace.dependencies]
