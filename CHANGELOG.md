@@ -81,5 +81,11 @@
 
 - Поддержку доступности можно выключить переменной окружения `RELAY_A11Y=0` или программно — `relay::a11y::set_enabled(false)`.
 
+### Known issues
+
+- `relay add`/`relay remove` do not preserve byte-perfect formatting of
+  `Cargo.toml` feature arrays when multiple `dep:` entries are adjacent.
+  Functionally correct, cosmetic only. Fixed in 0.2.1.
+
 ## [Unreleased]
 

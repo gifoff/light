@@ -2,7 +2,7 @@
 
 ## Версия 0.2 (текущая)
 
-- CLI: `add`, `remove`, `update`, `doctor`, `vendor`.
+- CLI: `check`, `suggest`, `doctor`, `add`, `remove`, `update`, `lock`, `vendor`.
 - `relay.lock` и воспроизводимые сборки.
 - Компонентная модель: `relay-core`, `relay-element-form`, `relay-behavior-validation`.
 
