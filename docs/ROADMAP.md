@@ -1,27 +1,18 @@
 # Roadmap Relay
 
-## Версия 0.1 (текущая)
-
-- Виртуальный DOM, реактивность, HTML-шаблоны.
-- Доступность через AccessKit.
-- Модальные окна, вторые окна, окна по id.
-- Компонентная модель: `relay-core`, `relay-element-form`,
-  `relay-behavior-validation`.
-- CLI: `check`, `suggest`.
-
-## Версия 0.2 (следующая)
+## Версия 0.2 (текущая)
 
 - CLI: `add`, `remove`, `update`, `doctor`, `vendor`.
 - `relay.lock` и воспроизводимые сборки.
-- Первые публичные компоненты (валидация, форма).
-- Работа с crates.io и локальными workspace-компонентами.
+- Компонентная модель: `relay-core`, `relay-element-form`, `relay-behavior-validation`.
 
-## Версия 0.3
+## Версия 0.3 (следующая)
 
-- Asset packs: темы, иконки, локали.
-- Приватные реестры.
-- `relay publish` и `relay init`.
-- Публикация `relay-element-form` и `relay-behavior-validation` в crates.io.
+- Публикация компонентов в crates.io.
+- `relay publish`.
+- `relay init`.
+- `docs/COMPONENT_AUTHORING.md`.
+- Добавить `repository` в Cargo.toml компонентов.
 
 ## Версия 0.4 (исследование)
 
