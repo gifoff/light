@@ -608,7 +608,7 @@ mod tests {
             "[package]\nname = \"p\"\nversion = \"0.1.0\"\n[workspace]\n\n[dependencies]\nrelay = \"0.1\"\nrelay-element-form = \"0.1\"\n",
             &[("app.html", "<checkbox></checkbox>")],
         );
-        // Registry требует core ^0.1; проект на 0.1.0 — совместимо.
+        // Registry требует core ^0.2; проект на relay 0.1 — несовместимо.
         let report = doctor(&dir, &ok_probe()).expect("doctor");
         assert!(
             report
@@ -616,7 +616,7 @@ mod tests {
                 .iter()
                 .any(|c| c.name == "relay-element-form")
         );
-        assert!(!report.has_errors(), "issues: {:?}", report.issues);
+        assert!(report.has_errors(), "issues: {:?}", report.issues);
     }
 
     #[test]

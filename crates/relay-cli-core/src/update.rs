@@ -233,8 +233,8 @@ mod tests {
         let entry = &plan.entries[0];
         assert_eq!(entry.name, "relay-element-form");
         assert_eq!(entry.from.as_deref(), Some("0.0.1"));
-        assert_eq!(entry.to, "0.1.0");
-        assert!(plan.to_text().contains("→ 0.1.0"));
+        assert_eq!(entry.to, "0.2.0");
+        assert!(plan.to_text().contains("→ 0.2.0"));
     }
 
     #[test]
@@ -244,7 +244,7 @@ mod tests {
         let plan = plan_update(&dir, &UpdateOptions::default()).expect("plan");
         apply_update(&dir, &MockRunner, &plan, &UpdateOptions::default()).expect("apply");
         let text = std::fs::read_to_string(dir.join("Cargo.toml")).expect("read");
-        assert!(text.contains("relay-element-form = \"0.1.0\""), "{text}");
+        assert!(text.contains("relay-element-form = \"0.2.0\""), "{text}");
         assert!(dir.join("relay.lock").exists());
     }
 
@@ -253,7 +253,7 @@ mod tests {
         let dir = temp_dir("uptodate");
         std::fs::write(
             dir.join("Cargo.toml"),
-            "[package]\nname = \"p\"\nversion = \"0.1.0\"\n\n[workspace]\n\n[dependencies]\nrelay-element-form = \"0.1.0\"\n",
+            "[package]\nname = \"p\"\nversion = \"0.1.0\"\n\n[workspace]\n\n[dependencies]\nrelay-element-form = \"0.2.0\"\n",
         )
         .expect("write");
         let plan = plan_update(&dir, &UpdateOptions::default()).expect("plan");
