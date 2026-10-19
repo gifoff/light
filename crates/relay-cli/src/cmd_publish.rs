@@ -52,6 +52,7 @@ pub fn run(args: PublishArgs) -> anyhow::Result<i32> {
     let cwd = std::env::current_dir()?;
     let runner = SystemRunner;
     let metadata = publish::load_metadata(&runner, &cwd)?;
+    let exclude = publish::running_package_exclude(&metadata);
     let workspace = Workspace::from_metadata(metadata)?;
     let only = args.only.or(args.crate_name);
     let plan = publish::plan(&workspace, only.as_deref())?;
@@ -109,12 +110,15 @@ pub fn run(args: PublishArgs) -> anyhow::Result<i32> {
     if args.skip_gates {
         preflight.push("gates skipped".to_string());
     } else {
-        let gates = publish::run_gates(&runner, &workspace.root)?;
+        let gates = publish::run_gates(&runner, &workspace.root, exclude.as_deref())?;
         preflight.extend(
             gates
                 .iter()
                 .map(|gate| format!("{} {}", gate.name, if gate.ok { "✓" } else { "✗" })),
         );
+        if let Some(name) = &exclude {
+            preflight.push(format!("excluded {name} (running binary)"));
+        }
         if let Some(failed) = gates.iter().find(|gate| !gate.ok) {
             println!("[1/{total_steps}] pre-flight: {}", preflight.join(" "));
             eprintln!(

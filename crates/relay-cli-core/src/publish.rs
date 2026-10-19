@@ -58,8 +58,21 @@ pub struct MetadataPackage {
     pub repository: Option<String>,
     /// Readme из манифеста.
     pub readme: Option<String>,
+    /// Целевые артефакты пакета (`bin`/`lib`/…).
+    #[serde(default)]
+    pub targets: Vec<MetadataTarget>,
     /// Зависимости пакета.
     pub dependencies: Vec<MetadataDependency>,
+}
+
+/// Один целевой артефакт пакета из `cargo metadata`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct MetadataTarget {
+    /// Имя цели (для бинарника — имя файла без расширения).
+    pub name: String,
+    /// Виды цели (`bin`, `lib`, `test`, …).
+    #[serde(default)]
+    pub kind: Vec<String>,
 }
 
 /// Одна зависимость из `cargo metadata`.
@@ -240,6 +253,38 @@ pub fn load_metadata(runner: &dyn CommandRunner, cwd: &Path) -> Result<Metadata>
         });
     }
     Ok(serde_json::from_str(&output.stdout)?)
+}
+
+/// Имя пакета, бинарник которого сейчас выполняется, если он лежит в `target/`
+/// этого воркспейса.
+///
+/// Такой пакет исключается из pre-flight сборки ([`run_gates`]): иначе
+/// `cargo build --workspace` пытается перелинковать запущенный файл и на Windows
+/// падает с «failed to remove file …: access denied».
+pub fn running_package_exclude(metadata: &Metadata) -> Option<String> {
+    let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
+    let root = metadata.workspace_root.canonicalize().ok()?;
+    if !exe.starts_with(root.join("target")) {
+        return None;
+    }
+    let stem = exe.file_stem()?.to_str()?;
+
+    let members: BTreeSet<&str> = metadata
+        .workspace_members
+        .iter()
+        .map(String::as_str)
+        .collect();
+    metadata
+        .packages
+        .iter()
+        .filter(|package| members.contains(package.id.as_str()))
+        .find(|package| {
+            package
+                .targets
+                .iter()
+                .any(|target| target.kind.iter().any(|kind| kind == "bin") && target.name == stem)
+        })
+        .map(|package| package.name.clone())
 }
 
 /// Строит план публикации: порядок и пропущенные крейты.
@@ -450,22 +495,45 @@ pub struct GateOutcome {
     pub stderr: String,
 }
 
-/// Прогоняет гейты `build`/`test`/`clippy`/`fmt`, останавливаясь на первом сбое.
-pub fn run_gates(runner: &dyn CommandRunner, root: &Path) -> Result<Vec<GateOutcome>> {
-    let gates: &[(&str, &[&str])] = &[
-        ("build", &["build", "--workspace"]),
-        ("test", &["test", "--workspace"]),
-        ("clippy", &["clippy", "--workspace", "--", "-D", "warnings"]),
-        ("fmt", &["fmt", "--check", "--all"]),
-    ];
+/// Гейты pre-flight с опциональным исключением пакета.
+///
+/// `exclude` — имя пакета, который не нужно пересобирать (например, только что
+/// запущенный бинарник `relay`); `cargo fmt` исключение не поддерживает.
+pub fn gate_commands(exclude: Option<&str>) -> Vec<(&'static str, Vec<String>)> {
+    fn args(base: &[&str], exclude: Option<&str>) -> Vec<String> {
+        let mut args: Vec<String> = base.iter().map(|arg| (*arg).to_string()).collect();
+        if let Some(name) = exclude {
+            args.push("--exclude".to_string());
+            args.push(name.to_string());
+        }
+        args
+    }
 
+    let mut clippy = args(&["clippy", "--workspace"], exclude);
+    clippy.push("--".to_string());
+    clippy.push("-D".to_string());
+    clippy.push("warnings".to_string());
+
+    vec![
+        ("build", args(&["build", "--workspace"], exclude)),
+        ("test", args(&["test", "--workspace"], exclude)),
+        ("clippy", clippy),
+        ("fmt", args(&["fmt", "--check", "--all"], None)),
+    ]
+}
+
+/// Прогоняет гейты `build`/`test`/`clippy`/`fmt`, останавливаясь на первом сбое.
+pub fn run_gates(
+    runner: &dyn CommandRunner,
+    root: &Path,
+    exclude: Option<&str>,
+) -> Result<Vec<GateOutcome>> {
     let mut outcomes = Vec::new();
-    for (name, args) in gates {
-        let args: Vec<String> = args.iter().map(|arg| (*arg).to_string()).collect();
+    for (name, args) in gate_commands(exclude) {
         let output = runner.run("cargo", &args, Some(root))?;
         let ok = output.success();
         outcomes.push(GateOutcome {
-            name: (*name).to_string(),
+            name: name.to_string(),
             ok,
             stderr: output.stderr.trim().to_string(),
         });
@@ -1248,6 +1316,34 @@ mod tests {
         assert_eq!(
             package_list_args("relay-core"),
             vec!["package", "--list", "-p", "relay-core", "--allow-dirty"]
+        );
+    }
+
+    #[test]
+    fn gate_commands_apply_exclude_to_build_test_clippy() {
+        let commands = gate_commands(Some("relay-cli"));
+        let names: Vec<&str> = commands.iter().map(|(name, _)| *name).collect();
+        assert_eq!(names, vec!["build", "test", "clippy", "fmt"]);
+        for (name, args) in &commands {
+            let has_exclude = args.iter().any(|arg| arg == "--exclude");
+            if *name == "fmt" {
+                assert!(!has_exclude, "cargo fmt не поддерживает --exclude");
+            } else {
+                assert!(has_exclude, "{name} должен исключать запущенный крейт");
+            }
+            if *name == "clippy" {
+                assert_eq!(args.last().map(String::as_str), Some("warnings"));
+            }
+        }
+    }
+
+    #[test]
+    fn gate_commands_without_exclude_are_plain() {
+        let commands = gate_commands(None);
+        assert!(
+            commands
+                .iter()
+                .all(|(_, args)| !args.iter().any(|arg| arg == "--exclude"))
         );
     }
 
