@@ -3,6 +3,7 @@ use clap::Parser;
 mod cmd_add;
 mod cmd_check;
 mod cmd_doctor;
+mod cmd_init;
 mod cmd_lock;
 mod cmd_publish;
 mod cmd_remove;
@@ -19,6 +20,8 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Command {
+    /// Создать скелет нового проекта Relay.
+    Init(cmd_init::InitArgs),
     /// Проверить проект: используемые и отсутствующие компоненты.
     Check(cmd_check::CheckArgs),
     /// Подсказать, какие компоненты добавить.
@@ -49,6 +52,7 @@ enum OutputFormat {
 fn main() {
     let cli = Cli::parse();
     let result = match cli.command {
+        Command::Init(args) => cmd_init::run(args),
         Command::Check(args) => cmd_check::run(args),
         Command::Suggest(args) => cmd_suggest::run(args),
         Command::Doctor(args) => cmd_doctor::run(args),

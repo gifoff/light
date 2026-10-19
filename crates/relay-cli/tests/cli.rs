@@ -43,6 +43,18 @@ fn temp_copy(name: &str) -> PathBuf {
     dir
 }
 
+/// Создаёт уникальный пустой временный каталог (для `relay init`).
+fn scratch_dir(name: &str) -> PathBuf {
+    let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!(
+        "relay-cli-scratch-{name}-{}-{unique}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    dir
+}
+
 #[test]
 fn check_empty_project_succeeds() {
     relay()
@@ -600,4 +612,90 @@ fn publish_rejects_publishable_depending_on_unpublished() {
         .failure()
         .code(1)
         .stderr(predicate::str::contains("publish = false"));
+}
+
+#[test]
+fn init_creates_full_project() {
+    let scratch = scratch_dir("full");
+    relay()
+        .arg("init")
+        .arg("cool-app")
+        .current_dir(&scratch)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cool-app"));
+
+    let project = scratch.join("cool-app");
+    let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
+    assert!(manifest.contains("name = \"cool-app\""), "{manifest}");
+    assert!(manifest.contains("relay = \"0.2."), "{manifest}");
+    let main_rs = std::fs::read_to_string(project.join("src").join("main.rs")).expect("main.rs");
+    assert!(main_rs.contains("Hello, Relay!"), "{main_rs}");
+    let gitignore = std::fs::read_to_string(project.join(".gitignore")).expect(".gitignore");
+    assert!(gitignore.contains("target/"), "{gitignore}");
+    assert!(project.join("relay.lock").is_file(), "relay.lock создаётся");
+}
+
+#[test]
+fn init_minimal_skips_extras() {
+    let scratch = scratch_dir("minimal");
+    relay()
+        .arg("init")
+        .arg("tiny")
+        .arg("--minimal")
+        .current_dir(&scratch)
+        .assert()
+        .success();
+
+    let project = scratch.join("tiny");
+    assert!(project.join("Cargo.toml").is_file());
+    assert!(project.join("src").join("main.rs").is_file());
+    assert!(!project.join(".gitignore").exists());
+    assert!(!project.join("relay.lock").exists());
+}
+
+#[test]
+fn init_path_decouples_directory_from_name() {
+    let scratch = scratch_dir("path");
+    relay()
+        .arg("init")
+        .arg("my-app")
+        .arg("--path")
+        .arg("custom-dir")
+        .current_dir(&scratch)
+        .assert()
+        .success();
+
+    let project = scratch.join("custom-dir");
+    let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
+    assert!(manifest.contains("name = \"my-app\""), "{manifest}");
+}
+
+#[test]
+fn init_rejects_non_empty_directory() {
+    let scratch = scratch_dir("busy");
+    let busy = scratch.join("busy-app");
+    std::fs::create_dir_all(&busy).expect("dir");
+    std::fs::write(busy.join("existing.txt"), "x").expect("file");
+
+    relay()
+        .arg("init")
+        .arg("busy-app")
+        .current_dir(&scratch)
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("не пуст"));
+}
+
+#[test]
+fn init_rejects_invalid_name() {
+    let scratch = scratch_dir("badname");
+    relay()
+        .arg("init")
+        .arg("2bad")
+        .current_dir(&scratch)
+        .assert()
+        .failure()
+        .code(1);
 }

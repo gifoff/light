@@ -83,6 +83,10 @@ pub enum Error {
     #[error("ошибка публикации: {0}")]
     Publish(String),
 
+    /// Ошибка создания проекта (`relay init`).
+    #[error("ошибка init: {0}")]
+    Init(String),
+
     /// Версия крейта уже опубликована на crates.io.
     #[error(
         "crate {name} v{version} already published; bump version in Cargo.toml before publishing"

@@ -5,6 +5,7 @@ pub mod doctor;
 pub mod edit;
 pub mod error;
 pub mod fetch;
+pub mod init;
 pub mod lockfile;
 pub mod manifest;
 pub mod process;
