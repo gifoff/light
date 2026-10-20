@@ -20,7 +20,7 @@
 4. Проверьте демо:
 
    ```bash
-   cargo run -p relay-cli -- check --strict crates/relay-demo
+   cargo run -p relay-framework-cli -- check --strict crates/relay-demo
    ```
 
 ## 2. Вход в crates.io
@@ -40,7 +40,7 @@ cargo login
 Сначала выполните dry-run — он упакует все крейты, но ничего не опубликует:
 
 ```bash
-cargo run -p relay-cli -- publish --dry-run
+cargo run -p relay-framework-cli -- publish --dry-run
 ```
 
 Если `relay` уже установлен:
@@ -60,7 +60,7 @@ relay publish --dry-run
 pre-flight-гейты и повторяет попытки при устаревании индекса crates.io.
 
 ```bash
-cargo run -p relay-cli -- publish
+cargo run -p relay-framework-cli -- publish
 ```
 
 Или, если CLI установлен:
@@ -91,7 +91,7 @@ relay publish --token "$CARGO_REGISTRY_TOKEN"
 ```bash
 cargo publish -p relay-html
 cargo publish -p relay-cli-core
-cargo publish -p relay-cli
+cargo publish -p relay-framework-cli
 cargo publish -p relay-macros
 cargo publish -p relay-core
 cargo publish -p relay-behavior-validation
@@ -117,7 +117,7 @@ git push origin vX.Y.Z
 
 ```bash
 cargo search relay
-cargo install relay-cli --version X.Y.Z
+cargo install relay-framework-cli --version X.Y.Z
 ```
 
 Также откройте страницы крейтов на crates.io и убедитесь, что docs.rs

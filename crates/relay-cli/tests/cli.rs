@@ -12,7 +12,7 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 fn relay() -> Command {
-    Command::cargo_bin("relay").expect("bin relay")
+    Command::new(env!("CARGO_BIN_EXE_relay"))
 }
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);

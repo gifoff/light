@@ -803,7 +803,7 @@ fn crates_io_versions(name: &str) -> ApiOutcome {
     let url = format!("https://crates.io/api/v1/crates/{name}");
     let response = match client
         .get(&url)
-        .header("User-Agent", "relay-cli (publish pre-flight)")
+        .header("User-Agent", "relay-framework-cli (publish pre-flight)")
         .send()
     {
         Ok(response) => response,
@@ -1052,7 +1052,7 @@ mod tests {
     fn topological_order_puts_dependencies_first() {
         let ws = workspace(vec![
             package(
-                "relay-cli",
+                "relay-framework-cli",
                 true,
                 &[("relay-cli-core", DepKind::Normal, "^0.2.0")],
             ),
@@ -1066,7 +1066,7 @@ mod tests {
         let plan = plan(&ws, None).expect("plan");
         assert_eq!(
             plan.order,
-            vec!["relay-core", "relay-cli-core", "relay-cli"]
+            vec!["relay-core", "relay-cli-core", "relay-framework-cli"]
         );
     }
 
@@ -1321,7 +1321,7 @@ mod tests {
 
     #[test]
     fn gate_commands_apply_exclude_to_build_test_clippy() {
-        let commands = gate_commands(Some("relay-cli"));
+        let commands = gate_commands(Some("relay-framework-cli"));
         let names: Vec<&str> = commands.iter().map(|(name, _)| *name).collect();
         assert_eq!(names, vec!["build", "test", "clippy", "fmt"]);
         for (name, args) in &commands {

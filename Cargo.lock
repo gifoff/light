@@ -2841,21 +2841,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "relay-cli"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "assert_cmd",
- "clap",
- "console 0.15.11",
- "dialoguer",
- "indicatif",
- "predicates",
- "relay-cli-core",
- "serde_json",
-]
-
-[[package]]
 name = "relay-cli-core"
 version = "0.4.0"
 dependencies = [
@@ -2905,6 +2890,21 @@ name = "relay-element-form"
 version = "0.4.0"
 dependencies = [
  "relay-core",
+]
+
+[[package]]
+name = "relay-framework-cli"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "clap",
+ "console 0.15.11",
+ "dialoguer",
+ "indicatif",
+ "predicates",
+ "relay-cli-core",
+ "serde_json",
 ]
 
 [[package]]

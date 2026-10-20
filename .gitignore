@@ -2,7 +2,7 @@
 
 .idea/
 
-# Артефакты relay-cli
+# Артефакты relay-framework-cli
 .relay/
 target/.relay/
 vendor/

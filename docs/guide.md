@@ -240,8 +240,8 @@ pwsh scripts/bloat.ps1      # или bash scripts/bloat.sh
 [Управление компонентами (CLI)](#управление-компонентами-cli).
 
 ```bash
-cargo run -p relay-cli -- check     # отчёт по текущему каталогу
-cargo run -p relay-cli -- suggest   # что стоит добавить
+cargo run -p relay-framework-cli -- check     # отчёт по текущему каталогу
+cargo run -p relay-framework-cli -- suggest   # что стоит добавить
 ```
 
 По умолчанию путь — текущий каталог; его можно указать первым аргументом.

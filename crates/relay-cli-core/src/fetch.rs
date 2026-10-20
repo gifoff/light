@@ -335,7 +335,7 @@ pub fn ping_crates_io() -> bool {
     };
     client
         .get("https://crates.io/api/v1/crates/relay")
-        .header("User-Agent", "relay-cli (diagnostics)")
+        .header("User-Agent", "relay-framework-cli (diagnostics)")
         .send()
         .is_ok()
 }
@@ -364,7 +364,7 @@ pub fn fetch_crates_io(name: &str) -> Result<Option<semver::Version>> {
         .build()?;
     let response = client
         .get(&url)
-        .header("User-Agent", "relay-cli (component manager)")
+        .header("User-Agent", "relay-framework-cli (component manager)")
         .send()?;
     if response.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);

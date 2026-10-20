@@ -85,7 +85,7 @@ cargo run
 | `relay-html`                | Разбор HTML-шаблонов для макросов.                                  |
 | `relay-element-form`        | Компонент-элемент: `<checkbox>`, `<radio>`, `<select>`/`<option>`.  |
 | `relay-behavior-validation` | Компонент-поведение: `required`, `:validator`, `@validate`.         |
-| `relay-cli`                 | Утилита `relay`: проверка проекта и управление компонентами.        |
+| `relay-framework-cli`       | Утилита `relay`: проверка проекта и управление компонентами.        |
 | `relay-cli-core`            | Ядро CLI: анализ проекта, `relay.lock`, управление компонентами.    |
 
 ## Документация

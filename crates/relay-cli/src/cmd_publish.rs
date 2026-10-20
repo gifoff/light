@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::io::IsTerminal;
 
 use anyhow::anyhow;
@@ -184,7 +185,7 @@ pub fn run(args: PublishArgs) -> anyhow::Result<i32> {
     println!("[2/3] version check:");
     let probe = CratesIoProbe;
     let git = publish::git_tags(&runner, &workspace.root);
-    let mut already = Vec::new();
+    let mut published_names = BTreeSet::new();
     for name in &plan.order {
         let version = workspace.require(name)?.version.clone();
         let check = publish::check_already_published(&probe, git.as_ref(), name, &version);
@@ -192,24 +193,26 @@ pub fn run(args: PublishArgs) -> anyhow::Result<i32> {
             eprintln!("warning: {warning}");
         }
         if check.published {
-            already.push((name.clone(), version.clone()));
-            println!("  {name:<28} {version:<8} already published");
+            published_names.insert(name.clone());
+            println!("  {name:<28} {version:<8} skipped (already published)");
         } else {
             println!("  {name:<28} {version:<8} not published ✓");
         }
     }
-    if let Some((name, version)) = already.first() {
-        eprintln!(
-            "crate {name} v{version} already published; bump version in Cargo.toml before publishing"
-        );
-        return Ok(1);
+    let (pending, already_published) = partition_pending(&plan.order, &published_names);
+    if pending.is_empty() {
+        println!("Nothing to publish: all crates are already published.");
+        return Ok(0);
+    }
+    if already_published > 0 {
+        println!("skipped already published: {already_published}");
     }
 
     println!("[3/3] publish:");
     let retry = RetryConfig::from_env();
     let sleeper = SystemSleeper;
     let mut published = 0usize;
-    for name in &plan.order {
+    for name in &pending {
         let version = version_of(&workspace, name);
         match publish::publish_with_retries(
             &runner,
@@ -233,20 +236,33 @@ pub fn run(args: PublishArgs) -> anyhow::Result<i32> {
                     "  {name:<28} {version:<8} failed: {}",
                     stderr_tail(&attempt.stderr, 400)
                 );
-                println!("        published: {published}/{}", plan.order.len());
+                println!("        published: {published}/{}", pending.len());
                 println!("        next: fix error, then `relay publish {name}`");
                 return Ok(1);
             }
             Err(error) => {
                 println!("  {name:<28} {version:<8} failed: {error}");
-                println!("        published: {published}/{}", plan.order.len());
+                println!("        published: {published}/{}", pending.len());
                 println!("        next: fix error, then `relay publish {name}`");
                 return Ok(1);
             }
         }
     }
-    println!("published: {published}/{}", plan.order.len());
+    println!("published: {published}/{}", pending.len());
     Ok(0)
+}
+
+fn partition_pending(order: &[String], published: &BTreeSet<String>) -> (Vec<String>, usize) {
+    let mut pending = Vec::new();
+    let mut skipped = 0usize;
+    for name in order {
+        if published.contains(name) {
+            skipped += 1;
+        } else {
+            pending.push(name.clone());
+        }
+    }
+    (pending, skipped)
 }
 
 fn version_of(workspace: &Workspace, name: &str) -> String {
@@ -266,4 +282,28 @@ fn stderr_tail(stderr: &str, max: usize) -> String {
         .find(|index| trimmed.is_char_boundary(*index))
         .unwrap_or(trimmed.len());
     format!("…{}", &trimmed[start..])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::partition_pending;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn partition_pending_skips_already_published() {
+        let order = vec!["relay-html".to_string(), "relay-core".to_string()];
+        let published = BTreeSet::from(["relay-html".to_string()]);
+        let (pending, skipped) = partition_pending(&order, &published);
+        assert_eq!(pending, vec!["relay-core"]);
+        assert_eq!(skipped, 1);
+    }
+
+    #[test]
+    fn partition_pending_returns_empty_when_all_published() {
+        let order = vec!["relay-html".to_string()];
+        let published = BTreeSet::from(["relay-html".to_string()]);
+        let (pending, skipped) = partition_pending(&order, &published);
+        assert!(pending.is_empty());
+        assert_eq!(skipped, 1);
+    }
 }

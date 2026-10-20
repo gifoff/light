@@ -2,6 +2,19 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [Unreleased]
+
+### Changed
+
+- Пакет `relay-cli` переименован в `relay-framework-cli` из-за коллизии имени
+  на crates.io. Исполняемый файл по-прежнему называется `relay`.
+
+### Fixed
+
+- `relay publish` пропускает уже опубликованные крейты с логом
+  `skipped (already published)` и продолжает публикацию остальных, вместо
+  завершения с фатальной ошибкой.
+
 ## [0.2.0] - 2026-10-17
 
 ### Added
