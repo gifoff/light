@@ -14,8 +14,8 @@ relay-element-form = { workspace = true, optional = true }
 relay-behavior-validation = { workspace = true, optional = true }
 
 [features]
-# Набор по умолчанию: базовые элементы + окно + интеграция a11y с winit.
-default = ["elements-basic", "window", "a11y-winit"]
+# Набор по умолчанию: базовые элементы + окно + показ через wgpu + a11y.
+default = ["elements-basic", "window", "wgpu-backend", "a11y-winit"]
 
 # --- Элементы разметки -------------------------------------------------
 # `<div>`, `<span>`, `<h1>`–`<h5>`, `<titlebar>`, `<text>` и `<button>`.
@@ -54,6 +54,8 @@ min-max-size = ["relay-core/min-max-size"]
 # --- Окно --------------------------------------------------------------
 # Базовое окно на winit с программной отрисовкой.
 window = ["relay-core/window"]
+# Показ кадра через `pixels` (wgpu/naga). По умолчанию включён.
+wgpu-backend = ["relay-core/wgpu-backend"]
 # Прозрачность окна (per-pixel alpha).
 window-transparent = ["relay-core/window-transparent"]
 # Модальные окна (`modal`).

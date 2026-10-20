@@ -13,6 +13,7 @@ description = "Демонстрационное приложение библи�
 relay = { workspace = true, default-features = false, features = [
     "elements-basic",
     "window",
+    "wgpu-backend",
 ] }
 # Компоненты подключаются явными зависимостями: так `relay check` видит, что
 # элементы формы и валидация установлены, а сборка без них не тянет их код.

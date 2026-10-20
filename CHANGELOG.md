@@ -117,3 +117,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Абстракция бэкенда рендеринга `RendererBackend`: программная растеризация
+  отделена от показа кадра. `pixels`/`wgpu`/`naga` вынесены в `WgpuBackend`
+  под фичей `wgpu-backend` (включена по умолчанию); без неё используется
+  бэкенд-заглушка, а `cargo check --no-default-features` проходит без
+  `wgpu`/`naga`.
+

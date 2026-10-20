@@ -21,8 +21,8 @@ accesskit = { version = "0.25", optional = true, features = ["serde"] }
 accesskit_winit = { version = "0.34", optional = true }
 
 [features]
-# Набор по умолчанию: базовые элементы + окно + интеграция a11y с winit.
-default = ["elements-basic", "window", "a11y-winit"]
+# Набор по умолчанию: базовые элементы + окно + показ через wgpu + a11y.
+default = ["elements-basic", "window", "wgpu-backend", "a11y-winit"]
 
 # --- Элементы разметки -------------------------------------------------
 # `<div>`, `<span>`, `<h1>`–`<h5>`, `<titlebar>`, `<text>` и `<button>`.
@@ -60,7 +60,9 @@ min-max-size = ["relay-macros/min-max-size"]
 
 # --- Окно --------------------------------------------------------------
 # Базовое окно на winit с программной отрисовкой.
-window = ["dep:winit", "dep:pixels", "dep:ab_glyph"]
+window = ["dep:winit", "dep:ab_glyph"]
+# Показ кадра через `pixels` (wgpu/naga). По умолчанию включён.
+wgpu-backend = ["window", "dep:pixels"]
 # Прозрачность окна (per-pixel alpha).
 window-transparent = ["window"]
 # Модальные окна (`modal`).

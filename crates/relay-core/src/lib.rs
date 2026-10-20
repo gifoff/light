@@ -85,6 +85,8 @@ pub mod validation;
 pub mod vdom;
 
 #[cfg(feature = "window")]
+pub mod render;
+#[cfg(feature = "window")]
 pub mod window;
 
 pub use collection::Collection;
@@ -94,6 +96,10 @@ pub use dom::Dom;
 pub use error::{Error, Result};
 pub use reactive::{Property, Proxy, ProxyState, Watcher, watch};
 pub use relay_macros::{proxy, template};
+#[cfg(feature = "window")]
+pub use render::RendererBackend;
+#[cfg(feature = "wgpu-backend")]
+pub use render::WgpuBackend;
 pub use vdom::{
     Align, Edges, Event, KeyInfo, MouseButton, NodeKind, Offset, Resize, SelectOption, Size, Style,
     VElement, VNode, VWindow,

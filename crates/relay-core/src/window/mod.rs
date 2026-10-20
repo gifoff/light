@@ -1,4 +1,4 @@
-//! Оконная обвязка поверх `winit` и `pixels`.
+//! Оконная обвязка поверх `winit` и сменного бэкенда рендеринга.
 //!
 //! Создаёт безрамочное окно (параметры берутся из [`Component::window_config`]),
 //! рисует интерфейс программным растеризатором в RGBA-буфер, обрабатывает
@@ -10,14 +10,13 @@
 //! запоминается перед обработкой события.
 
 mod font;
-mod paint;
+pub(crate) mod paint;
 mod text;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use pixels::{Pixels, SurfaceTexture};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, KeyEvent, MouseButton, WindowEvent};
@@ -34,6 +33,11 @@ use crate::layout::{
     FIELD_MIN_H, Layout, Point, Rect, TextMetrics, damage_regions, snapshot_rects,
 };
 use crate::reactive::set_repaint_requester;
+#[cfg(not(feature = "wgpu-backend"))]
+use crate::render::NullBackend;
+use crate::render::RendererBackend;
+#[cfg(feature = "wgpu-backend")]
+use crate::render::WgpuBackend;
 use crate::vdom::{
     ButtonType, Cursor, Event as DomEvent, KeyInfo, MouseButton as DomButton, NodeKind, Resize,
     VElement, diff,
@@ -150,10 +154,9 @@ struct WindowState {
     component: Box<dyn Component>,
     font: Arc<FontMetrics>,
     window: Arc<Window>,
-    surface: Pixels<'static>,
+    surface: Box<dyn RendererBackend>,
     config: WindowConfig,
     title: String,
-    pixels: Vec<u8>,
     width: u32,
     height: u32,
     scale: f32,
@@ -244,11 +247,7 @@ impl WindowState {
             return Ok(());
         }
         self.paint(&damage);
-        let frame = self.surface.frame_mut();
-        if frame.len() == self.pixels.len() {
-            frame.copy_from_slice(&self.pixels);
-        }
-        self.surface.render()?;
+        self.surface.present()?;
         Ok(())
     }
 
@@ -330,10 +329,8 @@ impl WindowState {
         }
         self.width = width;
         self.height = height;
-        self.pixels = vec![0u8; (width * height * 4) as usize];
         if width > 0 && height > 0 {
-            self.surface.resize_surface(width, height)?;
-            self.surface.resize_buffer(width, height)?;
+            self.surface.resize(width, height)?;
         }
         Ok(true)
     }
@@ -361,8 +358,9 @@ impl WindowState {
         let font = self.font.font();
         let scale = self.scale;
         let menu = self.menu.as_ref();
+        let (width, height) = self.surface.size();
         for region in damage {
-            let mut canvas = Canvas::new(&mut self.pixels, self.width, self.height, *region);
+            let mut canvas = Canvas::new(self.surface.frame_mut(), width, height, *region);
             paint::render(
                 layout,
                 &mut canvas,
@@ -1876,8 +1874,11 @@ impl App {
         let size = window.inner_size();
         let width = size.width.max(1);
         let height = size.height.max(1);
-        let surface_texture = SurfaceTexture::new(width, height, Arc::clone(&window));
-        let surface = Pixels::new(width, height, surface_texture)?;
+        #[cfg(feature = "wgpu-backend")]
+        let surface: Box<dyn RendererBackend> =
+            Box::new(WgpuBackend::new(width, height, Arc::clone(&window))?);
+        #[cfg(not(feature = "wgpu-backend"))]
+        let surface: Box<dyn RendererBackend> = Box::new(NullBackend::new(width, height));
 
         #[cfg(feature = "a11y-winit")]
         let adapter = match self.proxy.clone() {
@@ -1903,7 +1904,6 @@ impl App {
             surface,
             config,
             title: String::new(),
-            pixels: vec![0u8; (width * height * 4) as usize],
             width,
             height,
             scale: 1.0,
