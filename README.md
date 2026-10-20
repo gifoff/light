@@ -91,9 +91,12 @@ cargo run
 ## Документация
 
 - [docs/guide.md](docs/guide.md) — руководство пользователя.
+- [docs/MIGRATION_0.3_TO_0.4.md](docs/MIGRATION_0.3_TO_0.4.md) — миграция
+  с 0.3 на 0.4 (softbuffer по умолчанию).
 - [docs/COMPONENT_MODEL.md](docs/COMPONENT_MODEL.md) — модель компонентов.
 - [docs/COMPONENT_AUTHORING.md](docs/COMPONENT_AUTHORING.md) — как писать свои
   компоненты.
+- [docs/RELEASING.md](docs/RELEASING.md) — публикация релиза (для мейнтейнеров).
 - [docs/ROADMAP.md](docs/ROADMAP.md) — план развития.
 
 ## Лицензия
