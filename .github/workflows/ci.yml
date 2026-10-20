@@ -21,6 +21,17 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: '0.5.4'
+      - name: Build book
+        run: mdbook build
+
   clippy:
     name: Clippy (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
