@@ -1,5 +1,7 @@
 # Light
 
+[![CI](https://github.com/gifoff/light/actions/workflows/ci.yml/badge.svg)](https://github.com/gifoff/light/actions/workflows/ci.yml)
+
 Light — декларативный реактивный GUI-фреймворк для Rust. Вы пишете HTML-разметку
 с директивами (`v-if`, `v-for`, `v-model`), описываете состояние реактивными
 свойствами (`#[proxy]`), а Light компилирует шаблоны **на этапе сборки** в
@@ -139,6 +141,8 @@ light add light-fw-datepicker --features calendar,timezone
 
 ## Документация
 
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — обзор архитектуры для
+  контрибьюторов.
 - [docs/guide.md](docs/guide.md) — руководство пользователя.
 - [docs/MIGRATION_0.3_TO_0.4.md](docs/MIGRATION_0.3_TO_0.4.md) — миграция
   с 0.3 на 0.4 (softbuffer по умолчанию).
