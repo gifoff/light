@@ -115,7 +115,7 @@
   комментарии не дублируются и не теряются. `add` + `remove` дают
   byte-perfect roundtrip.
 
-## [Unreleased]
+## [0.4.0] - 2026-10-20
 
 ### Added
 

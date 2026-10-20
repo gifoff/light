@@ -13,7 +13,7 @@ name = "relay"
 path = "src/main.rs"
 
 [dependencies]
-relay-cli-core = { path = "../relay-cli-core", version = "0.3.0", features = ["network"] }
+relay-cli-core = { path = "../relay-cli-core", version = "0.4.0", features = ["network"] }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 serde_json = "1"

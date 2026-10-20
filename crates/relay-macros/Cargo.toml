@@ -41,4 +41,4 @@ template-window = []
 syn.workspace = true
 quote.workspace = true
 proc-macro2.workspace = true
-relay-html = { path = "../relay-html", version = "0.3.0" }
+relay-html = { path = "../relay-html", version = "0.4.0" }

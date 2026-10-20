@@ -15,15 +15,15 @@
 name = "relay-element-form"
 kind = "element"
 display-name = "Form elements"
-version = "0.3.0"
-core = "^0.3"
+version = "0.4.0"
+core = "^0.4"
 elements = ["select", "checkbox", "radio", "option"]
 
 [[components]]
 name = "relay-behavior-validation"
 kind = "behavior"
 display-name = "Form validation"
-version = "0.3.0"
-core = "^0.3"
+version = "0.4.0"
+core = "^0.4"
 attributes = [":validator", "required"]
 directives = ["@validate"]

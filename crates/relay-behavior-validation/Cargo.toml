@@ -14,6 +14,6 @@ relay-core = { workspace = true, default-features = false, features = ["validati
 [package.metadata.relay]
 kind = "behavior"
 display-name = "Form validation"
-core = "^0.3"
+core = "^0.4"
 provides.attributes = [":validator", "required"]
 provides.directives = ["@validate"]

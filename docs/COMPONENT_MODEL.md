@@ -249,7 +249,7 @@ kind = "widget"
 display-name = "Date Picker"
 
 # Совместимость с ядром — semver-range
-core = "^0.3"
+core = "^0.4"
 
 # Что компонент предоставляет
 [package.metadata.relay.provides]

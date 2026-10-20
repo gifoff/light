@@ -447,7 +447,7 @@ mod tests {
             .resolve("relay-element-form")
             .expect("registry fallback");
         assert_eq!(resolved.source, SourceKind::CratesIo);
-        assert_eq!(resolved.version, semver::Version::new(0, 3, 0));
+        assert_eq!(resolved.version, semver::Version::new(0, 4, 0));
     }
 
     #[test]
