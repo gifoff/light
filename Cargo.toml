@@ -23,6 +23,7 @@ rust-version = "1.95"
 [workspace.dependencies]
 winit = "0.30"
 pixels = "0.17"
+softbuffer = "0.4"
 ab_glyph = "0.2"
 
 relay = { path = "crates/relay", version = "0.3.0" }

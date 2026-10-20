@@ -108,11 +108,15 @@ fn main() -> relay::Result<()> {
 
 Relay собран по принципу «платите только за то, что используете» (см. [DESIGN_PRINCIPLES.md](DESIGN_PRINCIPLES.md)): каждая подсистема вынесена в Cargo-фичу, и её отсутствие вырезает соответствующий код из бинарника.
 
-Набор по умолчанию — базовые элементы + окно + интеграция доступности:
+Набор по умолчанию — базовые элементы + окно + показ через `softbuffer` +
+интеграция доступности:
 
 ```toml
-relay = { path = "crates/relay" } # default = ["elements-basic", "window", "a11y-winit"]
+relay = { path = "crates/relay" } # default = ["elements-basic", "window", "softbuffer-backend", "a11y-winit"]
 ```
+
+Для показа через `wgpu` включите `wgpu-backend`. Если включены обе фичи,
+используется `softbuffer-backend`.
 
 ### Компоненты и крейты
 

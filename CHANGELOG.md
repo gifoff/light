@@ -121,7 +121,19 @@
 
 - Абстракция бэкенда рендеринга `RendererBackend`: программная растеризация
   отделена от показа кадра. `pixels`/`wgpu`/`naga` вынесены в `WgpuBackend`
-  под фичей `wgpu-backend` (включена по умолчанию); без неё используется
+  под фичей `wgpu-backend`; без графического бэкенда используется
   бэкенд-заглушка, а `cargo check --no-default-features` проходит без
   `wgpu`/`naga`.
+- Бэкенд `SoftbufferBackend` под фичей `softbuffer-backend`: готовый
+  RGBA-кадр показывается через `softbuffer` (формат `0x00RRGGBB`), без
+  `wgpu`/`naga`. Фича `softbuffer-backend` поддерживает `relay` и
+  `relay-core`, а демо получило отдельные `softbuffer`/`wgpu`/`full-wgpu`
+  для сборки обоих вариантов.
+
+### Changed
+
+- Набор по умолчанию (`relay`, `relay-core`, `relay-demo`) использует
+  `softbuffer-backend` вместо `wgpu-backend`. Release-сборка демо уменьшилась
+  с 7.86 MB до 1.70 MB (−6.16 MB, −78%). Если включены обе фичи, окно
+  выбирает `softbuffer`.
 

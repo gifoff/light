@@ -29,4 +29,9 @@ pub enum Error {
     #[cfg(feature = "wgpu-backend")]
     #[error("ошибка буфера отрисовки: {0}")]
     Texture(#[from] pixels::TextureError),
+
+    /// Ошибка поверхности `softbuffer`.
+    #[cfg(feature = "softbuffer-backend")]
+    #[error("ошибка поверхности softbuffer: {0}")]
+    Softbuffer(#[from] softbuffer::SoftBufferError),
 }

@@ -13,7 +13,6 @@ description = "Демонстрационное приложение библи�
 relay = { workspace = true, default-features = false, features = [
     "elements-basic",
     "window",
-    "wgpu-backend",
 ] }
 # Компоненты подключаются явными зависимостями: так `relay check` видит, что
 # элементы формы и валидация установлены, а сборка без них не тянет их код.
@@ -24,8 +23,12 @@ relay-behavior-validation = { workspace = true, optional = true }
 default = ["full"]
 # Доступность (AccessKit) поверх окна.
 a11y = ["relay/a11y-winit"]
-# Полный набор возможностей, используемый основным демо-приложением.
-full = [
+# Показ кадра через softbuffer (без wgpu/naga).
+softbuffer = ["relay/softbuffer-backend"]
+# Показ кадра через pixels (wgpu/naga).
+wgpu = ["relay/wgpu-backend"]
+# Общий набор возможностей приложения без выбора бэкенда.
+full-common = [
     "a11y",
     "dep:relay-element-form",
     "dep:relay-behavior-validation",
@@ -43,9 +46,13 @@ full = [
     "relay/window-by-id",
     "relay/window-resize",
 ]
-# Минимальная сборка — базовые элементы и окно, без AccessKit и форм.
+# Полный набор возможностей с softbuffer (по умолчанию).
+full = ["full-common", "softbuffer"]
+# Полный набор возможностей с wgpu — для сравнения размера и производительности.
+full-wgpu = ["full-common", "wgpu"]
+# Минимальная сборка — базовые элементы, окно и softbuffer, без AccessKit и форм.
 # Используется для замера размера бинарника (пример `minimal`).
-minimal = []
+minimal = ["softbuffer"]
 
 [dev-dependencies]
 serde_json = "1"

@@ -33,10 +33,12 @@ use crate::layout::{
     FIELD_MIN_H, Layout, Point, Rect, TextMetrics, damage_regions, snapshot_rects,
 };
 use crate::reactive::set_repaint_requester;
-#[cfg(not(feature = "wgpu-backend"))]
+#[cfg(not(any(feature = "wgpu-backend", feature = "softbuffer-backend")))]
 use crate::render::NullBackend;
 use crate::render::RendererBackend;
-#[cfg(feature = "wgpu-backend")]
+#[cfg(feature = "softbuffer-backend")]
+use crate::render::SoftbufferBackend;
+#[cfg(all(feature = "wgpu-backend", not(feature = "softbuffer-backend")))]
 use crate::render::WgpuBackend;
 use crate::vdom::{
     ButtonType, Cursor, Event as DomEvent, KeyInfo, MouseButton as DomButton, NodeKind, Resize,
@@ -1874,10 +1876,13 @@ impl App {
         let size = window.inner_size();
         let width = size.width.max(1);
         let height = size.height.max(1);
-        #[cfg(feature = "wgpu-backend")]
+        #[cfg(feature = "softbuffer-backend")]
+        let surface: Box<dyn RendererBackend> =
+            Box::new(SoftbufferBackend::new(width, height, Arc::clone(&window))?);
+        #[cfg(all(feature = "wgpu-backend", not(feature = "softbuffer-backend")))]
         let surface: Box<dyn RendererBackend> =
             Box::new(WgpuBackend::new(width, height, Arc::clone(&window))?);
-        #[cfg(not(feature = "wgpu-backend"))]
+        #[cfg(not(any(feature = "wgpu-backend", feature = "softbuffer-backend")))]
         let surface: Box<dyn RendererBackend> = Box::new(NullBackend::new(width, height));
 
         #[cfg(feature = "a11y-winit")]

@@ -3,7 +3,11 @@
 //! Интерфейс уже рисуется программно: модуль `window::paint` растеризует
 //! прямоугольники и текст (через `ab_glyph`) прямо в RGBA-буфер. Бэкенд
 //! отвечает только за владение этим буфером и его показ в окне, поэтому
-//! `wgpu`/`naga` (через `pixels`) и будущий `softbuffer` взаимозаменяемы.
+//! `wgpu`/`naga` (через `pixels`) и `softbuffer` взаимозаменяемы.
+//!
+//! Если включены обе фичи, `softbuffer-backend` и `wgpu-backend`, окно
+//! использует `softbuffer`: он не тянет графический API и даёт меньший
+//! бинарник. `wgpu` остаётся доступен для сравнения и как запасной путь.
 
 use ab_glyph::FontVec;
 
@@ -71,14 +75,14 @@ pub trait RendererBackend {
 ///
 /// Используется, когда окно собрано без графического бэкенда: ввод и
 /// раскладка работают, а кадр остаётся недоступным для просмотра.
-#[cfg(not(feature = "wgpu-backend"))]
+#[cfg(not(any(feature = "wgpu-backend", feature = "softbuffer-backend")))]
 pub(crate) struct NullBackend {
     width: u32,
     height: u32,
     frame: Vec<u8>,
 }
 
-#[cfg(not(feature = "wgpu-backend"))]
+#[cfg(not(any(feature = "wgpu-backend", feature = "softbuffer-backend")))]
 impl NullBackend {
     pub(crate) fn new(width: u32, height: u32) -> Self {
         Self {
@@ -89,7 +93,7 @@ impl NullBackend {
     }
 }
 
-#[cfg(not(feature = "wgpu-backend"))]
+#[cfg(not(any(feature = "wgpu-backend", feature = "softbuffer-backend")))]
 impl RendererBackend for NullBackend {
     fn resize(&mut self, width: u32, height: u32) -> Result<()> {
         self.width = width;
@@ -115,6 +119,11 @@ impl RendererBackend for NullBackend {
 mod wgpu;
 #[cfg(feature = "wgpu-backend")]
 pub use wgpu::WgpuBackend;
+
+#[cfg(feature = "softbuffer-backend")]
+mod softbuffer;
+#[cfg(feature = "softbuffer-backend")]
+pub use softbuffer::SoftbufferBackend;
 
 #[cfg(test)]
 mod tests {
