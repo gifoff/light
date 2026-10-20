@@ -1,0 +1,13 @@
+[book]
+title = "Light"
+authors = ["Light contributors"]
+language = "ru"
+src = "docs"
+
+[build]
+build-dir = "book"
+
+[output.html]
+site-url = "/light/"
+git-repository-url = "https://github.com/gifoff/light"
+edit-url-template = "https://github.com/gifoff/light/edit/master/docs/{path}"

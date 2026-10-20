@@ -1,0 +1,15 @@
+# Summary
+
+- [Введение](README.md)
+- [Быстрый старт](quickstart.md)
+- [Руководство пользователя](guide.md)
+- [Архитектура](ARCHITECTURE.md)
+- [Модель компонентов](COMPONENT_MODEL.md)
+- [Разработка компонентов]()
+  - [Свои компоненты](COMPONENT_AUTHORING.md)
+  - [Сторонние компоненты](EXTERNAL_COMPONENTS.md)
+  - [Принципы дизайна](DESIGN_PRINCIPLES.md)
+- [Миграция 0.3 → 0.4](MIGRATION_0.3_TO_0.4.md)
+- [Размер бинарников](footprint-report.md)
+- [Инструкция по релизам](RELEASING.md)
+- [Roadmap](ROADMAP.md)
