@@ -117,7 +117,7 @@ categories = ["gui"]
 # Крейт `light` реэкспортирует ядро и макросы `#[template]`/`#[proxy]`.
 # Пока версии не опубликованы в crates.io, путь указывает на локальную
 # копию (соседний checkout или каталог `vendor/`). После публикации
-# (0.4) достаточно строки версии: light = "0.4".
+# (0.5) достаточно строки версии: light = "0.5".
 light = { path = "../light/crates/light", default-features = false, features = [
     "elements-basic",
     "elements-form",
@@ -128,7 +128,7 @@ light-fw-element-form = { path = "../light/crates/light-element-form" }
 [package.metadata.light]
 kind = "widget"
 display-name = "Date Picker"
-core = "^0.4"
+core = "^0.5"
 
 [package.metadata.light.provides]
 elements = ["datepicker"]     # новые теги, которые предоставляет компонент
@@ -137,7 +137,7 @@ directives = []               # новые директивы (для behavior)
 
 [package.metadata.light.requires]
 components = [
-    "light-fw-element-form ^0.4",
+    "light-fw-element-form ^0.5",
 ]
 
 [package.metadata.light.registry]
@@ -151,7 +151,7 @@ tags = ["form", "date", "input", "calendar"]
   `widget`, `integration`, `subsystem`, `dev`.
 - **`display-name`** — человекочитаемое имя для CLI, документации и каталога.
 - **`core`** — **semver-range** совместимости с ядром, не точная версия.
-  `^0.4` означает «совместим с `0.4.x`, но не с `0.5`». Обновляйте значение,
+  `^0.5` означает «совместим с `0.5.x`, но не с `0.6`». Обновляйте значение,
   когда ядро выпускает новую несовместимую версию.
 - **`provides.elements`** — новые теги, которые компонент добавляет в
   разметку. По ним CLI сопоставляет использование элементов и компонентов.

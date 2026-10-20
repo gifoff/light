@@ -6,7 +6,7 @@ edition = "2021"
 [package.metadata.light]
 kind = "element"
 display-name = "Form elements"
-core = "^0.4"
+core = "^0.5"
 
 [package.metadata.light.provides]
 elements = ["checkbox", "radio", "select", "option"]

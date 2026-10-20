@@ -336,7 +336,7 @@ fn update_dry_run_reports_change() {
         .arg("--dry-run")
         .assert()
         .success()
-        .stdout(predicate::str::contains("→ 0.4.0"));
+        .stdout(predicate::str::contains("→ 0.5.0"));
     let text = std::fs::read_to_string(project.join("Cargo.toml")).expect("read");
     assert!(
         text.contains("light-fw-element-form = \"0.0.1\""),
@@ -357,7 +357,7 @@ fn update_applies_new_version() {
         .success()
         .stdout(predicate::str::contains("обновлено"));
     let text = std::fs::read_to_string(project.join("Cargo.toml")).expect("read");
-    assert!(text.contains("light-fw-element-form = \"0.4.0\""), "{text}");
+    assert!(text.contains("light-fw-element-form = \"0.5.0\""), "{text}");
 }
 
 #[test]
@@ -540,7 +540,7 @@ fn doctor_reports_core_version_from_workspace() {
         .arg(&app)
         .assert()
         .success()
-        .stdout(predicate::str::contains("light-fw-core 0.4.0"));
+        .stdout(predicate::str::contains("light-fw-core 0.5.0"));
 }
 
 #[test]
@@ -581,7 +581,7 @@ fn remove_updates_lockfile() {
         !after.contains("light-fw-element-form"),
         "компонент убран из lock: {after}"
     );
-    assert!(after.contains("core = \"0.4.0\""), "ядро в lock: {after}");
+    assert!(after.contains("core = \"0.5.0\""), "ядро в lock: {after}");
 }
 
 #[test]
@@ -688,7 +688,7 @@ fn init_creates_full_project() {
     let project = scratch.path().join("cool-app");
     let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
     assert!(manifest.contains("name = \"cool-app\""), "{manifest}");
-    assert!(manifest.contains("light = \"0.4."), "{manifest}");
+    assert!(manifest.contains("light = \"0.5."), "{manifest}");
     let main_rs = std::fs::read_to_string(project.join("src").join("main.rs")).expect("main.rs");
     assert!(main_rs.contains("Hello, Light!"), "{main_rs}");
     let gitignore = std::fs::read_to_string(project.join(".gitignore")).expect(".gitignore");
@@ -714,16 +714,16 @@ fn init_with_components_adds_dependencies_and_features() {
     let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
     assert!(
         manifest.contains(
-            "light = { version = \"0.4.0\", features = [\"elements-form\", \"validation\"] }"
+            "light = { version = \"0.5.0\", features = [\"elements-form\", \"validation\"] }"
         ),
         "{manifest}"
     );
     assert!(
-        manifest.contains("light-fw-element-form = \"0.4.0\""),
+        manifest.contains("light-fw-element-form = \"0.5.0\""),
         "{manifest}"
     );
     assert!(
-        manifest.contains("light-fw-behavior-validation = \"0.4.0\""),
+        manifest.contains("light-fw-behavior-validation = \"0.5.0\""),
         "{manifest}"
     );
 

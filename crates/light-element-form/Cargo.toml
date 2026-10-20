@@ -14,5 +14,5 @@ light-fw-core = { workspace = true, default-features = false, features = ["eleme
 [package.metadata.light]
 kind = "element"
 display-name = "Form elements"
-core = "^0.4"
+core = "^0.5"
 provides.elements = ["checkbox", "radio", "select", "option"]

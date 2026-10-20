@@ -415,6 +415,7 @@ pub fn ping_crates_io() -> bool {
 }
 
 /// Разбирает ответ `GET /api/v1/crates?q=...`.
+#[cfg(feature = "network")]
 fn parse_search_response(body: &str) -> Result<Vec<CrateSearchResult>> {
     #[derive(serde::Deserialize)]
     struct Response {
@@ -561,6 +562,10 @@ mod tests {
         );
     }
 
+    struct NoRemote;
+
+    impl RemoteRegistry for NoRemote {}
+
     #[test]
     fn resolves_registry_fallback_without_network() {
         let dir = temp_dir("registry-fallback");
@@ -569,12 +574,12 @@ mod tests {
             "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[workspace]\n",
         )
         .expect("manifest");
-        let catalog = Catalog::discover(&dir, false);
+        let catalog = Catalog::with_remote(&dir, false, Box::new(NoRemote));
         let resolved = catalog
             .resolve("light-fw-element-form")
             .expect("registry fallback");
         assert_eq!(resolved.source, SourceKind::CratesIo);
-        assert_eq!(resolved.version, semver::Version::new(0, 4, 0));
+        assert_eq!(resolved.version, semver::Version::new(0, 5, 0));
     }
 
     #[test]
@@ -635,6 +640,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "network")]
     #[test]
     fn parses_crates_io_search_response() {
         let json = r#"{
