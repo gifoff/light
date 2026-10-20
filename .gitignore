@@ -9,3 +9,8 @@ vendor/
 vendor-test/
 vendor-*/
 bloat-*.txt
+
+# Временные каталоги интеграционных тестов
+test-app-*/
+tmp-*/
+light-fw-cli-*/

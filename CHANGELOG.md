@@ -6,8 +6,8 @@
 
 ### Changed
 
-- Renamed the framework from Relay to Light. Core meta-crate is 'light',
-  components are prefixed with 'light-fw-'.
+- Фреймворк переименован в Light. Мета-крейт называется `light`, компоненты
+  имеют префикс `light-fw-`.
 
 ### Fixed
 
