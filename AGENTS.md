@@ -19,6 +19,9 @@ cargo build --all-targets
 # Запуск всех тестов
 cargo test --all-features
 
+# Windows: из-за ограничений файла подкачки используйте ограничение параллелизма
+cargo test --all-features -j 2
+
 # Запуск одного теста по имени
 cargo test --all-features <test_name>
 
@@ -29,6 +32,20 @@ cargo test --all-features module::tests
 **Полная проверка перед коммитом:**
 ```bash
 cargo fmt --all && cargo clippy --all-targets --all-features -- -D warnings && cargo test --all-features
+```
+
+На Windows тесты лучше запускать с `-j 2`, иначе сборка `wgpu`/`ash` может
+упереться в лимит файла подкачки:
+
+```bash
+cargo test --all-features -j 2
+```
+
+**Если менялись версии крейтов или манифесты**, перед коммитом дополнительно
+проверьте упаковку всего воркспейса:
+
+```bash
+light publish --dry-run
 ```
 
 ## Code Style Guidelines
