@@ -362,6 +362,14 @@ fn datepicker_renders() {
 light check --strict
 ```
 
+Опубликованный сторонний компонент подключается по имени — CLI найдёт его на
+crates.io, если крейт начинается с `light-fw-`:
+
+```powershell
+light add light-fw-element-form
+light add light-fw-datepicker --features calendar
+```
+
 `light check` не запускает сборку и не пишет на диск: он сканирует
 `*.html`-шаблоны и сверяет их со встроенным реестром. Для самого
 компонента-библиотеки код возврата `0` означает, что в шаблонах нет ошибок

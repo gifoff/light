@@ -18,6 +18,7 @@ pub fn add_args(
     version: Option<&str>,
     path: Option<&Path>,
     optional: bool,
+    features: &[String],
 ) -> Vec<String> {
     let mut args = vec!["add".to_string()];
     if let Some(p) = path {
@@ -31,6 +32,10 @@ pub fn add_args(
     }
     if optional {
         args.push("--optional".to_string());
+    }
+    if !features.is_empty() {
+        args.push("--features".to_string());
+        args.push(features.join(","));
     }
     args
 }
@@ -53,8 +58,13 @@ pub fn run_add(
     version: Option<&str>,
     path: Option<&Path>,
     optional: bool,
+    features: &[String],
 ) -> Result<()> {
-    run_cargo(runner, cwd, &add_args(name, version, path, optional))
+    run_cargo(
+        runner,
+        cwd,
+        &add_args(name, version, path, optional, features),
+    )
 }
 
 /// Запускает `cargo remove` и проверяет код возврата.
@@ -90,7 +100,7 @@ mod tests {
     #[test]
     fn add_args_with_version() {
         assert_eq!(
-            add_args("light-fw-element-form", Some("0.1.2"), None, true),
+            add_args("light-fw-element-form", Some("0.1.2"), None, true, &[]),
             vec!["add", "light-fw-element-form@0.1.2", "--optional"]
         );
     }
@@ -99,7 +109,13 @@ mod tests {
     fn add_args_with_path() {
         let path = PathBuf::from("crates/light-element-form");
         assert_eq!(
-            add_args("light-fw-element-form", None, Some(path.as_path()), true),
+            add_args(
+                "light-fw-element-form",
+                None,
+                Some(path.as_path()),
+                true,
+                &[]
+            ),
             vec![
                 "add",
                 "light-fw-element-form",
@@ -113,8 +129,17 @@ mod tests {
     #[test]
     fn add_args_without_version() {
         assert_eq!(
-            add_args("light-widget-datepicker", None, None, false),
+            add_args("light-widget-datepicker", None, None, false, &[]),
             vec!["add", "light-widget-datepicker"]
+        );
+    }
+
+    #[test]
+    fn add_args_with_features() {
+        let features = vec!["derive".to_string(), "serde".to_string()];
+        assert_eq!(
+            add_args("serde", Some("1.0"), None, false, &features),
+            vec!["add", "serde@1.0", "--features", "derive,serde"]
         );
     }
 

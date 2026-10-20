@@ -284,6 +284,37 @@ mod tests {
     }
 
     #[test]
+    fn removes_external_component_and_lockfile_entry() {
+        let dir = temp_dir("external");
+        std::fs::write(
+            dir.join("Cargo.toml"),
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n\
+             [dependencies]\nlight = \"0.1\"\n\
+             light-fw-datepicker = { version = \"0.3.0\", optional = true }\n\n\
+             [features]\ndefault = [\"full\"]\nfull = [\"dep:light-fw-datepicker\"]\n",
+        )
+        .expect("app manifest");
+
+        let plan = plan_remove(&dir, "light-fw-datepicker").expect("plan");
+        assert_eq!(plan.features, vec!["full"]);
+        apply_remove(
+            &dir,
+            &MockRunner::default(),
+            &plan,
+            &RemoveOptions::default(),
+        )
+        .expect("apply");
+
+        let text = std::fs::read_to_string(dir.join("Cargo.toml")).expect("read");
+        assert!(!text.contains("light-fw-datepicker"), "{text}");
+        assert!(text.contains("light = \"0.1\""), "{text}");
+        assert!(dir.join("light.lock").exists());
+
+        let lock = std::fs::read_to_string(dir.join("light.lock")).expect("read lock");
+        assert!(!lock.contains("light-fw-datepicker"), "{lock}");
+    }
+
+    #[test]
     fn dry_run_does_not_touch_disk() {
         let app = installed_fixture("dry-run");
         let original = std::fs::read_to_string(app.join("Cargo.toml")).expect("read");

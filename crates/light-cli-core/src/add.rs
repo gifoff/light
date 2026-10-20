@@ -28,6 +28,8 @@ pub struct AddOptions {
     pub offline: bool,
     /// Фича, к которой привязать зависимость (`--feature`).
     pub feature: Option<String>,
+    /// Фичи самого добавляемого крейта (`--features`).
+    pub features: Vec<String>,
     /// Не запускать `cargo check` (`--no-verify`).
     pub no_verify: bool,
 }
@@ -50,6 +52,10 @@ pub struct AddPlan {
     pub dependency: DependencyEntry,
     /// Фича, к которой привязывается зависимость.
     pub feature: String,
+    /// Фичи самого крейта (`--features`).
+    pub crate_features: Vec<String>,
+    /// Фичи мета-крейта `light`, которые нужно включить.
+    pub light_features: Vec<String>,
     /// Будет ли фича создана (иначе — уже существует).
     pub creates_feature: bool,
     /// Компонент уже установлен (повторный `add` — не ошибка).
@@ -90,6 +96,18 @@ impl AddPlan {
             "  зависимость: {}\n",
             dependency_line(&self.component.name, &self.dependency)
         ));
+        if !self.crate_features.is_empty() {
+            out.push_str(&format!(
+                "  фичи крейта: {}\n",
+                self.crate_features.join(", ")
+            ));
+        }
+        if !self.light_features.is_empty() {
+            out.push_str(&format!(
+                "  фичи light:  {}\n",
+                self.light_features.join(", ")
+            ));
+        }
         for req in &self.requires {
             out.push_str(&format!(
                 "  также нужно: {} — {}\n",
@@ -116,6 +134,17 @@ pub struct AddOutcome {
 
 /// Строит план добавления компонента `name` в проект `project_root`.
 pub fn plan_add(project_root: &Path, name: &str, opts: &AddOptions) -> Result<AddPlan> {
+    let catalog = Catalog::discover(project_root, opts.offline);
+    plan_add_with_catalog(project_root, name, opts, &catalog)
+}
+
+/// Строит план с явно заданным каталогом (подменяемый crates.io для тестов).
+pub fn plan_add_with_catalog(
+    project_root: &Path,
+    name: &str,
+    opts: &AddOptions,
+    catalog: &Catalog,
+) -> Result<AddPlan> {
     let cargo_path = project_root.join("Cargo.toml");
     if !cargo_path.is_file() {
         return Err(Error::Manifest(format!(
@@ -133,10 +162,8 @@ pub fn plan_add(project_root: &Path, name: &str, opts: &AddOptions) -> Result<Ad
     let installed = collect_dependency_details(&text, project_root)?;
     let installed_names: Vec<&str> = installed.iter().map(|d| d.name.as_str()).collect();
 
-    let catalog = Catalog::discover(project_root, opts.offline);
-
     if installed_names.contains(&name) {
-        return already_installed_plan(project_root, &text, name, opts, &catalog);
+        return already_installed_plan(project_root, &text, name, opts, catalog);
     }
 
     let mut component = catalog.resolve(name)?;
@@ -193,9 +220,12 @@ pub fn plan_add(project_root: &Path, name: &str, opts: &AddOptions) -> Result<Ad
         });
     }
 
+    let light_features = component.light_features.clone();
     Ok(AddPlan {
         component,
         dependency,
+        crate_features: opts.features.clone(),
+        light_features,
         feature,
         creates_feature,
         already_installed: false,
@@ -232,6 +262,7 @@ fn already_installed_plan(
         core: info
             .map(|i| i.core_requirement.clone())
             .unwrap_or(semver::VersionReq::STAR),
+        light_features: info.map(|i| i.light_features.clone()).unwrap_or_default(),
         provides: info.map(|i| i.provides.clone()).unwrap_or_default(),
         requires: Vec::new(),
         conflicts: Vec::new(),
@@ -246,6 +277,8 @@ fn already_installed_plan(
         component,
         dependency: DependencyEntry::Version(version.to_string()),
         feature,
+        crate_features: opts.features.clone(),
+        light_features: info.map(|i| i.light_features.clone()).unwrap_or_default(),
         creates_feature: false,
         already_installed: true,
         requires: Vec::new(),
@@ -286,15 +319,23 @@ fn do_add(
 ) -> Result<AddOutcome> {
     let cargo_path = project_root.join("Cargo.toml");
 
-    add_dependency(project_root, runner, &plan.component.name, &plan.dependency)?;
+    add_dependency(
+        project_root,
+        &plan.component.name,
+        &plan.dependency,
+        &plan.crate_features,
+    )?;
     let mut added_components = Vec::new();
     for req in &plan.requires {
-        add_dependency(project_root, runner, &req.name, &req.dependency)?;
+        add_dependency(project_root, &req.name, &req.dependency, &[])?;
         added_components.push(req.name.clone());
     }
 
     let text = read_cargo_toml(&cargo_path)?;
     let mut doc = edit::parse(&text)?;
+    if edit::has_dependency(&doc, "light") {
+        edit::add_features_to_dependency(&mut doc, "light", &plan.light_features)?;
+    }
     edit::add_dep_to_feature(&mut doc, &plan.feature, &plan.component.name)?;
     for req in &plan.requires {
         edit::add_dep_to_feature(&mut doc, &plan.feature, &req.name)?;
@@ -318,25 +359,22 @@ fn do_add(
 
 fn add_dependency(
     project_root: &Path,
-    runner: &dyn CommandRunner,
     name: &str,
     dependency: &DependencyEntry,
+    features: &[String],
 ) -> Result<()> {
     let cargo_path = project_root.join("Cargo.toml");
+    let text = read_cargo_toml(&cargo_path)?;
+    let mut doc = edit::parse(&text)?;
     match dependency {
-        DependencyEntry::Workspace => {
-            let text = read_cargo_toml(&cargo_path)?;
-            let mut doc = edit::parse(&text)?;
-            edit::set_workspace_optional(&mut doc, name)?;
-            std::fs::write(&cargo_path, doc.to_string())?;
-        }
+        DependencyEntry::Workspace => edit::set_workspace_optional(&mut doc, name)?,
         DependencyEntry::Path(path) => {
-            cargo_cmd::run_add(runner, project_root, name, None, Some(path), true)?;
+            edit::set_path_optional(&mut doc, name, &path.to_string_lossy())?
         }
-        DependencyEntry::Version(version) => {
-            cargo_cmd::run_add(runner, project_root, name, Some(version), None, true)?;
-        }
+        DependencyEntry::Version(version) => edit::set_version_optional(&mut doc, name, version)?,
     }
+    edit::add_features_to_dependency(&mut doc, name, features)?;
+    std::fs::write(&cargo_path, doc.to_string())?;
     Ok(())
 }
 
@@ -552,6 +590,82 @@ mod tests {
 
         let calls = runner.calls.lock().expect("lock").clone();
         assert!(calls.iter().any(|c| c == "cargo check --quiet"));
+    }
+
+    struct MockRemote {
+        name: &'static str,
+        version: semver::Version,
+    }
+
+    impl crate::fetch::RemoteRegistry for MockRemote {
+        fn latest_version(&self, name: &str) -> Result<Option<semver::Version>> {
+            if name == self.name {
+                Ok(Some(self.version.clone()))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+
+    #[test]
+    fn adds_external_component_from_crates_io() {
+        let app = workspace_fixture("external");
+        let catalog = Catalog::with_remote(
+            &app,
+            false,
+            Box::new(MockRemote {
+                name: "light-fw-datepicker",
+                version: semver::Version::new(0, 3, 0),
+            }),
+        );
+        let opts = AddOptions {
+            features: vec!["default".to_string()],
+            ..Default::default()
+        };
+        let plan = plan_add_with_catalog(&app, "light-fw-datepicker", &opts, &catalog)
+            .expect("plan external");
+        assert_eq!(
+            plan.dependency,
+            DependencyEntry::Version("0.3.0".to_string())
+        );
+        assert_eq!(plan.feature, "datepicker");
+
+        let outcome = apply_add(&app, &MockRunner::default(), &plan, &opts).expect("apply");
+        assert!(outcome.verified);
+
+        let text = std::fs::read_to_string(app.join("Cargo.toml")).expect("read");
+        assert!(
+            text.contains(
+                "light-fw-datepicker = { version = \"0.3.0\", optional = true, features = [\"default\"] }"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains("datepicker = [\"dep:light-fw-datepicker\"]"),
+            "{text}"
+        );
+
+        let lock = std::fs::read_to_string(app.join("light.lock")).expect("read lock");
+        assert!(lock.contains("light-fw-datepicker"), "{lock}");
+        assert!(lock.contains("version = \"0.3.0\""), "{lock}");
+    }
+
+    #[test]
+    fn known_component_enables_light_feature() {
+        let app = workspace_fixture("light-feature");
+        let opts = AddOptions {
+            no_verify: true,
+            ..Default::default()
+        };
+        let plan = plan_add(&app, "light-fw-element-form", &opts).expect("plan");
+        assert_eq!(plan.light_features, vec!["elements-form"]);
+        apply_add(&app, &MockRunner::default(), &plan, &opts).expect("apply");
+
+        let text = std::fs::read_to_string(app.join("Cargo.toml")).expect("read");
+        assert!(
+            text.contains("light = { version = \"0.1\", features = [\"elements-form\"] }"),
+            "{text}"
+        );
     }
 
     #[test]

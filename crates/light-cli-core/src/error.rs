@@ -45,6 +45,10 @@ pub enum Error {
     #[error("компонент `{0}` не найден")]
     ComponentNotFound(String),
 
+    /// Имя не относится к компонентам Light (не `light-fw-*`).
+    #[error("`{0}` не является компонентом Light: имя должно начинаться с `light-fw-`")]
+    NotComponent(String),
+
     /// Компонент несовместим с текущим ядром проекта или другими компонентами.
     #[error("компонент `{component}` несовместим: {reason}")]
     Incompatible { component: String, reason: String },

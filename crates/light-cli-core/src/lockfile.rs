@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
+use crate::fetch::is_component_crate_name;
 use crate::manifest::{
     collect_dependency_details, find_workspace_root, read_workspace_dependencies,
     resolve_core_version as detect_core_version, resolve_dependency_version,
@@ -220,7 +221,8 @@ pub fn is_actual(project_root: &Path) -> Result<bool> {
     let expected = Lockfile::from_project(project_root)?;
     Ok(current.same_components(&expected) && current.core == expected.core)
 }
-/// Читает установленные компоненты проекта (только известные реестру).
+/// Читает установленные компоненты проекта: известные реестру и внешние
+/// `light-fw-*` крейты.
 fn collect_project_components(project_root: &Path) -> Result<Vec<crate::manifest::DepDetail>> {
     let cargo = project_root.join("Cargo.toml");
     let text = std::fs::read_to_string(&cargo)?;
@@ -228,7 +230,7 @@ fn collect_project_components(project_root: &Path) -> Result<Vec<crate::manifest
     let registry = ComponentRegistry::builtin();
     Ok(details
         .into_iter()
-        .filter(|d| registry.by_name(&d.name).is_some())
+        .filter(|d| registry.by_name(&d.name).is_some() || is_component_crate_name(&d.name))
         .collect())
 }
 
@@ -337,6 +339,22 @@ mod tests {
         assert_eq!(lock.components.len(), 1);
         assert_eq!(lock.components[0].name, "light-fw-element-form");
         assert_eq!(lock.core, "0.1.0");
+    }
+
+    #[test]
+    fn from_project_includes_external_component() {
+        let dir = temp_dir("external");
+        fs::write(
+            dir.join("Cargo.toml"),
+            "[package]\nname=\"p\"\nversion=\"0.1.0\"\n\n[dependencies]\nlight = \"0.1\"\n\
+             light-fw-datepicker = { version = \"0.3.0\", optional = true }\n",
+        )
+        .expect("write");
+        let lock = Lockfile::from_project(&dir).expect("from_project");
+        assert_eq!(lock.components.len(), 1);
+        assert_eq!(lock.components[0].name, "light-fw-datepicker");
+        assert_eq!(lock.components[0].version, "0.3.0");
+        assert_eq!(lock.components[0].source, "crates.io");
     }
 
     #[test]

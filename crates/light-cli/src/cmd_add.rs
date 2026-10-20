@@ -34,6 +34,10 @@ pub struct AddArgs {
     #[arg(long)]
     pub feature: Option<String>,
 
+    /// Фичи самого добавляемого крейта (через запятую или несколько раз).
+    #[arg(long, value_delimiter = ',')]
+    pub features: Vec<String>,
+
     /// Не запускать `cargo check` после установки.
     #[arg(long)]
     pub no_verify: bool,
@@ -47,6 +51,7 @@ pub fn run(args: AddArgs) -> anyhow::Result<i32> {
         dry_run: args.dry_run,
         offline: args.offline,
         feature: args.feature,
+        features: args.features,
         no_verify: args.no_verify,
     };
 

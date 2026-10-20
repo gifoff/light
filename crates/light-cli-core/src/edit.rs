@@ -59,6 +59,65 @@ pub fn set_version_optional(doc: &mut DocumentMut, name: &str, version: &str) ->
     Ok(())
 }
 
+/// Есть ли зависимость с таким именем в `[dependencies]`.
+pub fn has_dependency(doc: &DocumentMut, name: &str) -> bool {
+    doc.get("dependencies")
+        .and_then(Item::as_table_like)
+        .is_some_and(|table| table.contains_key(name))
+}
+
+/// Добавляет фичи в существующую зависимость, не дублируя их.
+///
+/// Строковая форма `name = "1.0"` превращается в
+/// `name = { version = "1.0", features = [...] }`.
+pub fn add_features_to_dependency(
+    doc: &mut DocumentMut,
+    name: &str,
+    features: &[String],
+) -> Result<()> {
+    if features.is_empty() {
+        return Ok(());
+    }
+    let entry = dependencies_table(doc)?
+        .get_mut(name)
+        .ok_or_else(|| Error::Manifest(format!("зависимость `{name}` не найдена")))?;
+
+    let table = if entry.is_str() {
+        let version = entry.as_str().unwrap_or_default().to_string();
+        let mut inline = InlineTable::new();
+        inline.insert("version", Value::from(version));
+        inline.insert("features", Value::Array(Array::new()));
+        *entry = Item::Value(Value::InlineTable(inline));
+        entry
+            .as_table_like_mut()
+            .expect("только что создали inline-таблицу")
+    } else {
+        entry.as_table_like_mut().ok_or_else(|| {
+            Error::Manifest(format!("не удалось добавить фичи зависимости `{name}`"))
+        })?
+    };
+
+    if table.get_mut("features").is_none() {
+        table.insert("features", Item::Value(Value::Array(Array::new())));
+    }
+    let array = table
+        .get_mut("features")
+        .and_then(Item::as_array_mut)
+        .ok_or_else(|| Error::Manifest(format!("features зависимости `{name}` не массив")))?;
+    for feature in features {
+        if !array
+            .iter()
+            .any(|value| value.as_str() == Some(feature.as_str()))
+        {
+            array.push(feature.clone());
+        }
+    }
+    if let Item::Value(Value::InlineTable(inline)) = entry {
+        inline.fmt();
+    }
+    Ok(())
+}
+
 /// Точка вставки нового `dep:`-элемента в **многострочном** массиве и его
 /// префикс (стиль соседа). Возвращает `None` для однострочных массивов.
 ///
@@ -244,6 +303,35 @@ mod tests {
             doc.to_string()
                 .contains("light-fw-element-form = { version = \"0.1.0\", optional = true }")
         );
+    }
+
+    #[test]
+    fn adds_features_to_string_and_table_dependencies() {
+        let mut doc = parse(
+            "[dependencies]\nlight = \"0.4.0\"\nlight-fw-element-form = { version = \"0.4.0\", optional = true }\n",
+        )
+        .unwrap();
+        add_features_to_dependency(
+            &mut doc,
+            "light",
+            &["elements-form".to_string(), "validation".to_string()],
+        )
+        .unwrap();
+        add_features_to_dependency(&mut doc, "light-fw-element-form", &["default".to_string()])
+            .unwrap();
+        add_features_to_dependency(&mut doc, "light", &["validation".to_string()]).unwrap();
+        let out = doc.to_string();
+        assert!(
+            out.contains(
+                "light = { version = \"0.4.0\", features = [\"elements-form\", \"validation\"] }"
+            ),
+            "{out}"
+        );
+        assert!(
+            out.contains("light-fw-element-form = { version = \"0.4.0\", optional = true, features = [\"default\"] }"),
+            "{out}"
+        );
+        assert_eq!(out.matches("\"validation\"").count(), 1, "{out}");
     }
 
     #[test]

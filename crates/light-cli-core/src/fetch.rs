@@ -45,6 +45,8 @@ pub struct ResolvedComponent {
     pub version: semver::Version,
     /// Требование к версии ядра.
     pub core: semver::VersionReq,
+    /// Фичи мета-крейта `light`, которые включает компонент.
+    pub light_features: Vec<String>,
     /// Что предоставляет компонент.
     pub provides: Provides,
     /// Обязательные компоненты (`"name ^ver"`).
@@ -63,11 +65,38 @@ impl ResolvedComponent {
             name: info.name.clone(),
             version: info.latest_version.clone(),
             core: info.core_requirement.clone(),
+            light_features: info.light_features.clone(),
             provides: info.provides.clone(),
             requires: Vec::new(),
             conflicts: Vec::new(),
             source: SourceKind::CratesIo,
             path: None,
+        }
+    }
+}
+
+/// Источник последней версии крейта на crates.io.
+///
+/// Трейт позволяет подменять сетевой запрос в тестах.
+pub trait RemoteRegistry: Send + Sync {
+    /// Возвращает последнюю стабильную версию или `None`, если крейт не найден.
+    fn latest_version(&self, name: &str) -> Result<Option<semver::Version>>;
+}
+
+/// Реальный клиент crates.io API (работает только с фичей `network`).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CratesIoRegistry;
+
+impl RemoteRegistry for CratesIoRegistry {
+    fn latest_version(&self, name: &str) -> Result<Option<semver::Version>> {
+        #[cfg(feature = "network")]
+        {
+            fetch_crates_io(name)
+        }
+        #[cfg(not(feature = "network"))]
+        {
+            let _ = name;
+            Ok(None)
         }
     }
 }
@@ -79,11 +108,22 @@ pub struct Catalog {
     vendor_dir: Option<PathBuf>,
     offline: bool,
     registry: ComponentRegistry,
+    remote: Box<dyn RemoteRegistry>,
 }
 
 impl Catalog {
     /// Создаёт каталог для проекта, автоматически находя workspace и `vendor/`.
     pub fn discover(project_root: &Path, offline: bool) -> Self {
+        Self::with_remote(project_root, offline, Box::new(CratesIoRegistry))
+    }
+
+    /// Создаёт каталог с подменяемым источником crates.io (для тестов и
+    /// встраивания).
+    pub fn with_remote(
+        project_root: &Path,
+        offline: bool,
+        remote: Box<dyn RemoteRegistry>,
+    ) -> Self {
         let project_root = absolute(project_root);
         let vendor = project_root.join("vendor");
         Self {
@@ -92,6 +132,7 @@ impl Catalog {
             project_root,
             offline,
             registry: ComponentRegistry::builtin(),
+            remote,
         }
     }
 
@@ -191,6 +232,11 @@ impl Catalog {
             name: name.to_string(),
             version,
             core: manifest.core.parse()?,
+            light_features: self
+                .registry
+                .by_name(name)
+                .map(|info| info.light_features.clone())
+                .unwrap_or_default(),
             provides: manifest.provides,
             requires: manifest.requires.components,
             conflicts: manifest.conflicts,
@@ -201,38 +247,27 @@ impl Catalog {
 
     fn resolve_remote(&self, name: &str) -> Result<ResolvedComponent> {
         let info = self.registry.by_name(name);
+        if info.is_none() && !is_component_crate_name(name) {
+            return Err(Error::NotComponent(name.to_string()));
+        }
         if self.offline {
             return Err(Error::Offline(name.to_string()));
         }
-        #[cfg(feature = "network")]
-        {
-            self.resolve_remote_network(name, info)
-        }
-        #[cfg(not(feature = "network"))]
-        {
-            match info {
-                Some(i) => Ok(ResolvedComponent::from_registry(i)),
-                None => Err(Error::ComponentNotFound(name.to_string())),
-            }
-        }
-    }
-
-    #[cfg(feature = "network")]
-    fn resolve_remote_network(
-        &self,
-        name: &str,
-        info: Option<&crate::registry::ComponentInfo>,
-    ) -> Result<ResolvedComponent> {
-        match fetch_crates_io(name)? {
+        match self.remote.latest_version(name)? {
             Some(version) => {
-                let (core, provides) = match info {
-                    Some(i) => (i.core_requirement.clone(), i.provides.clone()),
-                    None => (semver::VersionReq::STAR, Provides::default()),
+                let (core, light_features, provides) = match info {
+                    Some(i) => (
+                        i.core_requirement.clone(),
+                        i.light_features.clone(),
+                        i.provides.clone(),
+                    ),
+                    None => (semver::VersionReq::STAR, Vec::new(), Provides::default()),
                 };
                 Ok(ResolvedComponent {
                     name: name.to_string(),
                     version,
                     core,
+                    light_features,
                     provides,
                     requires: Vec::new(),
                     conflicts: Vec::new(),
@@ -288,6 +323,11 @@ impl Catalog {
     pub fn is_offline(&self) -> bool {
         self.offline
     }
+}
+
+/// Имя внешнего компонента Light: `light-fw-*`, кроме ядра.
+pub fn is_component_crate_name(name: &str) -> bool {
+    name.starts_with("light-fw-") && name != "light-fw-core"
 }
 
 /// Вычисляет путь `target` относительно каталога `base`.
@@ -475,8 +515,63 @@ mod tests {
         .expect("manifest");
         let catalog = Catalog::discover(&dir, false);
         let err = catalog
-            .resolve("light-widget-datepicker")
+            .resolve("light-fw-datepicker")
             .expect_err("not found");
         assert!(matches!(err, Error::ComponentNotFound(_)));
+    }
+
+    #[test]
+    fn non_component_crate_name_is_rejected() {
+        let dir = temp_dir("not-component");
+        fs::write(
+            dir.join("Cargo.toml"),
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[workspace]\n",
+        )
+        .expect("manifest");
+        let catalog = Catalog::discover(&dir, false);
+        let err = catalog.resolve("serde").expect_err("not a component");
+        assert!(matches!(err, Error::NotComponent(_)));
+    }
+
+    struct MockRemote {
+        name: &'static str,
+        version: semver::Version,
+    }
+
+    impl RemoteRegistry for MockRemote {
+        fn latest_version(&self, name: &str) -> Result<Option<semver::Version>> {
+            if name == self.name {
+                Ok(Some(self.version.clone()))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+
+    #[test]
+    fn resolves_external_component_from_remote() {
+        let dir = temp_dir("external");
+        fs::write(
+            dir.join("Cargo.toml"),
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[workspace]\n",
+        )
+        .expect("manifest");
+        let catalog = Catalog::with_remote(
+            &dir,
+            false,
+            Box::new(MockRemote {
+                name: "light-fw-datepicker",
+                version: semver::Version::new(1, 2, 3),
+            }),
+        );
+        let resolved = catalog
+            .resolve("light-fw-datepicker")
+            .expect("external component");
+        assert_eq!(resolved.source, SourceKind::CratesIo);
+        assert_eq!(resolved.version, semver::Version::new(1, 2, 3));
+        assert_eq!(
+            catalog.dependency_entry(&resolved).expect("entry"),
+            DependencyEntry::Version("1.2.3".to_string())
+        );
     }
 }

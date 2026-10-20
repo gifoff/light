@@ -94,6 +94,24 @@ light init my-app --with form --with validation
 `validation` — `light-fw-behavior-validation` и фичу `light/validation`.
 В `Cargo.toml` прописываются и зависимости, и нужные фичи мета-крейта.
 
+### Добавление компонентов
+
+```bash
+light add light-fw-element-form
+```
+
+Команда разрешает компонент во встроенном реестре, workspace или `vendor/`.
+Если крейта там нет, он ищется на crates.io — это позволяет подключать
+сторонние компоненты с префиксом `light-fw-`, например будущий
+`light-fw-datepicker`. Фичи самого крейта передаются через `--features`:
+
+```bash
+light add light-fw-datepicker --features calendar,timezone
+```
+
+`light add` обновляет `Cargo.toml` и `light.lock`, а `light remove` удаляет
+как встроенные, так и внешние компоненты.
+
 ## Крейты воркспейса
 
 | Крейт | Назначение |

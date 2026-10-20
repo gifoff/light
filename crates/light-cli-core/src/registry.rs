@@ -23,6 +23,8 @@ pub struct ComponentInfo {
     pub latest_version: semver::Version,
     /// Требование к версии ядра.
     pub core_requirement: semver::VersionReq,
+    /// Фичи мета-крейта `light`, которые включает компонент.
+    pub light_features: Vec<String>,
     /// Что компонент предоставляет (теги, атрибуты, директивы).
     pub provides: Provides,
 }
@@ -57,6 +59,8 @@ struct RegistryEntry {
     display_name: String,
     version: String,
     core: String,
+    #[serde(default, rename = "light-features")]
+    light_features: Vec<String>,
     #[serde(default)]
     elements: Vec<String>,
     #[serde(default)]
@@ -102,6 +106,7 @@ impl ComponentRegistry {
                 display_name: entry.display_name,
                 latest_version,
                 core_requirement,
+                light_features: entry.light_features,
                 provides,
             });
         }
