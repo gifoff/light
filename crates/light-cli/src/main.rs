@@ -7,6 +7,7 @@ mod cmd_init;
 mod cmd_lock;
 mod cmd_publish;
 mod cmd_remove;
+mod cmd_search;
 mod cmd_suggest;
 mod cmd_update;
 mod cmd_vendor;
@@ -26,6 +27,8 @@ enum Command {
     Check(cmd_check::CheckArgs),
     /// Подсказать, какие компоненты добавить.
     Suggest(cmd_suggest::SuggestArgs),
+    /// Найти компоненты на crates.io.
+    Search(cmd_search::SearchArgs),
     /// Диагностика окружения и проекта.
     Doctor(cmd_doctor::DoctorArgs),
     /// Установить компонент в проект.
@@ -55,6 +58,7 @@ fn main() {
         Command::Init(args) => cmd_init::run(args),
         Command::Check(args) => cmd_check::run(args),
         Command::Suggest(args) => cmd_suggest::run(args),
+        Command::Search(args) => cmd_search::run(args),
         Command::Doctor(args) => cmd_doctor::run(args),
         Command::Add(args) => cmd_add::run(args),
         Command::Remove(args) => cmd_remove::run(args),

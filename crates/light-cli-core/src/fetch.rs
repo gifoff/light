@@ -75,12 +75,34 @@ impl ResolvedComponent {
     }
 }
 
-/// Источник последней версии крейта на crates.io.
+/// Результат поиска крейта на crates.io.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CrateSearchResult {
+    /// Имя крейта.
+    pub name: String,
+    /// Последняя стабильная версия.
+    pub version: String,
+    /// Краткое описание.
+    pub description: Option<String>,
+    /// Ссылка на страницу крейта.
+    pub url: String,
+}
+
+/// Источник данных crates.io: версии и поиск.
 ///
-/// Трейт позволяет подменять сетевой запрос в тестах.
+/// Трейт позволяет подменять сетевые запросы в тестах.
 pub trait RemoteRegistry: Send + Sync {
     /// Возвращает последнюю стабильную версию или `None`, если крейт не найден.
-    fn latest_version(&self, name: &str) -> Result<Option<semver::Version>>;
+    fn latest_version(&self, name: &str) -> Result<Option<semver::Version>> {
+        let _ = name;
+        Ok(None)
+    }
+
+    /// Ищет крейты по запросу.
+    fn search(&self, query: &str, per_page: usize) -> Result<Vec<CrateSearchResult>> {
+        let _ = (query, per_page);
+        Ok(Vec::new())
+    }
 }
 
 /// Реальный клиент crates.io API (работает только с фичей `network`).
@@ -97,6 +119,18 @@ impl RemoteRegistry for CratesIoRegistry {
         {
             let _ = name;
             Ok(None)
+        }
+    }
+
+    fn search(&self, query: &str, per_page: usize) -> Result<Vec<CrateSearchResult>> {
+        #[cfg(feature = "network")]
+        {
+            fetch_crates_io_search(query, per_page)
+        }
+        #[cfg(not(feature = "network"))]
+        {
+            let _ = (query, per_page);
+            Ok(Vec::new())
         }
     }
 }
@@ -380,6 +414,59 @@ pub fn ping_crates_io() -> bool {
         .is_ok()
 }
 
+/// Разбирает ответ `GET /api/v1/crates?q=...`.
+fn parse_search_response(body: &str) -> Result<Vec<CrateSearchResult>> {
+    #[derive(serde::Deserialize)]
+    struct Response {
+        #[serde(default)]
+        crates: Vec<Entry>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Entry {
+        name: String,
+        #[serde(default)]
+        max_stable_version: Option<String>,
+        #[serde(default)]
+        max_version: Option<String>,
+        #[serde(default)]
+        description: Option<String>,
+    }
+
+    let response: Response = serde_json::from_str(body)?;
+    Ok(response
+        .crates
+        .into_iter()
+        .map(|entry| CrateSearchResult {
+            version: entry
+                .max_stable_version
+                .or(entry.max_version)
+                .unwrap_or_default(),
+            url: format!("https://crates.io/crates/{}", entry.name),
+            name: entry.name,
+            description: entry.description,
+        })
+        .collect())
+}
+
+/// Ищет крейты на crates.io через API.
+#[cfg(feature = "network")]
+pub fn fetch_crates_io_search(query: &str, per_page: usize) -> Result<Vec<CrateSearchResult>> {
+    use std::time::Duration;
+
+    let per_page = per_page.to_string();
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()?;
+    let response = client
+        .get("https://crates.io/api/v1/crates")
+        .query(&[("q", query), ("per_page", per_page.as_str())])
+        .header("User-Agent", "light-fw-cli (component search)")
+        .send()?
+        .error_for_status()?;
+    let body = response.text()?;
+    parse_search_response(&body)
+}
+
 /// Запрашивает последнюю версию крейта на crates.io.
 ///
 /// Возвращает `Ok(None)`, если крейт не найден (HTTP 404).
@@ -546,6 +633,39 @@ mod tests {
                 Ok(None)
             }
         }
+    }
+
+    #[test]
+    fn parses_crates_io_search_response() {
+        let json = r#"{
+            "crates": [
+                {
+                    "name": "light-fw-datepicker",
+                    "max_stable_version": "0.3.0",
+                    "max_version": "0.4.0-beta.1",
+                    "description": "Date picker for Light"
+                },
+                {
+                    "name": "light-fw-no-version",
+                    "max_version": "1.0.0",
+                    "description": null
+                }
+            ]
+        }"#;
+        let results = parse_search_response(json).expect("parse");
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].name, "light-fw-datepicker");
+        assert_eq!(results[0].version, "0.3.0");
+        assert_eq!(
+            results[0].url,
+            "https://crates.io/crates/light-fw-datepicker"
+        );
+        assert_eq!(
+            results[0].description.as_deref(),
+            Some("Date picker for Light")
+        );
+        assert_eq!(results[1].version, "1.0.0");
+        assert!(results[1].description.is_none());
     }
 
     #[test]

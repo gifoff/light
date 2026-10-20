@@ -16,6 +16,7 @@ pub mod remove;
 pub mod report;
 pub mod resolve;
 pub mod scan;
+pub mod search;
 pub mod update;
 pub mod vendor;
 

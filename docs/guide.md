@@ -355,6 +355,20 @@ Light doctor
   ✓ light-fw-element-form 0.1.0 (совместим)
 ```
 
+### `light search <запрос>`
+
+Ищет компоненты на crates.io через API. Показываются только крейты с префиксом
+`light-fw-` и крейты, в описании которых упоминается `light`:
+
+```
+$ light search datepicker
+NAME                           VERSION    DESCRIPTION                                                  URL
+light-fw-datepicker            0.3.0      Date picker for Light                                        https://crates.io/crates/light-fw-datepicker
+```
+
+Если ничего не найдено, команда печатает
+`No components found matching "<запрос>"` и завершается с кодом `0`.
+
 ### `light add <компонент> [путь]`
 
 Добавляет компонент в `Cargo.toml` проекта. Команда подбирает версию, включает
