@@ -8,6 +8,8 @@
 
 Документ адресован **сторонним разработчикам**: тем, кто хочет выпустить
 свой виджет, поведение или интеграцию и подключить их к приложению на Light.
+Короткий пошаговый пример создания и публикации компонента — в
+[docs/EXTERNAL_COMPONENTS.md](EXTERNAL_COMPONENTS.md).
 
 - [1. Введение](#1-введение)
 - [2. Типы компонентов и их назначение](#2-типы-компонентов-и-их-назначение)
@@ -460,6 +462,8 @@ cargo publish
 ## 11. Ссылки
 
 - [docs/COMPONENT_MODEL.md](COMPONENT_MODEL.md) — архитектура компонентов.
+- [docs/EXTERNAL_COMPONENTS.md](EXTERNAL_COMPONENTS.md) — краткий гайд по
+  созданию и публикации стороннего компонента.
 - [docs/guide.md](guide.md) — руководство пользователя.
 - [docs/ROADMAP.md](ROADMAP.md) — план развития.
 - [docs/DESIGN_PRINCIPLES.md](DESIGN_PRINCIPLES.md) — принципы, включая
@@ -467,4 +471,4 @@ cargo publish
 - Примеры в репозитории:
   - `crates/light-element-form/` — компонент-элемент;
   - `crates/light-behavior-validation/` — компонент-поведение.
-- Поиск опубликованных компонентов (после 0.3): `cargo search light-`.
+- Поиск опубликованных компонентов: `light search <запрос>`.

@@ -97,10 +97,12 @@ light init my-app --with form --with validation
 ### Добавление компонентов
 
 ```bash
+light search datepicker
 light add light-fw-element-form
 ```
 
-Команда разрешает компонент во встроенном реестре, workspace или `vendor/`.
+`light search` ищет компоненты на crates.io. `light add` разрешает компонент
+во встроенном реестре, workspace или `vendor/`.
 Если крейта там нет, он ищется на crates.io — это позволяет подключать
 сторонние компоненты с префиксом `light-fw-`, например будущий
 `light-fw-datepicker`. Фичи самого крейта передаются через `--features`:
@@ -133,6 +135,8 @@ light add light-fw-datepicker --features calendar,timezone
 - [docs/COMPONENT_MODEL.md](docs/COMPONENT_MODEL.md) — модель компонентов.
 - [docs/COMPONENT_AUTHORING.md](docs/COMPONENT_AUTHORING.md) — как писать свои
   компоненты.
+- [docs/EXTERNAL_COMPONENTS.md](docs/EXTERNAL_COMPONENTS.md) — краткий гайд по
+  созданию и публикации стороннего компонента.
 - [docs/RELEASING.md](docs/RELEASING.md) — публикация релиза (для мейнтейнеров).
 - [docs/ROADMAP.md](docs/ROADMAP.md) — план развития.
 
