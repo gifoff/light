@@ -81,6 +81,13 @@ fn multiline_dep_insertion(arr: &Array) -> Option<(usize, String)> {
         .or_else(|| arr.iter().last());
     let prefix = neighbor
         .and_then(|v| v.decor().prefix().and_then(|p| p.as_str()))
+        .map(|prefix| match prefix.rfind('\n') {
+            // Отбрасываем комментарии соседа: берём только перевод строки и
+            // отступ, иначе при вставке комментарий продублируется.
+            Some(index) => &prefix[index..],
+            None => prefix,
+        })
+        .filter(|prefix| prefix.contains('\n'))
         .unwrap_or("\n    ")
         .to_string();
     Some((after, prefix))
@@ -100,8 +107,9 @@ pub fn add_dep_to_feature(doc: &mut DocumentMut, feature: &str, name: &str) -> R
             Some((index, prefix)) => {
                 let mut new_value = Value::from(token);
                 new_value.decor_mut().set_prefix(prefix);
-                new_value.decor_mut().set_suffix(",");
-                arr.insert(index, new_value);
+                // `Array::insert` перезаписывает декорации значения на `" "`/`""`,
+                // поэтому используем `insert_formatted`, сохраняющий префикс.
+                arr.insert_formatted(index, new_value);
             }
             None => arr.push(token),
         }
@@ -247,6 +255,35 @@ mod tests {
         let out = doc.to_string();
         assert!(out.contains("\"dep:relay-element-form\""));
         assert!(out.contains("element-form = [\"dep:relay-element-form\"]"));
+    }
+
+    #[test]
+    fn adds_dep_to_multiline_feature_keeps_lines_and_comments() {
+        let text = "[features]\nfull = [\n    # формы\n    \"dep:relay-element-form\",\n]\n";
+        let mut doc = parse(text).unwrap();
+        add_dep_to_feature(&mut doc, "full", "relay-widget-datepicker").unwrap();
+        assert_eq!(
+            doc.to_string(),
+            "[features]\nfull = [\n    # формы\n    \"dep:relay-element-form\",\n    \"dep:relay-widget-datepicker\",\n]\n"
+        );
+    }
+
+    #[test]
+    fn add_then_remove_is_byte_perfect_in_multiline_feature() {
+        let text = "[features]\ndefault = [\"full\"]\nfull = [\n    \"dep:relay-element-form\",\n    \"dep:relay-behavior-validation\",\n]\n\
+                    minimal = [\n    \"std\",\n]\n";
+        let mut doc = parse(text).unwrap();
+        add_dep_to_feature(&mut doc, "full", "relay-widget-datepicker").unwrap();
+        let added = doc.to_string();
+        assert!(
+            added.contains(
+                "    \"dep:relay-element-form\",\n    \"dep:relay-behavior-validation\",\n    \"dep:relay-widget-datepicker\",\n]"
+            ),
+            "соседние dep: не склеиваются: {added}"
+        );
+        let mut doc = parse(&added).unwrap();
+        remove_dependency(&mut doc, "relay-widget-datepicker").unwrap();
+        assert_eq!(doc.to_string(), text, "add+remove восстанавливает файл");
     }
 
     #[test]

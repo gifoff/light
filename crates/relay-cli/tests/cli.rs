@@ -464,6 +464,51 @@ fn add_workspace_component_joins_aggregating_feature() {
 }
 
 #[test]
+fn add_preserves_tricky_manifest_formatting() {
+    let app = temp_copy("aggregated-workspace").join("app");
+    let manifest = app.join("Cargo.toml");
+    let tricky = "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n\
+                  # Зависимости приложения.\n[dependencies]\n\
+                  relay-element-form = { workspace = true, optional = true } # формы\n\n\
+                  [features]\ndefault = [\"full\"]\n\n\
+                  # Агрегирующая фича: всё сразу.\n\
+                  full = [\n    # формы\n    \"dep:relay-element-form\",\n]\n\n\
+                  # пустая, но нужная\nminimal = []\n";
+    std::fs::write(&manifest, tricky).expect("write tricky manifest");
+
+    relay()
+        .arg("add")
+        .arg("relay-behavior-validation")
+        .arg(&app)
+        .arg("--yes")
+        .arg("--no-verify")
+        .arg("--offline")
+        .assert()
+        .success();
+
+    let text = std::fs::read_to_string(&manifest).expect("read manifest");
+    assert!(
+        text.contains(
+            "full = [\n    # формы\n    \"dep:relay-element-form\",\n    \
+             \"dep:relay-behavior-validation\",\n]"
+        ),
+        "каждый dep: на своей строке, комментарий не продублирован: {text}"
+    );
+    assert!(
+        text.contains("relay-element-form = { workspace = true, optional = true } # формы"),
+        "inline-комментарий зависимости сохранён: {text}"
+    );
+    assert!(
+        text.contains("# Агрегирующая фича: всё сразу."),
+        "комментарий перед фичей сохранён: {text}"
+    );
+    assert!(
+        text.contains("minimal = []"),
+        "пустая фича сохранена: {text}"
+    );
+}
+
+#[test]
 fn add_from_project_dir_resolves_workspace_source() {
     let app = temp_copy("component-workspace").join("app");
     // Путь по умолчанию "." — раньше относительный путь ломал поиск workspace.

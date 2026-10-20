@@ -81,12 +81,6 @@
 
 - Поддержку доступности можно выключить переменной окружения `RELAY_A11Y=0` или программно — `relay::a11y::set_enabled(false)`.
 
-### Known issues
-
-- `relay add`/`relay remove` do not preserve byte-perfect formatting of
-  `Cargo.toml` feature arrays when multiple `dep:` entries are adjacent.
-  Functionally correct, cosmetic only. Fixed in 0.2.1.
-
 ## [Unreleased]
 
 ### Added
@@ -113,4 +107,11 @@
   `--path` (имя крейта при этом остаётся позиционным). Флаг `--minimal` создаёт
   только `Cargo.toml` и `src/main.rs`. Ошибки, если каталог не пуст или `cargo`
   не найден в `PATH`.
+
+### Fixed
+
+- `relay add`/`relay remove` сохраняют форматирование `Cargo.toml`: соседние
+  `dep:`-элементы многострочных фич больше не склеиваются на одной строке, а
+  комментарии не дублируются и не теряются. `add` + `remove` дают
+  byte-perfect roundtrip.
 
