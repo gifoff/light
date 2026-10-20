@@ -75,6 +75,25 @@ fn main() -> light::Result<()> {
 cargo run
 ```
 
+### Создание проекта через CLI
+
+Если установлена утилита `light`, скелет проекта создаётся одной командой:
+
+```bash
+cargo install light-fw-cli
+light init my-app
+```
+
+Дополнительные компоненты подключаются флагом `--with` (можно повторять):
+
+```bash
+light init my-app --with form --with validation
+```
+
+`form` добавляет `light-fw-element-form` и фичу `light/elements-form`,
+`validation` — `light-fw-behavior-validation` и фичу `light/validation`.
+В `Cargo.toml` прописываются и зависимости, и нужные фичи мета-крейта.
+
 ## Крейты воркспейса
 
 | Крейт | Назначение |

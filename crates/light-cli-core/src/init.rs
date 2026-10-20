@@ -6,6 +6,7 @@
 //! [`CommandRunner`], поэтому логика тестируется без запуска процессов.
 
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use crate::error::{Error, Result};
 use crate::lockfile::{LOCKFILE_NAME, Lockfile};
@@ -17,6 +18,55 @@ pub const LIGHT_DEPENDENCY_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Содержимое `.gitignore` нового проекта.
 pub const GITIGNORE: &str = "target/\n";
 
+/// Дополнительный компонент, подключаемый флагом `--with`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum InitComponent {
+    /// `light-fw-element-form`: `<checkbox>`, `<radio>`, `<select>`/`<option>`.
+    Form,
+    /// `light-fw-behavior-validation`: `required`, `:validator`, `@validate`.
+    Validation,
+}
+
+impl InitComponent {
+    /// Все поддерживаемые компоненты в порядке вывода в `Cargo.toml`.
+    pub const ALL: [Self; 2] = [Self::Form, Self::Validation];
+
+    /// Разбирает имя компонента из `--with`.
+    pub fn parse(value: &str) -> Result<Self> {
+        match value {
+            "form" => Ok(Self::Form),
+            "validation" => Ok(Self::Validation),
+            other => Err(Error::Init(format!(
+                "неизвестный компонент `{other}` (поддерживаются: form, validation)"
+            ))),
+        }
+    }
+
+    /// Имя крейта-компонента.
+    pub fn crate_name(self) -> &'static str {
+        match self {
+            Self::Form => "light-fw-element-form",
+            Self::Validation => "light-fw-behavior-validation",
+        }
+    }
+
+    /// Фича мета-крейта `light`, включающая компонент.
+    pub fn light_feature(self) -> &'static str {
+        match self {
+            Self::Form => "elements-form",
+            Self::Validation => "validation",
+        }
+    }
+}
+
+impl FromStr for InitComponent {
+    type Err = Error;
+
+    fn from_str(value: &str) -> Result<Self> {
+        Self::parse(value)
+    }
+}
+
 /// Параметры команды `light init`.
 #[derive(Debug, Clone)]
 pub struct InitOptions {
@@ -26,6 +76,8 @@ pub struct InitOptions {
     pub path: Option<PathBuf>,
     /// Только `Cargo.toml` и `src/main.rs` (без `.gitignore` и `light.lock`).
     pub minimal: bool,
+    /// Дополнительные компоненты (`--with`).
+    pub components: Vec<InitComponent>,
 }
 
 /// Что будет создано (результат [`plan`]).
@@ -117,23 +169,80 @@ pub fn project_dir(options: &InitOptions) -> PathBuf {
     }
 }
 
+/// Компоненты без дублей в порядке [`InitComponent::ALL`].
+fn normalized_components(components: &[InitComponent]) -> Vec<InitComponent> {
+    InitComponent::ALL
+        .into_iter()
+        .filter(|component| components.contains(component))
+        .collect()
+}
+
 /// Содержимое `Cargo.toml` нового проекта.
-pub fn cargo_toml(name: &str) -> String {
-    format!(
+pub fn cargo_toml(name: &str, components: &[InitComponent]) -> String {
+    let components = normalized_components(components);
+    let mut text = format!(
         "[package]\n\
          name = \"{name}\"\n\
          version = \"0.1.0\"\n\
          edition = \"2021\"\n\
          \n\
-         [dependencies]\n\
-         light = \"{version}\"\n",
-        version = LIGHT_DEPENDENCY_VERSION,
-    )
+         [dependencies]\n"
+    );
+
+    if components.is_empty() {
+        text.push_str(&format!("light = \"{LIGHT_DEPENDENCY_VERSION}\"\n"));
+        return text;
+    }
+
+    let features = components
+        .iter()
+        .map(|component| format!("\"{}\"", component.light_feature()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    text.push_str(&format!(
+        "light = {{ version = \"{LIGHT_DEPENDENCY_VERSION}\", features = [{features}] }}\n"
+    ));
+    for component in &components {
+        text.push_str(&format!(
+            "{} = \"{LIGHT_DEPENDENCY_VERSION}\"\n",
+            component.crate_name()
+        ));
+    }
+    text
 }
 
+/// Закомментированный пример формы для проектов с компонентом `form`.
+const FORM_EXAMPLE: &str = r#"
+// Пример формы (компонент `form`):
+//
+// #[template("templates/form.html")]
+// #[proxy]
+// struct SignUp {
+//     email: String,
+//     agree: bool,
+// }
+//
+// impl SignUp {
+//     fn submit(&self) {
+//         if self.agree() {
+//             println!("email: {}", self.email());
+//         }
+//     }
+// }
+//
+// templates/form.html:
+// <window title="Sign up" width="360" height="240">
+//     <div direction="vertical" padding="12">
+//         <text v-model="email" placeholder="Email" required />
+//         <checkbox v-model="agree">Согласен с условиями</checkbox>
+//         <button @click="submit" :disabled="!agree">Отправить</button>
+//     </div>
+// </window>
+"#;
+
 /// Содержимое `src/main.rs` — минимальное приложение из одного окна.
-pub fn main_rs() -> &'static str {
-    r#"use light::prelude::*;
+pub fn main_rs(components: &[InitComponent]) -> String {
+    let mut text = r#"use light::prelude::*;
 
 struct App;
 
@@ -166,6 +275,12 @@ fn main() -> light::Result<()> {
     light::run(App)
 }
 "#
+    .to_string();
+
+    if components.contains(&InitComponent::Form) {
+        text.push_str(FORM_EXAMPLE);
+    }
+    text
 }
 
 /// Строит план создания проекта, проверяя, что каталог свободен.
@@ -190,9 +305,13 @@ pub fn plan(options: &InitOptions) -> Result<InitPlan> {
         )));
     }
 
+    let components = normalized_components(&options.components);
     let mut files = vec![
-        (PathBuf::from("Cargo.toml"), cargo_toml(&options.name)),
-        (PathBuf::from("src").join("main.rs"), main_rs().to_string()),
+        (
+            PathBuf::from("Cargo.toml"),
+            cargo_toml(&options.name, &components),
+        ),
+        (PathBuf::from("src").join("main.rs"), main_rs(&components)),
     ];
     if !options.minimal {
         files.push((PathBuf::from(".gitignore"), GITIGNORE.to_string()));
@@ -310,6 +429,7 @@ mod tests {
             name: "cool-app".to_string(),
             path: Some(dir.clone()),
             minimal: false,
+            components: Vec::new(),
         };
         let plan = plan(&options).expect("plan");
         let names: Vec<String> = plan
@@ -330,6 +450,7 @@ mod tests {
             name: "tiny".to_string(),
             path: Some(root.join("tiny")),
             minimal: true,
+            components: Vec::new(),
         };
         let plan = plan(&options).expect("plan");
         let names: Vec<String> = plan
@@ -351,6 +472,7 @@ mod tests {
             name: "busy".to_string(),
             path: Some(target),
             minimal: false,
+            components: Vec::new(),
         };
         let error = plan(&options).expect_err("должна быть ошибка");
         assert!(error.to_string().contains("не пуст"), "{error}");
@@ -358,17 +480,72 @@ mod tests {
 
     #[test]
     fn cargo_toml_pins_light_version() {
-        let text = cargo_toml("demo");
+        let text = cargo_toml("demo", &[]);
         assert!(text.contains("name = \"demo\""));
         assert!(text.contains(&format!("light = \"{LIGHT_DEPENDENCY_VERSION}\"")));
+        assert!(!text.contains("features ="));
+    }
+
+    #[test]
+    fn cargo_toml_adds_form_dependency_and_feature() {
+        let text = cargo_toml("demo", &[InitComponent::Form]);
+        assert!(
+            text.contains(&format!(
+                "light = {{ version = \"{LIGHT_DEPENDENCY_VERSION}\", features = [\"elements-form\"] }}"
+            )),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!(
+                "light-fw-element-form = \"{LIGHT_DEPENDENCY_VERSION}\""
+            )),
+            "{text}"
+        );
+        assert!(!text.contains("light-fw-behavior-validation"), "{text}");
+    }
+
+    #[test]
+    fn cargo_toml_adds_both_dependencies_and_deduplicates() {
+        let text = cargo_toml(
+            "demo",
+            &[
+                InitComponent::Validation,
+                InitComponent::Form,
+                InitComponent::Form,
+            ],
+        );
+        assert!(
+            text.contains(&format!(
+                "light = {{ version = \"{LIGHT_DEPENDENCY_VERSION}\", features = [\"elements-form\", \"validation\"] }}"
+            )),
+            "{text}"
+        );
+        assert_eq!(text.matches("light-fw-element-form =").count(), 1, "{text}");
+        assert_eq!(
+            text.matches("light-fw-behavior-validation =").count(),
+            1,
+            "{text}"
+        );
     }
 
     #[test]
     fn main_rs_is_self_contained() {
-        let text = main_rs();
+        let text = main_rs(&[]);
         assert!(text.contains("Hello, Light!"));
         assert!(!text.contains("include_str!"));
         assert!(!text.contains("#[template"));
+        assert!(!text.contains("Пример формы"));
+    }
+
+    #[test]
+    fn main_rs_includes_form_example_only_for_form_component() {
+        let text = main_rs(&[InitComponent::Form]);
+        assert!(text.contains("Пример формы"), "{text}");
+        let validation_only = main_rs(&[InitComponent::Validation]);
+        assert!(
+            !validation_only.contains("Пример формы"),
+            "{validation_only}"
+        );
     }
 
     #[test]
@@ -386,6 +563,7 @@ mod tests {
             name: "my-app".to_string(),
             path: Some(dir.clone()),
             minimal: false,
+            components: Vec::new(),
         };
         let report = apply(&StubRunner { found: true }, &options).expect("apply");
         assert!(report.lockfile);
@@ -406,6 +584,7 @@ mod tests {
             name: "tiny".to_string(),
             path: Some(dir.clone()),
             minimal: true,
+            components: Vec::new(),
         };
         let report = apply(&StubRunner { found: true }, &options).expect("apply");
         assert!(!report.lockfile);
@@ -422,6 +601,7 @@ mod tests {
             name: "nope".to_string(),
             path: Some(dir.clone()),
             minimal: false,
+            components: Vec::new(),
         };
         assert!(apply(&StubRunner { found: false }, &options).is_err());
         assert!(!dir.exists(), "каталог не должен создаваться");

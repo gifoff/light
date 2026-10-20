@@ -1890,6 +1890,7 @@ dependencies = [
  "light-fw-cli-core",
  "predicates",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

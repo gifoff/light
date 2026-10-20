@@ -600,6 +600,8 @@ pub fn publish_args(name: &str, invocation: &PublishInvocation) -> Vec<String> {
 pub enum FailureKind {
     /// Индекс crates.io ещё не увидел предыдущий крейт — стоит повторить.
     IndexStale,
+    /// crates.io ограничил частоту публикаций — ретраи бесполезны.
+    RateLimited,
     /// Прочая ошибка — ретраи не помогут.
     Other,
 }
@@ -613,10 +615,23 @@ pub const INDEX_STALE_PATTERNS: &[&str] = &[
     "could not be found in registry index",
 ];
 
+/// Паттерны stderr, означающие превышение лимита публикаций crates.io.
+pub const RATE_LIMIT_PATTERNS: &[&str] = &[
+    "429 too many requests",
+    "too many new crates",
+    "rate limit reached",
+    "too many requests",
+];
+
 /// Классифицирует stderr `cargo publish` (exit code всегда 101, поэтому — по тексту).
 pub fn classify_publish_failure(stderr: &str) -> FailureKind {
     let lower = stderr.to_lowercase();
-    if INDEX_STALE_PATTERNS
+    if RATE_LIMIT_PATTERNS
+        .iter()
+        .any(|pattern| lower.contains(pattern))
+    {
+        FailureKind::RateLimited
+    } else if INDEX_STALE_PATTERNS
         .iter()
         .any(|pattern| lower.contains(pattern))
     {
@@ -624,6 +639,50 @@ pub fn classify_publish_failure(stderr: &str) -> FailureKind {
     } else {
         FailureKind::Other
     }
+}
+
+/// Извлекает из stderr дату/время, после которого crates.io снова примет
+/// публикацию.
+///
+/// crates.io кладёт срок в текст ошибки (`retry after <timestamp>`,
+/// `try again after <timestamp>`); формат может отличаться, поэтому берём
+/// первый похожий на время токен после ключевой фразы.
+pub fn rate_limit_reset(stderr: &str) -> Option<String> {
+    const KEYS: &[&str] = &[
+        "try again after",
+        "retry after",
+        "available after",
+        "wait until",
+        "try again at",
+        "again after",
+    ];
+    let lower = stderr.to_lowercase();
+    for key in KEYS {
+        let Some(position) = lower.find(key) else {
+            continue;
+        };
+        let start = position + key.len();
+        if let Some(reset) = stderr.get(start..).and_then(reset_token) {
+            return Some(reset);
+        }
+    }
+    None
+}
+
+fn reset_token(rest: &str) -> Option<String> {
+    let begin = rest.find(|c: char| c.is_ascii_digit())?;
+    let tail = &rest[begin..];
+    let end = tail
+        .find(|c: char| c.is_whitespace() || matches!(c, ',' | ';' | ')' | ']'))
+        .unwrap_or(tail.len());
+    let token = tail[..end].trim_end_matches(['.', ',', ';']);
+    if token.len() < 4 {
+        return None;
+    }
+    let looks_like_time = token.contains('-')
+        || token.contains(':')
+        || token.chars().any(|c| c.is_ascii_alphabetic());
+    looks_like_time.then(|| token.to_string())
 }
 
 /// Настройки ретраев на устаревание индекса.
@@ -735,7 +794,8 @@ pub fn publish_with_retries(
             });
         }
         let stderr = output.stderr;
-        if classify_publish_failure(&stderr) == FailureKind::Other || retries >= retry.max_retries {
+        let kind = classify_publish_failure(&stderr);
+        if kind != FailureKind::IndexStale || retries >= retry.max_retries {
             return Ok(PublishAttempt {
                 success: false,
                 retries,
@@ -1193,6 +1253,64 @@ mod tests {
         assert_eq!(
             classify_publish_failure("error: api token not provided"),
             FailureKind::Other
+        );
+    }
+
+    #[test]
+    fn classify_detects_rate_limit() {
+        assert_eq!(
+            classify_publish_failure(
+                "the remote server responded with an error (status 429 Too Many Requests)"
+            ),
+            FailureKind::RateLimited
+        );
+        assert_eq!(
+            classify_publish_failure(
+                "You have hit the limit for the number of too many new crates"
+            ),
+            FailureKind::RateLimited
+        );
+    }
+
+    #[test]
+    fn rate_limit_reset_extracts_timestamp() {
+        let stderr = "error: the remote server responded with an error (status 429 Too Many \
+                      Requests): too many new crates. Please try again after \
+                      2026-10-20T12:34:56Z.";
+        assert_eq!(
+            rate_limit_reset(stderr).as_deref(),
+            Some("2026-10-20T12:34:56Z")
+        );
+    }
+
+    #[test]
+    fn rate_limit_reset_is_optional() {
+        assert_eq!(rate_limit_reset("status 429 Too Many Requests"), None);
+        assert_eq!(rate_limit_reset("api token not provided"), None);
+    }
+
+    #[test]
+    fn publish_does_not_retry_rate_limit() {
+        let runner = ScriptedRunner::new(vec![fail_output(
+            "error: status 429 Too Many Requests: too many new crates",
+        )]);
+        let sleeper = RecordingSleeper::new();
+        let attempt = publish_with_retries(
+            &runner,
+            &sleeper,
+            Path::new("."),
+            "light",
+            &PublishInvocation::default(),
+            &RetryConfig::default(),
+        )
+        .expect("publish");
+        assert!(!attempt.success);
+        assert_eq!(attempt.retries, 0);
+        assert!(sleeper.sleeps().is_empty());
+        assert_eq!(runner.call_count(), 1);
+        assert_eq!(
+            classify_publish_failure(&attempt.stderr),
+            FailureKind::RateLimited
         );
     }
 

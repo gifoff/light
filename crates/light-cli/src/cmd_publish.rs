@@ -211,7 +211,7 @@ pub fn run(args: PublishArgs) -> anyhow::Result<i32> {
     println!("[3/3] publish:");
     let retry = RetryConfig::from_env();
     let sleeper = SystemSleeper;
-    let mut published = 0usize;
+    let mut published_names: Vec<String> = Vec::new();
     for name in &pending {
         let version = version_of(&workspace, name);
         match publish::publish_with_retries(
@@ -223,7 +223,7 @@ pub fn run(args: PublishArgs) -> anyhow::Result<i32> {
             &retry,
         ) {
             Ok(attempt) if attempt.success => {
-                published += 1;
+                published_names.push(name.clone());
                 let suffix = if attempt.retries > 0 {
                     format!(" (retry {})", attempt.retries)
                 } else {
@@ -231,25 +231,52 @@ pub fn run(args: PublishArgs) -> anyhow::Result<i32> {
                 };
                 println!("  {name:<28} {version:<8} published{suffix}");
             }
+            Ok(attempt)
+                if publish::classify_publish_failure(&attempt.stderr)
+                    == publish::FailureKind::RateLimited =>
+            {
+                println!("  {name:<28} {version:<8} rate limited");
+                eprintln!("{}", rate_limit_message(&attempt.stderr));
+                print_published(&published_names, pending.len());
+                return Ok(1);
+            }
             Ok(attempt) => {
                 println!(
                     "  {name:<28} {version:<8} failed: {}",
                     stderr_tail(&attempt.stderr, 400)
                 );
-                println!("        published: {published}/{}", pending.len());
+                print_published(&published_names, pending.len());
                 println!("        next: fix error, then `light publish {name}`");
                 return Ok(1);
             }
             Err(error) => {
                 println!("  {name:<28} {version:<8} failed: {error}");
-                println!("        published: {published}/{}", pending.len());
+                print_published(&published_names, pending.len());
                 println!("        next: fix error, then `light publish {name}`");
                 return Ok(1);
             }
         }
     }
-    println!("published: {published}/{}", pending.len());
+    println!("published: {}/{}", published_names.len(), pending.len());
     Ok(0)
+}
+
+fn rate_limit_message(stderr: &str) -> String {
+    match publish::rate_limit_reset(stderr) {
+        Some(reset) => {
+            format!("crates.io rate limit reached. Please wait until {reset} before trying again.")
+        }
+        None => "crates.io rate limit reached. Please wait before trying again.".to_string(),
+    }
+}
+
+fn print_published(names: &[String], total: usize) {
+    let list = if names.is_empty() {
+        "(none)".to_string()
+    } else {
+        names.join(", ")
+    };
+    println!("        published: {}/{} ({list})", names.len(), total);
 }
 
 fn partition_pending(order: &[String], published: &BTreeSet<String>) -> (Vec<String>, usize) {

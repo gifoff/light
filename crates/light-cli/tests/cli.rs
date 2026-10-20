@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use tempfile::TempDir;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -14,8 +14,6 @@ fn fixture(name: &str) -> PathBuf {
 fn light() -> Command {
     Command::new(env!("CARGO_BIN_EXE_light"))
 }
-
-static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn copy_dir_all(src: &Path, dst: &Path) {
     std::fs::create_dir_all(dst).expect("create dst");
@@ -30,29 +28,23 @@ fn copy_dir_all(src: &Path, dst: &Path) {
     }
 }
 
-/// Копирует фикстуру в уникальный временный каталог, чтобы тесты могли
-/// мутировать проект, не трогая репозиторий.
-fn temp_copy(name: &str) -> PathBuf {
-    let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!(
-        "light-fw-cli-it-{name}-{}-{unique}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    copy_dir_all(&fixture(name), &dir);
+/// Копирует фикстуру во временный каталог, чтобы тесты могли мутировать
+/// проект, не трогая репозиторий.
+fn temp_copy(name: &str) -> TempDir {
+    let dir = tempfile::Builder::new()
+        .prefix(&format!("light-fw-cli-it-{name}-"))
+        .tempdir()
+        .expect("create temp dir");
+    copy_dir_all(&fixture(name), dir.path());
     dir
 }
 
-/// Создаёт уникальный пустой временный каталог (для `light init`).
-fn scratch_dir(name: &str) -> PathBuf {
-    let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!(
-        "light-fw-cli-scratch-{name}-{}-{unique}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("create scratch dir");
-    dir
+/// Создаёт пустой временный каталог (для `light init`).
+fn scratch_dir(name: &str) -> TempDir {
+    tempfile::Builder::new()
+        .prefix(&format!("light-fw-cli-scratch-{name}-"))
+        .tempdir()
+        .expect("create scratch dir")
 }
 
 #[test]
@@ -216,7 +208,8 @@ fn suggest_always_exits_zero_even_with_broken_template() {
 
 #[test]
 fn add_dry_run_plans_workspace_component() {
-    let app = temp_copy("component-workspace").join("app");
+    let workspace = temp_copy("component-workspace");
+    let app = workspace.path().join("app");
     light()
         .arg("add")
         .arg("light-fw-element-form")
@@ -234,7 +227,8 @@ fn add_dry_run_plans_workspace_component() {
 
 #[test]
 fn add_unknown_component_fails_offline() {
-    let app = temp_copy("component-workspace").join("app");
+    let workspace = temp_copy("component-workspace");
+    let app = workspace.path().join("app");
     light()
         .arg("add")
         .arg("light-widget-datepicker")
@@ -247,7 +241,8 @@ fn add_unknown_component_fails_offline() {
 
 #[test]
 fn add_already_installed_is_idempotent() {
-    let project = temp_copy("complete-project");
+    let workspace = temp_copy("complete-project");
+    let project = workspace.path().to_path_buf();
     light()
         .arg("add")
         .arg("light-fw-element-form")
@@ -262,7 +257,7 @@ fn add_already_installed_is_idempotent() {
 #[test]
 fn add_then_remove_roundtrip() {
     let root = temp_copy("component-workspace");
-    let app = root.join("app");
+    let app = root.path().join("app");
 
     light()
         .arg("add")
@@ -299,7 +294,8 @@ fn add_then_remove_roundtrip() {
 
 #[test]
 fn lock_creates_then_reports_actual() {
-    let project = temp_copy("complete-project");
+    let workspace = temp_copy("complete-project");
+    let project = workspace.path().to_path_buf();
     light()
         .arg("lock")
         .arg(&project)
@@ -318,7 +314,8 @@ fn lock_creates_then_reports_actual() {
 
 #[test]
 fn lock_dry_run_does_not_write() {
-    let project = temp_copy("complete-project");
+    let workspace = temp_copy("complete-project");
+    let project = workspace.path().to_path_buf();
     light()
         .arg("lock")
         .arg(&project)
@@ -331,7 +328,8 @@ fn lock_dry_run_does_not_write() {
 
 #[test]
 fn update_dry_run_reports_change() {
-    let project = temp_copy("outdated-project");
+    let workspace = temp_copy("outdated-project");
+    let project = workspace.path().to_path_buf();
     light()
         .arg("update")
         .arg(&project)
@@ -348,7 +346,8 @@ fn update_dry_run_reports_change() {
 
 #[test]
 fn update_applies_new_version() {
-    let project = temp_copy("outdated-project");
+    let workspace = temp_copy("outdated-project");
+    let project = workspace.path().to_path_buf();
     light()
         .arg("update")
         .arg(&project)
@@ -363,7 +362,8 @@ fn update_applies_new_version() {
 
 #[test]
 fn vendor_copies_component_sources() {
-    let app = temp_copy("installed-workspace").join("app");
+    let workspace = temp_copy("installed-workspace");
+    let app = workspace.path().join("app");
     light()
         .arg("vendor")
         .arg("--offline")
@@ -380,7 +380,8 @@ fn vendor_copies_component_sources() {
 
 #[test]
 fn vendor_path_flag_sets_output_dir() {
-    let app = temp_copy("installed-workspace").join("app");
+    let workspace = temp_copy("installed-workspace");
+    let app = workspace.path().join("app");
     light()
         .arg("vendor")
         .arg("--path")
@@ -399,7 +400,8 @@ fn vendor_path_flag_sets_output_dir() {
 
 #[test]
 fn vendor_positional_path_sets_output_dir() {
-    let app = temp_copy("installed-workspace").join("app");
+    let workspace = temp_copy("installed-workspace");
+    let app = workspace.path().join("app");
     light()
         .arg("vendor")
         .arg("vendor-positional")
@@ -416,7 +418,8 @@ fn vendor_positional_path_sets_output_dir() {
 
 #[test]
 fn vendor_dry_run_does_not_copy() {
-    let app = temp_copy("installed-workspace").join("app");
+    let workspace = temp_copy("installed-workspace");
+    let app = workspace.path().join("app");
     light()
         .arg("vendor")
         .arg("--dry-run")
@@ -429,7 +432,8 @@ fn vendor_dry_run_does_not_copy() {
 
 #[test]
 fn add_workspace_component_joins_aggregating_feature() {
-    let app = temp_copy("aggregated-workspace").join("app");
+    let workspace = temp_copy("aggregated-workspace");
+    let app = workspace.path().join("app");
     light()
         .arg("add")
         .arg("light-fw-behavior-validation")
@@ -466,7 +470,8 @@ fn add_workspace_component_joins_aggregating_feature() {
 
 #[test]
 fn add_preserves_tricky_manifest_formatting() {
-    let app = temp_copy("aggregated-workspace").join("app");
+    let workspace = temp_copy("aggregated-workspace");
+    let app = workspace.path().join("app");
     let manifest = app.join("Cargo.toml");
     let tricky = "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n\
                   # Зависимости приложения.\n[dependencies]\n\
@@ -511,7 +516,8 @@ fn add_preserves_tricky_manifest_formatting() {
 
 #[test]
 fn add_from_project_dir_resolves_workspace_source() {
-    let app = temp_copy("component-workspace").join("app");
+    let workspace = temp_copy("component-workspace");
+    let app = workspace.path().join("app");
     // Путь по умолчанию "." — раньше относительный путь ломал поиск workspace.
     light()
         .arg("add")
@@ -526,7 +532,8 @@ fn add_from_project_dir_resolves_workspace_source() {
 
 #[test]
 fn doctor_reports_core_version_from_workspace() {
-    let app = temp_copy("core-workspace").join("app");
+    let workspace = temp_copy("core-workspace");
+    let app = workspace.path().join("app");
     light()
         .arg("doctor")
         .arg("--offline")
@@ -538,7 +545,8 @@ fn doctor_reports_core_version_from_workspace() {
 
 #[test]
 fn remove_dry_run_reports_installed_version() {
-    let app = temp_copy("core-workspace").join("app");
+    let workspace = temp_copy("core-workspace");
+    let app = workspace.path().join("app");
     light()
         .arg("remove")
         .arg("light-fw-element-form")
@@ -551,7 +559,8 @@ fn remove_dry_run_reports_installed_version() {
 
 #[test]
 fn remove_updates_lockfile() {
-    let app = temp_copy("core-workspace").join("app");
+    let workspace = temp_copy("core-workspace");
+    let app = workspace.path().join("app");
     light().arg("lock").arg(&app).assert().success();
     let before = std::fs::read_to_string(app.join("light.lock")).expect("read lock");
     assert!(
@@ -577,7 +586,8 @@ fn remove_updates_lockfile() {
 
 #[test]
 fn publish_dry_run_orders_crates_and_skips_unpublished() {
-    let ws = temp_copy("publish-workspace");
+    let workspace = temp_copy("publish-workspace");
+    let ws = workspace.path().to_path_buf();
     let output = light()
         .arg("publish")
         .arg("--dry-run")
@@ -603,7 +613,8 @@ fn publish_dry_run_orders_crates_and_skips_unpublished() {
 
 #[test]
 fn publish_dry_run_single_crate() {
-    let ws = temp_copy("publish-workspace");
+    let workspace = temp_copy("publish-workspace");
+    let ws = workspace.path().to_path_buf();
     light()
         .arg("publish")
         .arg("pub-a")
@@ -618,7 +629,8 @@ fn publish_dry_run_single_crate() {
 
 #[test]
 fn publish_only_flag_selects_single_crate() {
-    let ws = temp_copy("publish-workspace");
+    let workspace = temp_copy("publish-workspace");
+    let ws = workspace.path().to_path_buf();
     light()
         .arg("publish")
         .arg("--only")
@@ -633,7 +645,8 @@ fn publish_only_flag_selects_single_crate() {
 
 #[test]
 fn publish_requires_yes_in_non_interactive_mode() {
-    let ws = temp_copy("publish-workspace");
+    let workspace = temp_copy("publish-workspace");
+    let ws = workspace.path().to_path_buf();
     light()
         .arg("publish")
         .arg("--skip-gates")
@@ -648,7 +661,8 @@ fn publish_requires_yes_in_non_interactive_mode() {
 
 #[test]
 fn publish_rejects_publishable_depending_on_unpublished() {
-    let ws = temp_copy("publish-broken");
+    let workspace = temp_copy("publish-broken");
+    let ws = workspace.path().to_path_buf();
     light()
         .arg("publish")
         .arg("--dry-run")
@@ -666,12 +680,12 @@ fn init_creates_full_project() {
     light()
         .arg("init")
         .arg("cool-app")
-        .current_dir(&scratch)
+        .current_dir(scratch.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("cool-app"));
 
-    let project = scratch.join("cool-app");
+    let project = scratch.path().join("cool-app");
     let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
     assert!(manifest.contains("name = \"cool-app\""), "{manifest}");
     assert!(manifest.contains("light = \"0.4."), "{manifest}");
@@ -683,17 +697,67 @@ fn init_creates_full_project() {
 }
 
 #[test]
+fn init_with_components_adds_dependencies_and_features() {
+    let scratch = scratch_dir("with-components");
+    light()
+        .arg("init")
+        .arg("form-app")
+        .arg("--with")
+        .arg("form")
+        .arg("--with")
+        .arg("validation")
+        .current_dir(scratch.path())
+        .assert()
+        .success();
+
+    let project = scratch.path().join("form-app");
+    let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
+    assert!(
+        manifest.contains(
+            "light = { version = \"0.4.0\", features = [\"elements-form\", \"validation\"] }"
+        ),
+        "{manifest}"
+    );
+    assert!(
+        manifest.contains("light-fw-element-form = \"0.4.0\""),
+        "{manifest}"
+    );
+    assert!(
+        manifest.contains("light-fw-behavior-validation = \"0.4.0\""),
+        "{manifest}"
+    );
+
+    let main_rs = std::fs::read_to_string(project.join("src").join("main.rs")).expect("main.rs");
+    assert!(main_rs.contains("Пример формы"), "{main_rs}");
+}
+
+#[test]
+fn init_with_unknown_component_fails() {
+    let scratch = scratch_dir("with-unknown");
+    light()
+        .arg("init")
+        .arg("bad-app")
+        .arg("--with")
+        .arg("unknown")
+        .current_dir(scratch.path())
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("неизвестный компонент"));
+}
+
+#[test]
 fn init_minimal_skips_extras() {
     let scratch = scratch_dir("minimal");
     light()
         .arg("init")
         .arg("tiny")
         .arg("--minimal")
-        .current_dir(&scratch)
+        .current_dir(scratch.path())
         .assert()
         .success();
 
-    let project = scratch.join("tiny");
+    let project = scratch.path().join("tiny");
     assert!(project.join("Cargo.toml").is_file());
     assert!(project.join("src").join("main.rs").is_file());
     assert!(!project.join(".gitignore").exists());
@@ -708,11 +772,11 @@ fn init_path_decouples_directory_from_name() {
         .arg("my-app")
         .arg("--path")
         .arg("custom-dir")
-        .current_dir(&scratch)
+        .current_dir(scratch.path())
         .assert()
         .success();
 
-    let project = scratch.join("custom-dir");
+    let project = scratch.path().join("custom-dir");
     let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
     assert!(manifest.contains("name = \"my-app\""), "{manifest}");
 }
@@ -720,14 +784,14 @@ fn init_path_decouples_directory_from_name() {
 #[test]
 fn init_rejects_non_empty_directory() {
     let scratch = scratch_dir("busy");
-    let busy = scratch.join("busy-app");
+    let busy = scratch.path().join("busy-app");
     std::fs::create_dir_all(&busy).expect("dir");
     std::fs::write(busy.join("existing.txt"), "x").expect("file");
 
     light()
         .arg("init")
         .arg("busy-app")
-        .current_dir(&scratch)
+        .current_dir(scratch.path())
         .assert()
         .failure()
         .code(1)
@@ -740,7 +804,7 @@ fn init_rejects_invalid_name() {
     light()
         .arg("init")
         .arg("2bad")
-        .current_dir(&scratch)
+        .current_dir(scratch.path())
         .assert()
         .failure()
         .code(1);
