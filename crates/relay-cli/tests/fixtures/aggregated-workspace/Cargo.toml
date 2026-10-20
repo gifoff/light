@@ -1,7 +1,0 @@
-[workspace]
-members = ["app", "form", "validation"]
-resolver = "2"
-
-[workspace.dependencies]
-relay-element-form = { path = "form", version = "0.1.0" }
-relay-behavior-validation = { path = "validation", version = "0.1.0" }

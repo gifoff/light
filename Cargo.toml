@@ -1,15 +1,15 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/relay",
-    "crates/relay-core",
-    "crates/relay-element-form",
-    "crates/relay-behavior-validation",
-    "crates/relay-macros",
-    "crates/relay-html",
-    "crates/relay-demo",
-    "crates/relay-cli-core",
-    "crates/relay-cli",
+    "crates/light",
+    "crates/light-core",
+    "crates/light-element-form",
+    "crates/light-behavior-validation",
+    "crates/light-macros",
+    "crates/light-html",
+    "crates/light-demo",
+    "crates/light-cli-core",
+    "crates/light-cli",
 ]
 exclude = ["egui-main"]
 
@@ -17,7 +17,7 @@ exclude = ["egui-main"]
 version = "0.4.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/relay-rs/relay"
+repository = "https://github.com/light-rs/light"
 rust-version = "1.95"
 
 [workspace.dependencies]
@@ -26,11 +26,11 @@ pixels = "0.17"
 softbuffer = "0.4"
 ab_glyph = "0.2"
 
-relay = { path = "crates/relay", version = "0.4.0" }
-relay-core = { path = "crates/relay-core", version = "0.4.0" }
-relay-element-form = { path = "crates/relay-element-form", version = "0.4.0" }
-relay-behavior-validation = { path = "crates/relay-behavior-validation", version = "0.4.0" }
-relay-macros = { path = "crates/relay-macros", version = "0.4.0" }
+light = { path = "crates/light", version = "0.4.0" }
+light-fw-core = { path = "crates/light-core", version = "0.4.0" }
+light-fw-element-form = { path = "crates/light-element-form", version = "0.4.0" }
+light-fw-behavior-validation = { path = "crates/light-behavior-validation", version = "0.4.0" }
+light-fw-macros = { path = "crates/light-macros", version = "0.4.0" }
 
 syn = { version = "2", features = ["full"] }
 quote = "1"

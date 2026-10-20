@@ -6,8 +6,8 @@
 
 ## Что изменилось
 
-- Фича `softbuffer-backend` включена в набор по умолчанию для `relay` и
-  `relay-core`.
+- Фича `softbuffer-backend` включена в набор по умолчанию для `light` и
+  `light-fw-core`.
 - `wgpu-backend` остался доступен, но больше не включается по умолчанию.
 - Если включены обе фичи, окно выбирает `softbuffer`.
 - Программная растеризация не менялась: раскладка, текст и цвета по-прежнему
@@ -20,7 +20,7 @@
 
 ```toml
 [dependencies]
-relay = "0.4"
+light = "0.4"
 ```
 
 `softbuffer` включится автоматически. Ничего дополнительно настраивать не
@@ -33,7 +33,7 @@ relay = "0.4"
 
 ```toml
 [dependencies]
-relay = { version = "0.4", default-features = false, features = [
+light = { version = "0.4", default-features = false, features = [
     "elements-basic",
     "wgpu-backend",
     "a11y-winit",
@@ -44,7 +44,7 @@ relay = { version = "0.4", default-features = false, features = [
 
 ```toml
 [dependencies]
-relay = { version = "0.4", default-features = false, features = ["wgpu-backend"] }
+light = { version = "0.4", default-features = false, features = ["wgpu-backend"] }
 ```
 
 Не включайте `softbuffer-backend` и `wgpu-backend` одновременно: при обеих
@@ -58,7 +58,7 @@ relay = { version = "0.4", default-features = false, features = ["wgpu-backend"]
 
 ```toml
 # softbuffer
-relay = { version = "0.4", default-features = false, features = [
+light = { version = "0.4", default-features = false, features = [
     "elements-basic",
     "softbuffer-backend",
     "a11y-winit",
@@ -67,7 +67,7 @@ relay = { version = "0.4", default-features = false, features = [
 
 ```toml
 # wgpu
-relay = { version = "0.4", default-features = false, features = [
+light = { version = "0.4", default-features = false, features = [
     "elements-basic",
     "wgpu-backend",
     "a11y-winit",

@@ -1,0 +1,99 @@
+[package]
+name = "light-fw-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+description = "Ядро Light: виртуальный DOM, реактивность, раскладка, отрисовка и окно"
+
+[lib]
+name = "light_fw_core"
+
+[dependencies]
+light-fw-macros.workspace = true
+thiserror = "2"
+winit = { workspace = true, optional = true }
+pixels = { workspace = true, optional = true }
+softbuffer = { workspace = true, optional = true }
+ab_glyph = { workspace = true, optional = true }
+accesskit = { version = "0.25", optional = true, features = ["serde"] }
+accesskit_winit = { version = "0.34", optional = true }
+
+[features]
+# Набор по умолчанию: базовые элементы + окно + показ через softbuffer + a11y.
+default = ["elements-basic", "window", "softbuffer-backend", "a11y-winit"]
+
+# --- Элементы разметки -------------------------------------------------
+# `<div>`, `<span>`, `<h1>`–`<h5>`, `<titlebar>`, `<text>` и `<button>`.
+elements-basic = ["light-fw-macros/elements-basic"]
+# Пароль (`<password>`), многострочное поле (`textarea`) и маркер изменения размера.
+elements-input = ["light-fw-macros/elements-input", "resize-grip"]
+# Флажок (`<checkbox>`).
+elements-checkbox = ["light-fw-macros/elements-checkbox"]
+# Переключатель (`<radio>`).
+elements-radio = ["light-fw-macros/elements-radio"]
+# Выпадающий список (`<select>`/`<option>`).
+elements-select = ["light-fw-macros/elements-select"]
+# Компонент `light-fw-element-form`: флажок, переключатель и список.
+elements-form = ["elements-input", "elements-checkbox", "elements-radio", "elements-select"]
+# Маркер изменения размера текстового поля (`resize`).
+resize-grip = ["light-fw-macros/resize-grip"]
+
+# --- Кросс-элементные возможности --------------------------------------
+# Выравнивание содержимого контейнера (`align-items`/`justify-content`).
+align-content = ["light-fw-macros/align-content"]
+# Порядок отрисовки и попадания (`z`).
+z-order = ["light-fw-macros/z-order"]
+# Курсоры мыши (`cursor` и автоматический выбор по роли).
+cursor-theming = ["light-fw-macros/cursor-theming"]
+# Смещение после выравнивания (`position-offset-x`/`position-offset-y`).
+offset-position = ["light-fw-macros/offset-position"]
+# Динамические привязки `:attr`.
+dynamic-attrs = ["light-fw-macros/dynamic-attrs"]
+# Обязательные поля (`required`/`required-indicator`) и стандартная проверка.
+required-fields = ["light-fw-macros/required-fields"]
+# Пользовательская валидация (`:validator`/`@validate`).
+validation = ["light-fw-macros/validation"]
+# Ограничения размера (`min-width`/`max-width`/`min-height`/`max-height`).
+min-max-size = ["light-fw-macros/min-max-size"]
+
+# --- Окно --------------------------------------------------------------
+# Базовое окно на winit с программной отрисовкой.
+window = ["dep:winit", "dep:ab_glyph"]
+# Показ кадра через `softbuffer` (без wgpu/naga). По умолчанию включён.
+softbuffer-backend = ["window", "dep:softbuffer"]
+# Показ кадра через `pixels` (wgpu/naga). Альтернативный бэкенд.
+# Если включены обе фичи, используется `softbuffer-backend`.
+wgpu-backend = ["window", "dep:pixels"]
+# Прозрачность окна (per-pixel alpha).
+window-transparent = ["window"]
+# Модальные окна (`modal`).
+window-modal = ["window"]
+# Несколько окон (`open_window`).
+window-multi = ["window"]
+# Адресация окон по идентификатору (`open("id")`).
+window-by-id = ["window"]
+# Изменение размера окна (`resizable`).
+window-resize = ["window"]
+
+# --- Доступность -------------------------------------------------------
+# Построение дерева доступности AccessKit.
+a11y = ["dep:accesskit"]
+# Интеграция с `accesskit_winit` (включает полный набор подсистем a11y).
+a11y-winit = ["a11y", "a11y-live", "a11y-keyboard", "window", "dep:accesskit_winit"]
+# Живые регионы (`aria-live`).
+a11y-live = ["a11y"]
+# Программный фокус и кольцо фокуса.
+a11y-focus = ["a11y"]
+# Клавиатурная навигация (`Tab`/`Enter`/`Space`/`Escape`).
+a11y-keyboard = ["a11y"]
+
+# --- Прочее ------------------------------------------------------------
+# Включение шаблонов `<include src="...">`.
+include = ["light-fw-macros/include"]
+
+[dev-dependencies]
+insta = { version = "1", features = ["json"] }
+serde_json = "1"

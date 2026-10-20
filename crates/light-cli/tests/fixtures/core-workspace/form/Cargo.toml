@@ -1,0 +1,12 @@
+﻿[package]
+name = "light-fw-element-form"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.light]
+kind = "element"
+display-name = "Form elements"
+core = "^0.4"
+
+[package.metadata.light.provides]
+elements = ["checkbox", "radio", "select", "option"]

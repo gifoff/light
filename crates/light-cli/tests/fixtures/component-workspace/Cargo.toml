@@ -1,0 +1,6 @@
+[workspace]
+members = ["app", "comp"]
+resolver = "2"
+
+[workspace.dependencies]
+light-fw-element-form = { path = "comp", version = "0.1.0" }

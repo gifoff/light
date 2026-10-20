@@ -1,0 +1,58 @@
+[package]
+name = "light-demo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Демонстрационное приложение библиотеки Light"
+
+[dependencies]
+# Базовый набор — элементы и окно. Компоненты и остальные возможности
+# добавляются через фичи (см. `[features]`).
+light = { workspace = true, default-features = false, features = [
+    "elements-basic",
+    "window",
+] }
+# Компоненты подключаются явными зависимостями: так `light check` видит, что
+# элементы формы и валидация установлены, а сборка без них не тянет их код.
+light-fw-element-form = { workspace = true, optional = true }
+light-fw-behavior-validation = { workspace = true, optional = true }
+
+[features]
+default = ["full"]
+# Доступность (AccessKit) поверх окна.
+a11y = ["light/a11y-winit"]
+# Показ кадра через softbuffer (без wgpu/naga).
+softbuffer = ["light/softbuffer-backend"]
+# Показ кадра через pixels (wgpu/naga).
+wgpu = ["light/wgpu-backend"]
+# Общий набор возможностей приложения без выбора бэкенда.
+full-common = [
+    "a11y",
+    "dep:light-fw-element-form",
+    "dep:light-fw-behavior-validation",
+    "light/align-content",
+    "light/z-order",
+    "light/cursor-theming",
+    "light/offset-position",
+    "light/dynamic-attrs",
+    "light/required-fields",
+    "light/min-max-size",
+    "light/include",
+    "light/window-transparent",
+    "light/window-modal",
+    "light/window-multi",
+    "light/window-by-id",
+    "light/window-resize",
+]
+# Полный набор возможностей с softbuffer (по умолчанию).
+full = ["full-common", "softbuffer"]
+# Полный набор возможностей с wgpu — для сравнения размера и производительности.
+full-wgpu = ["full-common", "wgpu"]
+# Минимальная сборка — базовые элементы, окно и softbuffer, без AccessKit и форм.
+# Используется для замера размера бинарника (пример `minimal`).
+minimal = ["softbuffer"]
+
+[dev-dependencies]
+serde_json = "1"

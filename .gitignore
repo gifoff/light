@@ -2,9 +2,9 @@
 
 .idea/
 
-# Артефакты relay-framework-cli
-.relay/
-target/.relay/
+# Артефакты light-fw-cli
+.light/
+target/.light/
 vendor/
 vendor-test/
 vendor-*/

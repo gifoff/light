@@ -1,6 +1,0 @@
-[workspace]
-members = ["app", "comp"]
-resolver = "2"
-
-[workspace.dependencies]
-relay-element-form = { path = "comp", version = "0.1.0" }

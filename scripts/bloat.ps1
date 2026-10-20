@@ -24,7 +24,7 @@ function Get-BinaryPath {
 }
 
 function Invoke-Build([string]$Features) {
-    & cargo build -p relay-demo --example minimal --release --no-default-features --features $Features
+    & cargo build -p light-demo --example minimal --release --no-default-features --features $Features
     if ($LASTEXITCODE -ne 0) { throw "Сборка (features=$Features) не удалась" }
     return (Get-Item (Get-BinaryPath)).Length
 }
@@ -44,5 +44,5 @@ foreach ($feature in $sizes.Keys) {
 
 if (Get-Command cargo-bloat -ErrorAction SilentlyContinue) {
     "`ncargo bloat (minimal):"
-    & cargo bloat --release -p relay-demo --example minimal --no-default-features --features minimal -n 20
+    & cargo bloat --release -p light-demo --example minimal --no-default-features --features minimal -n 20
 }

@@ -1,0 +1,4 @@
+[package]
+name = "light"
+version.workspace = true
+edition = "2021"

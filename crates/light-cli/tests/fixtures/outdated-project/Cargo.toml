@@ -1,0 +1,10 @@
+[package]
+name = "outdated-project"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+light = "0.1"
+light-fw-element-form = "0.0.1"

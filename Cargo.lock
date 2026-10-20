@@ -1851,6 +1851,104 @@ dependencies = [
 ]
 
 [[package]]
+name = "light"
+version = "0.4.0"
+dependencies = [
+ "light-fw-behavior-validation",
+ "light-fw-core",
+ "light-fw-element-form",
+ "serde_json",
+]
+
+[[package]]
+name = "light-demo"
+version = "0.4.0"
+dependencies = [
+ "light",
+ "light-fw-behavior-validation",
+ "light-fw-element-form",
+ "serde_json",
+]
+
+[[package]]
+name = "light-fw-behavior-validation"
+version = "0.4.0"
+dependencies = [
+ "light-fw-core",
+]
+
+[[package]]
+name = "light-fw-cli"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "clap",
+ "console 0.15.11",
+ "dialoguer",
+ "indicatif",
+ "light-fw-cli-core",
+ "predicates",
+ "serde_json",
+]
+
+[[package]]
+name = "light-fw-cli-core"
+version = "0.4.0"
+dependencies = [
+ "dirs",
+ "glob",
+ "hex",
+ "ignore",
+ "light-fw-html",
+ "reqwest",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "toml_edit 0.22.27",
+ "walkdir",
+]
+
+[[package]]
+name = "light-fw-core"
+version = "0.4.0"
+dependencies = [
+ "ab_glyph",
+ "accesskit",
+ "accesskit_winit",
+ "insta",
+ "light-fw-macros",
+ "pixels",
+ "serde_json",
+ "softbuffer",
+ "thiserror 2.0.21",
+ "winit",
+]
+
+[[package]]
+name = "light-fw-element-form"
+version = "0.4.0"
+dependencies = [
+ "light-fw-core",
+]
+
+[[package]]
+name = "light-fw-html"
+version = "0.4.0"
+
+[[package]]
+name = "light-fw-macros"
+version = "0.4.0"
+dependencies = [
+ "light-fw-html",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2822,104 +2920,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "relay"
-version = "0.4.0"
-dependencies = [
- "relay-behavior-validation",
- "relay-core",
- "relay-element-form",
- "serde_json",
-]
-
-[[package]]
-name = "relay-behavior-validation"
-version = "0.4.0"
-dependencies = [
- "relay-core",
-]
-
-[[package]]
-name = "relay-cli-core"
-version = "0.4.0"
-dependencies = [
- "dirs",
- "glob",
- "hex",
- "ignore",
- "relay-html",
- "reqwest",
- "semver",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.21",
- "toml_edit 0.22.27",
- "walkdir",
-]
-
-[[package]]
-name = "relay-core"
-version = "0.4.0"
-dependencies = [
- "ab_glyph",
- "accesskit",
- "accesskit_winit",
- "insta",
- "pixels",
- "relay-macros",
- "serde_json",
- "softbuffer",
- "thiserror 2.0.21",
- "winit",
-]
-
-[[package]]
-name = "relay-demo"
-version = "0.4.0"
-dependencies = [
- "relay",
- "relay-behavior-validation",
- "relay-element-form",
- "serde_json",
-]
-
-[[package]]
-name = "relay-element-form"
-version = "0.4.0"
-dependencies = [
- "relay-core",
-]
-
-[[package]]
-name = "relay-framework-cli"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "assert_cmd",
- "clap",
- "console 0.15.11",
- "dialoguer",
- "indicatif",
- "predicates",
- "relay-cli-core",
- "serde_json",
-]
-
-[[package]]
-name = "relay-html"
-version = "0.4.0"
-
-[[package]]
-name = "relay-macros"
-version = "0.4.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "relay-html",
- "syn 2.0.119",
-]
 
 [[package]]
 name = "renderdoc-sys"

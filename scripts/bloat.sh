@@ -27,7 +27,7 @@ binary_path() {
 
 build_size() {
     local features="$1"
-    cargo build -p relay-demo --example minimal --release --no-default-features --features "$features"
+    cargo build -p light-demo --example minimal --release --no-default-features --features "$features"
     stat -c '%s' "$(binary_path)" 2>/dev/null || stat -f '%z' "$(binary_path)"
 }
 
@@ -46,5 +46,5 @@ done
 if command -v cargo-bloat >/dev/null 2>&1; then
     echo
     echo "cargo bloat (minimal):"
-    cargo bloat --release -p relay-demo --example minimal --no-default-features --features minimal -n 20
+    cargo bloat --release -p light-demo --example minimal --no-default-features --features minimal -n 20
 fi

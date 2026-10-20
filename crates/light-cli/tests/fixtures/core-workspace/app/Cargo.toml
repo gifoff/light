@@ -1,0 +1,11 @@
+[package]
+name = "app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+light = { workspace = true }
+light-fw-element-form = { workspace = true, optional = true }
+
+[features]
+full = ["dep:light-fw-element-form"]

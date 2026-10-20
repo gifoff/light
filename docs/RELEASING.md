@@ -1,6 +1,6 @@
 # Публикация релиза
 
-Короткая инструкция для мейнтейнеров Relay. Публикация выполняется вручную:
+Короткая инструкция для мейнтейнеров Light. Публикация выполняется вручную:
 токен crates.io не хранится в репозитории.
 
 ## 1. Подготовка
@@ -20,7 +20,7 @@
 4. Проверьте демо:
 
    ```bash
-   cargo run -p relay-framework-cli -- check --strict crates/relay-demo
+   cargo run -p light-fw-cli -- check --strict crates/light-demo
    ```
 
 ## 2. Вход в crates.io
@@ -40,13 +40,13 @@ cargo login
 Сначала выполните dry-run — он упакует все крейты, но ничего не опубликует:
 
 ```bash
-cargo run -p relay-framework-cli -- publish --dry-run
+cargo run -p light-fw-cli -- publish --dry-run
 ```
 
-Если `relay` уже установлен:
+Если `light` уже установлен:
 
 ```bash
-relay publish --dry-run
+light publish --dry-run
 ```
 
 `--dry-run` полезен для проверки состава пакетов и порядка публикации.
@@ -54,31 +54,31 @@ relay publish --dry-run
 
 ## 4. Публикация
 
-Рекомендуемый способ — `relay publish`: команда сама строит топологический
+Рекомендуемый способ — `light publish`: команда сама строит топологический
 порядок из `cargo metadata`, пропускает `publish = false` (например,
-`relay-demo`), проверяет версии и внутренние зависимости, запускает
+`light-demo`), проверяет версии и внутренние зависимости, запускает
 pre-flight-гейты и повторяет попытки при устаревании индекса crates.io.
 
 ```bash
-cargo run -p relay-framework-cli -- publish
+cargo run -p light-fw-cli -- publish
 ```
 
 Или, если CLI установлен:
 
 ```bash
-relay publish
+light publish
 ```
 
 Для неинтерактивного запуска:
 
 ```bash
-relay publish --yes
+light publish --yes
 ```
 
 Токен можно передать явно:
 
 ```bash
-relay publish --token "$CARGO_REGISTRY_TOKEN"
+light publish --token "$CARGO_REGISTRY_TOKEN"
 ```
 
 Полезные флаги: `--allow-dirty`, `--skip-gates`, `--no-verify`,
@@ -89,18 +89,18 @@ relay publish --token "$CARGO_REGISTRY_TOKEN"
 Если нужно публиковать вручную, соблюдайте порядок зависимостей:
 
 ```bash
-cargo publish -p relay-html
-cargo publish -p relay-cli-core
-cargo publish -p relay-framework-cli
-cargo publish -p relay-macros
-cargo publish -p relay-core
-cargo publish -p relay-behavior-validation
-cargo publish -p relay-element-form
-cargo publish -p relay
+cargo publish -p light-fw-html
+cargo publish -p light-fw-cli-core
+cargo publish -p light-fw-cli
+cargo publish -p light-fw-macros
+cargo publish -p light-fw-core
+cargo publish -p light-fw-behavior-validation
+cargo publish -p light-fw-element-form
+cargo publish -p light
 ```
 
 После каждой публикации может потребоваться пауза, пока индекс crates.io
-увидит новую версию. `relay publish` делает такие паузы и повторы
+увидит новую версию. `light publish` делает такие паузы и повторы
 автоматически.
 
 ## 5. Тег и проверка
@@ -116,8 +116,8 @@ git push origin vX.Y.Z
 Проверьте результат:
 
 ```bash
-cargo search relay
-cargo install relay-framework-cli --version X.Y.Z
+cargo search light
+cargo install light-fw-cli --version X.Y.Z
 ```
 
 Также откройте страницы крейтов на crates.io и убедитесь, что docs.rs
@@ -127,6 +127,6 @@ cargo install relay-framework-cli --version X.Y.Z
 
 - Опубликованную версию нельзя перезаписать. Если публикация оборвалась
   после части крейтов, исправьте проблему и выпустите следующую версию;
-  `relay publish` пропустит уже опубликованные крейты.
+  `light publish` пропустит уже опубликованные крейты.
 - Не публикуйте с грязным рабочим деревом без необходимости.
 - Тег ставьте только на проверенный коммит, из которого собраны пакеты.

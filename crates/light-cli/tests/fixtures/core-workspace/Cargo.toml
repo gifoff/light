@@ -1,0 +1,11 @@
+﻿[workspace]
+members = ["app", "light", "light-core", "form"]
+resolver = "2"
+
+[workspace.package]
+version = "0.4.0"
+
+[workspace.dependencies]
+light-fw-core = { path = "light-core" }
+light = { path = "light" }
+light-fw-element-form = { path = "form" }

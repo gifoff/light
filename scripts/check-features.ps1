@@ -1,4 +1,4 @@
-﻿# Проверка сборки и тестов relay на разных наборах Cargo-фич.
+﻿# Проверка сборки и тестов light на разных наборах Cargo-фич.
 #
 # Ловит забытые `#[cfg]`: набор должен компилироваться и проходить тесты
 # не только на `--all-features`. Запуск из корня репозитория:
@@ -18,7 +18,7 @@ $combos = @(
 
 foreach ($combo in $combos) {
     Write-Host "==> $($combo.Name)" -ForegroundColor Cyan
-    foreach ($pkg in @("relay-core", "relay")) {
+    foreach ($pkg in @("light-fw-core", "light")) {
         Write-Host "    -> $pkg" -ForegroundColor DarkCyan
         & cargo test -p $pkg @($combo.Args)
         if ($LASTEXITCODE -ne 0) {

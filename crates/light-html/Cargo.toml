@@ -1,0 +1,12 @@
+[package]
+name = "light-fw-html"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+description = "Разбор HTML-шаблонов Light для процедурных макросов"
+
+[lib]
+path = "src/lib.rs"

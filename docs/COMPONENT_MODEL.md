@@ -1,6 +1,6 @@
-# Модель компонентов Relay
+# Модель компонентов Light
 
-Этот документ фиксирует архитектурную модель компонентов Relay:
+Этот документ фиксирует архитектурную модель компонентов Light:
 что считается компонентом, какие бывают типы, как они описываются,
 распространяются и собираются в приложение.
 
@@ -20,7 +20,7 @@
 
 ## 1. Что такое компонент
 
-**Компонент** — это автономная единица функциональности Relay, которая:
+**Компонент** — это автономная единица функциональности Light, которая:
 
 1. Имеет **манифест** с именем, версией, типом и совместимостью с ядром.
 2. Распространяется через **стандартный реестр** (crates.io или
@@ -53,7 +53,7 @@
 4. **Совместимость — по semver.** Без своих версий и «совместимо со всем».
 5. **Собирается только используемое.** См. `DESIGN_PRINCIPLES.md`.
 6. **Cargo остаётся движком.** Компоненты-крейты собираются Cargo.
-   CLI Relay — надстройка, не замена.
+   CLI Light — надстройка, не замена.
 7. **Данные отдельно от кода.** Темы, иконки, локали — asset packs,
    не крейты. Они не содержат нативного кода и не требуют сборки.
 
@@ -66,7 +66,7 @@
 
 ### 3.1. Core (ядро)
 
-Не компонент, а **сам фреймворк**. `relay-core`, `relay-macros`.
+Не компонент, а **сам фреймворк**. `light-fw-core`, `light-fw-macros`.
 Минимальный набор: виртуальный DOM, реактивность, базовая раскладка,
 окно и paint, публичный API.
 
@@ -77,12 +77,12 @@
 `<div>`, `<span>`, `<h1>`–`<h5>`, `<titlebar>`, `<window>`, `<button>`,
 а также текстовые поля `<text>`, `<password>` и `<textarea>`.
 Способы отрисовки `window`/`a11y` и элементы `elements-basic`/
-`elements-input` включаются Cargo-фичами `relay-core`, а не отдельными
+`elements-input` включаются Cargo-фичами `light-fw-core`, а не отдельными
 крейтами: для них фич достаточно.
 
-Крейт `relay` — тонкая мета-обёртка: он реэкспортирует `relay-core`,
+Крейт `light` — тонкая мета-обёртка: он реэкспортирует `light-fw-core`,
 макросы и подключённые компоненты, а его фичи транслируются в фичи
-`relay-core` (см. `docs/guide.md`).
+`light-fw-core` (см. `docs/guide.md`).
 
 ### 3.2. Element (элемент)
 
@@ -90,20 +90,20 @@
 Один крейт = одна логическая группа элементов.
 
 Примеры:
-- `relay-element-basic` — `<div>`, `<span>`, `<h1>`–`<h5>`,
-  `<titlebar>`, `<window>` (в текущей реализации — фича `relay-core`).
-- `relay-element-form` — `<checkbox>`, `<radio>`, `<select>`,
+- `light-element-basic` — `<div>`, `<span>`, `<h1>`–`<h5>`,
+  `<titlebar>`, `<window>` (в текущей реализации — фича `light-fw-core`).
+- `light-fw-element-form` — `<checkbox>`, `<radio>`, `<select>`,
   `<option>`.
-- `relay-element-media` — `<img>`, `<video>`, `<canvas>`.
-- `relay-element-list` — `<list>`, `<virtual-list>`, `<table>`.
+- `light-element-media` — `<img>`, `<video>`, `<canvas>`.
+- `light-element-list` — `<list>`, `<virtual-list>`, `<table>`.
 
 Правила:
 - Каждый элемент из группы регистрируется в макросе `#[template]`.
 - Использование элемента без его компонента — **ошибка компиляции**
   с подсказкой, какой компонент включить.
 - Element-компонент может зависеть от других element-компонентов
-  (например, `relay-element-form` может требовать
-  `relay-element-basic`).
+  (например, `light-fw-element-form` может требовать
+  `light-element-basic`).
 
 ### 3.3. Behavior (поведение)
 
@@ -111,13 +111,13 @@
 обработку событий, свойства, модификацию раскладки.
 
 Примеры:
-- `relay-behavior-drag` — перетаскивание элементов.
-- `relay-behavior-hotkeys` — глобальные горячие клавиши.
-- `relay-behavior-animation` — анимации переходов между состояниями.
-- `relay-behavior-validation` — валидация форм (`:validator`,
+- `light-behavior-drag` — перетаскивание элементов.
+- `light-behavior-hotkeys` — глобальные горячие клавиши.
+- `light-behavior-animation` — анимации переходов между состояниями.
+- `light-fw-behavior-validation` — валидация форм (`:validator`,
   `@validate`, `required`).
-- `relay-behavior-dnd-files` — drop файлов из ОС.
-- `relay-behavior-focus-trap` — focus-trap для модальных окон.
+- `light-behavior-dnd-files` — drop файлов из ОС.
+- `light-behavior-focus-trap` — focus-trap для модальных окон.
 
 Правила:
 - Behavior-компонент объявляет, **какие атрибуты или директивы** он
@@ -132,12 +132,12 @@
 Предоставляют готовый к использованию UI-элемент.
 
 Примеры:
-- `relay-widget-datepicker`
-- `relay-widget-autocomplete`
-- `relay-widget-code-editor`
-- `relay-widget-markdown-viewer`
-- `relay-widget-chart`
-- `relay-widget-treeview`
+- `light-widget-datepicker`
+- `light-widget-autocomplete`
+- `light-widget-code-editor`
+- `light-widget-markdown-viewer`
+- `light-widget-chart`
+- `light-widget-treeview`
 
 Правила:
 - Виджет может предоставлять новый тег (например, `<datepicker>`)
@@ -151,13 +151,13 @@
 Мост с внешним миром: ОС, устройства, сторонние сервисы.
 
 Примеры:
-- `relay-integration-tray` — системный трей.
-- `relay-integration-notifications` — системные уведомления.
-- `relay-integration-clipboard` — работа с буфером обмена.
-- `relay-integration-filedialog` — диалоги выбора файла.
-- `relay-integration-audio`.
-- `relay-integration-midi`.
-- `relay-integration-http` — асинхронные HTTP-запросы.
+- `light-integration-tray` — системный трей.
+- `light-integration-notifications` — системные уведомления.
+- `light-integration-clipboard` — работа с буфером обмена.
+- `light-integration-filedialog` — диалоги выбора файла.
+- `light-integration-audio`.
+- `light-integration-midi`.
+- `light-integration-http` — асинхронные HTTP-запросы.
 
 Правила:
 - Integration не создаёт элементов. Даёт Rust-API для компонента.
@@ -171,13 +171,13 @@
 его слоя.
 
 Примеры:
-- `relay-subsystem-a11y` — интеграция с AccessKit.
-- `relay-subsystem-i18n` — локализация (Fluent).
-- `relay-subsystem-theme` — темы и токены дизайна.
-- `relay-subsystem-undo` — глобальный стек undo/redo.
-- `relay-subsystem-persistence` — сохранение состояния окон.
-- `relay-subsystem-scripting` — встраивание Rhai/Lua.
-- `relay-subsystem-devtools` — инспектор, профайлер.
+- `light-subsystem-a11y` — интеграция с AccessKit.
+- `light-subsystem-i18n` — локализация (Fluent).
+- `light-subsystem-theme` — темы и токены дизайна.
+- `light-subsystem-undo` — глобальный стек undo/redo.
+- `light-subsystem-persistence` — сохранение состояния окон.
+- `light-subsystem-scripting` — встраивание Rhai/Lua.
+- `light-subsystem-devtools` — инспектор, профайлер.
 
 Правила:
 - Subsystem включается одним Cargo-флагом.
@@ -192,10 +192,10 @@
 Не код. Пакет файлов: темы, иконки, локали, шрифты, звуки, сниппеты.
 
 Примеры:
-- **Theme** — `.relay-theme.zip`: цвета, метрики, шрифты.
-- **Icons** — `.relay-icons.zip`: набор SVG с именами.
-- **Locale** — `.relay-locale.zip`: Fluent-файлы (`.ftl`).
-- **Template** — `.relay-template.zip`: HTML-сниппеты для `<include>`.
+- **Theme** — `.light-theme.zip`: цвета, метрики, шрифты.
+- **Icons** — `.light-icons.zip`: набор SVG с именами.
+- **Locale** — `.light-locale.zip`: Fluent-файлы (`.ftl`).
+- **Template** — `.light-template.zip`: HTML-сниппеты для `<include>`.
 
 Правила:
 - Asset pack **не содержит нативного кода**.
@@ -208,10 +208,10 @@
 Не попадает в релизную сборку. Используется во время разработки.
 
 Примеры:
-- `relay-devtools` — интерактивный инспектор UI и состояния.
-- `relay-hot-reload` — горячая перезагрузка шаблонов.
-- `relay-mock` — мок-объекты для тестов.
-- `relay-bench` — бенчмарки.
+- `light-devtools` — интерактивный инспектор UI и состояния.
+- `light-hot-reload` — горячая перезагрузка шаблонов.
+- `light-mock` — мок-объекты для тестов.
+- `light-bench` — бенчмарки.
 
 Правила:
 - Всегда под фичей, никогда не в `default`.
@@ -223,25 +223,25 @@
 ## 4. Манифест компонента (крейт)
 
 Компоненты-крейты используют **стандартный `Cargo.toml`** плюс
-секцию `[package.metadata.relay]`.
+секцию `[package.metadata.light]`.
 
 Пример полного манифеста:
 
 ```toml
 [package]
-name = "relay-widget-datepicker"
+name = "light-widget-datepicker"
 version = "0.3.1"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT OR Apache-2.0"
 description = "Календарь для выбора даты"
 authors = ["Иван Иванов <ivan@example.com>"]
-repository = "https://github.com/relay-rs/relay-widget-datepicker"
-homepage = "https://relay.rs/components/datepicker"
-keywords = ["relay", "widget", "date", "input"]
+repository = "https://github.com/light-rs/light-widget-datepicker"
+homepage = "https://light.rs/components/datepicker"
+keywords = ["light", "widget", "date", "input"]
 categories = ["gui"]
 
-[package.metadata.relay]
+[package.metadata.light]
 # Тип компонента: element | behavior | widget | integration | subsystem | dev
 kind = "widget"
 
@@ -252,26 +252,26 @@ display-name = "Date Picker"
 core = "^0.4"
 
 # Что компонент предоставляет
-[package.metadata.relay.provides]
+[package.metadata.light.provides]
 elements = ["datepicker"]              # новые теги
 attributes = []                        # новые атрибуты
 directives = []                        # новые директивы (v-*)
 # traits = ["DatePickerApi"]           # публичные трейты (для integrations/subsystems)
 
 # Что компонент требует
-[package.metadata.relay.requires]
+[package.metadata.light.requires]
 # Компоненты, которые обязательны
 components = [
-    "relay-element-form ^0.1",
-    "relay-behavior-validation ^0.1",
+    "light-fw-element-form ^0.1",
+    "light-fw-behavior-validation ^0.1",
 ]
 # Rust-зависимости, помимо Cargo-секции [dependencies]
 # (обычно не нужно — используется [dependencies])
 
 # Конфликты: нельзя включать одновременно
-conflicts = ["relay-widget-old-datepicker"]
+conflicts = ["light-widget-old-datepicker"]
 
 # Метаданные для CLI и реестра
-[package.metadata.relay.registry]
+[package.metadata.light.registry]
 official = false                       # официальный ли компонент
 tags = ["form", "date", "input", "calendar"]

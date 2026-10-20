@@ -1,0 +1,45 @@
+---
+source: crates/light-core/tests/a11y_snapshots.rs
+expression: "summarize(&update, tree)"
+---
+{
+  "focus": "",
+  "nodes": [
+    {
+      "key": "head0",
+      "label": "h1",
+      "role": "Heading"
+    },
+    {
+      "key": "head1",
+      "label": "h2",
+      "role": "Heading"
+    },
+    {
+      "key": "head2",
+      "label": "h3",
+      "role": "Heading"
+    },
+    {
+      "key": "head3",
+      "label": "h4",
+      "role": "Heading"
+    },
+    {
+      "key": "head4",
+      "label": "h5",
+      "role": "Heading"
+    },
+    {
+      "key": "col",
+      "label": null,
+      "role": "GenericContainer"
+    },
+    {
+      "key": "",
+      "label": null,
+      "role": "Window"
+    }
+  ],
+  "root": ""
+}

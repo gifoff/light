@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Проверка сборки и тестов relay на разных наборах Cargo-фич.
+# Проверка сборки и тестов light на разных наборах Cargo-фич.
 #
 # Ловит забытые `#[cfg]`: набор должен компилироваться и проходить тесты
 # не только на `--all-features`. Запуск из корня репозитория:
@@ -21,7 +21,7 @@ for combo in "${combos[@]}"; do
     args="${combo#*|}"
     echo "==> ${name}"
     # shellcheck disable=SC2086
-    cargo test -p relay ${args}
+    cargo test -p light ${args}
 done
 
 echo "Все наборы фич зелёные."

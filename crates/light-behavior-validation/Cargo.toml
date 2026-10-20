@@ -1,0 +1,19 @@
+[package]
+name = "light-fw-behavior-validation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+description = "Компонент Light: валидация форм — required, :validator и @validate"
+
+[dependencies]
+light-fw-core = { workspace = true, default-features = false, features = ["validation", "required-fields"] }
+
+[package.metadata.light]
+kind = "behavior"
+display-name = "Form validation"
+core = "^0.4"
+provides.attributes = [":validator", "required"]
+provides.directives = ["@validate"]

@@ -1,11 +1,11 @@
 # Footprint Report
 
 Дата: 2026-10-17
-Commit: 525fa05 (Фаза 1: split `relay` → `relay-core` + компоненты)
+Commit: 525fa05 (Фаза 1: split `light` → `light-fw-core` + компоненты)
 
-## relay-demo (release, strip)
+## light-demo (release, strip)
 
-| Конфигурация | Пример | Размер `.exe` | relay_core |
+| Конфигурация | Пример | Размер `.exe` | light_fw_core |
 |---|---:|---:|---:|
 | minimal (без форм и a11y) | `minimal` | 8 074 752 B (7.7 MB) | 304.5 KiB |
 | full (формы + a11y) | `a11y_form` | 8 198 656 B (7.8 MB) | 315.4 KiB |
@@ -22,7 +22,7 @@ Commit: 525fa05 (Фаза 1: split `relay` → `relay-core` + компонент
 
 ## Эффект разделения на компоненты
 
-- **Дельта `relay_core`**: ~11 KB (код формы и валидации).
+- **Дельта `light_fw_core`**: ~11 KB (код формы и валидации).
 - **Общая дельта**: ~124 KB (включает код примера и `serde_json` для `--dump-a11y`).
 
 ## Узкие места

@@ -1,0 +1,7 @@
+[workspace]
+members = ["app", "form", "validation"]
+resolver = "2"
+
+[workspace.dependencies]
+light-fw-element-form = { path = "form", version = "0.1.0" }
+light-fw-behavior-validation = { path = "validation", version = "0.1.0" }

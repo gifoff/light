@@ -1,4 +1,4 @@
-# Архитектурные принципы Relay
+# Архитектурные принципы Light
 
 Этот документ фиксирует принципы, которым должны соответствовать изменения
 фреймворка. Принципы — не рекомендации, а требования: если изменение им
@@ -6,14 +6,14 @@
 
 ## Принцип 1: только используемый код попадает в бинарник
 
-Relay не должен «стоить» ресурсов пользователю, если он не пользуется
+Light не должен «стоить» ресурсов пользователю, если он не пользуется
 функциональностью. Каждая подсистема фреймворка — layout элементов, paint,
 AccessKit-семантика, обработка событий, оконные возможности — обязана быть
 **опциональной** на уровне Cargo-фич. Отсутствие фичи должно гарантированно
 вырезать соответствующий код из бинарника (через `#[cfg]`), а не «оставить,
 но не вызывать».
 
-### Правила для разработчиков Relay
+### Правила для разработчиков Light
 
 1. Новый элемент HTML-разметки (`<foo>`) добавляется вместе с новой фичей
    `elements-foo`. Без фичи разбор `<foo>` даёт ошибку компиляции с подсказкой
@@ -28,11 +28,11 @@ AccessKit-семантика, обработка событий, оконные 
 5. Каждая фича должна иметь rustdoc-документацию в `Cargo.toml`
    (секция `[features]` с комментариями) и раздел в `guide.md`.
 6. При добавлении фичи обязательно обновить:
-   - `crates/relay/Cargo.toml` (секция `[features]`);
+   - `crates/light/Cargo.toml` (секция `[features]`);
    - `docs/guide.md` (раздел «Установка и Cargo-фичи»);
    - `CHANGELOG.md`.
-7. Проверка на регрессию: `cargo build -p relay --no-default-features` обязан
-   собираться. `cargo build -p relay --no-default-features --features <X>`
+7. Проверка на регрессию: `cargo build -p light --no-default-features` обязан
+   собираться. `cargo build -p light --no-default-features --features <X>`
    обязан собираться для каждой фичи `X` в отдельности (кроме фич, явно
    требующих зависимостей).
 8. Размер бинарника — метрика, которую мы измеряем. Раз в N релизов прогоняем
@@ -41,7 +41,7 @@ AccessKit-семантика, обработка событий, оконные 
 
 ### Компромисс по `Style`
 
-Поля `relay::vdom::Style` остаются объявленными всегда (несколько байт на
+Поля `light::vdom::Style` остаются объявленными всегда (несколько байт на
 элемент). Гейтится не структура данных, а **логика**, которая эти поля
 использует, и генерация разбора соответствующих атрибутов макросом. Это
 позволяет сохранить `PartialEq`, `Default` и предсказуемость `Style` без
@@ -49,8 +49,8 @@ AccessKit-семантика, обработка событий, оконные 
 
 ### Как это устроено технически
 
-- Фичи `relay` объявляются в `crates/relay/Cargo.toml` и **форвардятся** в
-  `relay-macros` (`elements-select = [..., "relay-macros/elements-select"]`),
+- Фичи `light` объявляются в `crates/light/Cargo.toml` и **форвардятся** в
+  `light-fw-macros` (`elements-select = [..., "light-fw-macros/elements-select"]`),
   чтобы `#[template]` знал о включённых элементах.
 - Варианты `NodeKind`, относящиеся к опциональным элементам, гейтятся
   `#[cfg(feature = "...")]`. Как следствие, все их `match`-ветки компилятор
@@ -75,15 +75,15 @@ AccessKit-семантика, обработка событий, оконные 
 
 ## Потенциальные будущие улучшения
 
-- **`relay-features-suggest`**: утилита, которая сканирует `#[template(...)]`
+- **`light-features-suggest`**: утилита, которая сканирует `#[template(...)]`
   и манифест проекта, находит используемые элементы и атрибуты и предлагает
   минимальный набор фич. Не реализована: требует рекурсивного разбора
   шаблонов и манифестов, не критично для основной задачи.
 - **`docs/footprint-report.md`**: замеры `cargo bloat — --crates`
   (сравнение с предыдущим релизом).
-- Разделение на подкрейты (`relay-core`, `relay-element-form`,
-  `relay-behavior-validation`, …) — **начато**: ядро вынесено в `relay-core`,
-  компоненты формы и валидации — в отдельные крейты, `relay` стал тонкой
+- Разделение на подкрейты (`light-fw-core`, `light-fw-element-form`,
+  `light-fw-behavior-validation`, …) — **начато**: ядро вынесено в `light-fw-core`,
+  компоненты формы и валидации — в отдельные крейты, `light` стал тонкой
   мета-обёрткой (см. `docs/COMPONENT_MODEL.md`).
 
 ### Пример: ошибка при использовании гейтнутого элемента
@@ -99,11 +99,11 @@ AccessKit-семантика, обработка событий, оконные 
 <select v-model="country"></select>
 ```
 
-`src/main.rs` без фичи `elements-select` (`relay = { default-features = false,
+`src/main.rs` без фичи `elements-select` (`light = { default-features = false,
 features = ["elements-basic"] }`):
 
 ```rust
-use relay::prelude::*;
+use light::prelude::*;
 
 #[template("templates/form.html")]
 struct Form;
@@ -112,15 +112,15 @@ struct Form;
 Компилятор сообщает:
 
 ```text
-error: элемент <select> недоступен: Cargo-фича `elements-select` выключена у крейта `relay`
-help: включите её в зависимости, например `relay = { features = ["elements-select"] }`
+error: элемент <select> недоступен: Cargo-фича `elements-select` выключена у крейта `light`
+help: включите её в зависимости, например `light = { features = ["elements-select"] }`
 ```
 
 Элемент нужно подключать явно:
 
 ```toml
 [dependencies]
-relay = { version = "0.1", features = ["elements-basic", "elements-select"] }
+light = { version = "0.1", features = ["elements-basic", "elements-select"] }
 ```
 
 Аналогично для `<checkbox>` (`elements-checkbox`), `<radio>` (`elements-radio`)

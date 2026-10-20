@@ -1,9 +1,0 @@
-[package]
-name = "basic-project"
-version = "0.1.0"
-edition = "2021"
-
-[workspace]
-
-[dependencies]
-relay = { version = "0.1", features = ["elements-input"] }

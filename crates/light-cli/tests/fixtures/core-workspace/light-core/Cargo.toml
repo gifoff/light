@@ -1,0 +1,7 @@
+[package]
+name = "light-fw-core"
+version.workspace = true
+edition = "2021"
+
+[lib]
+name = "light_fw_core"

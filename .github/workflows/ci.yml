@@ -68,4 +68,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Сборка и тесты
-        run: cargo test -p relay ${{ matrix.args }}
+        run: cargo test -p light ${{ matrix.args }}

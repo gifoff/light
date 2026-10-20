@@ -1,7 +1,0 @@
-[package]
-name = "relay-core"
-version.workspace = true
-edition = "2021"
-
-[lib]
-name = "relay_core"

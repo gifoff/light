@@ -1,8 +1,8 @@
-# Relay
+# Light
 
-Relay — декларативный реактивный GUI-фреймворк для Rust. Вы пишете HTML-разметку
+Light — декларативный реактивный GUI-фреймворк для Rust. Вы пишете HTML-разметку
 с директивами (`v-if`, `v-for`, `v-model`), описываете состояние реактивными
-свойствами (`#[proxy]`), а Relay компилирует шаблоны **на этапе сборки** в
+свойствами (`#[proxy]`), а Light компилирует шаблоны **на этапе сборки** в
 Rust-код, строящий виртуальный DOM. Окна создаются на `winit`, а программно
 нарисованный кадр показывается через `softbuffer`; `wgpu` доступен отдельной
 фичей `wgpu-backend`.
@@ -34,13 +34,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-relay = { git = "https://github.com/relay-rs/relay" }
+light = { git = "https://github.com/light-rs/light" }
 ```
 
 `src/main.rs`:
 
 ```rust
-use relay::prelude::*;
+use light::prelude::*;
 
 #[template("templates/app.html")]
 #[proxy]
@@ -55,8 +55,8 @@ impl App {
     }
 }
 
-fn main() -> relay::Result<()> {
-    relay::run(App::new())
+fn main() -> light::Result<()> {
+    light::run(App::new())
 }
 ```
 
@@ -77,16 +77,16 @@ cargo run
 
 ## Крейты воркспейса
 
-| Крейт                       | Назначение                                                         |
-| --------------------------- | ------------------------------------------------------------------ |
-| `relay`                     | Мета-крейт: реэкспортирует ядро, макросы и подключённые компоненты. |
-| `relay-core`                | Ядро: виртуальный DOM, реактивность, раскладка, отрисовка, окно.    |
-| `relay-macros`              | Процедурные макросы `#[template]` и `#[proxy]`.                     |
-| `relay-html`                | Разбор HTML-шаблонов для макросов.                                  |
-| `relay-element-form`        | Компонент-элемент: `<checkbox>`, `<radio>`, `<select>`/`<option>`.  |
-| `relay-behavior-validation` | Компонент-поведение: `required`, `:validator`, `@validate`.         |
-| `relay-framework-cli`       | Утилита `relay`: проверка проекта и управление компонентами.        |
-| `relay-cli-core`            | Ядро CLI: анализ проекта, `relay.lock`, управление компонентами.    |
+| Крейт | Назначение |
+| --- | --- |
+| `light` | Мета-крейт: реэкспортирует ядро, макросы и подключённые компоненты. |
+| `light-fw-core` | Ядро: виртуальный DOM, реактивность, раскладка, отрисовка, окно. |
+| `light-fw-macros` | Процедурные макросы `#[template]` и `#[proxy]`. |
+| `light-fw-html` | Разбор HTML-шаблонов для макросов. |
+| `light-fw-element-form` | Компонент-элемент: `<checkbox>`, `<radio>`, `<select>`/`<option>`. |
+| `light-fw-behavior-validation` | Компонент-поведение: `required`, `:validator`, `@validate`. |
+| `light-fw-cli` | Утилита `light`: проверка проекта и управление компонентами. |
+| `light-fw-cli-core` | Ядро CLI: анализ проекта, `light.lock`, управление компонентами. |
 
 ## Документация
 

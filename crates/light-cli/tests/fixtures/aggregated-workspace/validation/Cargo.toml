@@ -1,0 +1,13 @@
+[package]
+name = "light-fw-behavior-validation"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.light]
+kind = "behavior"
+display-name = "Form validation"
+core = "^0.1"
+
+[package.metadata.light.provides]
+attributes = [":validator", "required"]
+directives = ["@validate"]
