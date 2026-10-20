@@ -115,7 +115,7 @@ categories = ["gui"]
 # Крейт `relay` реэкспортирует ядро и макросы `#[template]`/`#[proxy]`.
 # Пока версии не опубликованы в crates.io, путь указывает на локальную
 # копию (соседний checkout или каталог `vendor/`). После публикации
-# (0.3) достаточно строки версии: relay = "0.2".
+# (0.3) достаточно строки версии: relay = "0.3".
 relay = { path = "../relay/crates/relay", default-features = false, features = [
     "elements-basic",
     "elements-form",
@@ -126,7 +126,7 @@ relay-element-form = { path = "../relay/crates/relay-element-form" }
 [package.metadata.relay]
 kind = "widget"
 display-name = "Date Picker"
-core = "^0.2"
+core = "^0.3"
 
 [package.metadata.relay.provides]
 elements = ["datepicker"]     # новые теги, которые предоставляет компонент
@@ -135,7 +135,7 @@ directives = []               # новые директивы (для behavior)
 
 [package.metadata.relay.requires]
 components = [
-    "relay-element-form ^0.2",
+    "relay-element-form ^0.3",
 ]
 
 [package.metadata.relay.registry]
@@ -149,7 +149,7 @@ tags = ["form", "date", "input", "calendar"]
   `widget`, `integration`, `subsystem`, `dev`.
 - **`display-name`** — человекочитаемое имя для CLI, документации и каталога.
 - **`core`** — **semver-range** совместимости с ядром, не точная версия.
-  `^0.2` означает «совместим с `0.2.x`, но не с `0.3`». Обновляйте значение,
+  `^0.3` означает «совместим с `0.3.x`, но не с `0.4`». Обновляйте значение,
   когда ядро выпускает новую несовместимую версию.
 - **`provides.elements`** — новые теги, которые компонент добавляет в
   разметку. По ним CLI сопоставляет использование элементов и компонентов.

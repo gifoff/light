@@ -6,7 +6,7 @@ edition = "2021"
 [package.metadata.relay]
 kind = "element"
 display-name = "Form elements"
-core = "^0.2"
+core = "^0.3"
 
 [package.metadata.relay.provides]
 elements = ["checkbox", "radio", "select", "option"]

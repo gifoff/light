@@ -1,12 +1,12 @@
 # Roadmap Relay
 
-## Версия 0.2 (текущая)
+## Версия 0.2
 
 - CLI: `check`, `suggest`, `doctor`, `add`, `remove`, `update`, `lock`, `vendor`.
 - `relay.lock` и воспроизводимые сборки.
 - Компонентная модель: `relay-core`, `relay-element-form`, `relay-behavior-validation`.
 
-## Версия 0.3 (следующая)
+## Версия 0.3 (текущая)
 
 - Публикация компонентов в crates.io ✓.
 - `relay publish` ✓.

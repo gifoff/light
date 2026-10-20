@@ -338,7 +338,7 @@ fn update_dry_run_reports_change() {
         .arg("--dry-run")
         .assert()
         .success()
-        .stdout(predicate::str::contains("→ 0.2.0"));
+        .stdout(predicate::str::contains("→ 0.3.0"));
     let text = std::fs::read_to_string(project.join("Cargo.toml")).expect("read");
     assert!(
         text.contains("relay-element-form = \"0.0.1\""),
@@ -358,7 +358,7 @@ fn update_applies_new_version() {
         .success()
         .stdout(predicate::str::contains("обновлено"));
     let text = std::fs::read_to_string(project.join("Cargo.toml")).expect("read");
-    assert!(text.contains("relay-element-form = \"0.2.0\""), "{text}");
+    assert!(text.contains("relay-element-form = \"0.3.0\""), "{text}");
 }
 
 #[test]
@@ -532,7 +532,7 @@ fn doctor_reports_core_version_from_workspace() {
         .arg(&app)
         .assert()
         .success()
-        .stdout(predicate::str::contains("relay-core 0.2.0"));
+        .stdout(predicate::str::contains("relay-core 0.3.0"));
 }
 
 #[test]
@@ -571,7 +571,7 @@ fn remove_updates_lockfile() {
         !after.contains("relay-element-form"),
         "компонент убран из lock: {after}"
     );
-    assert!(after.contains("core = \"0.2.0\""), "ядро в lock: {after}");
+    assert!(after.contains("core = \"0.3.0\""), "ядро в lock: {after}");
 }
 
 #[test]
@@ -673,7 +673,7 @@ fn init_creates_full_project() {
     let project = scratch.join("cool-app");
     let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
     assert!(manifest.contains("name = \"cool-app\""), "{manifest}");
-    assert!(manifest.contains("relay = \"0.2."), "{manifest}");
+    assert!(manifest.contains("relay = \"0.3."), "{manifest}");
     let main_rs = std::fs::read_to_string(project.join("src").join("main.rs")).expect("main.rs");
     assert!(main_rs.contains("Hello, Relay!"), "{main_rs}");
     let gitignore = std::fs::read_to_string(project.join(".gitignore")).expect(".gitignore");
