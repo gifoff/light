@@ -38,6 +38,15 @@
 - `docs/EXTERNAL_COMPONENTS.md` ✓.
 - Очистка хвостов старого имени и временных путей в тестах ✓.
 
+## Версия 0.6 (выполнено)
+
+- `light init --template counter|todo|calculator` с примерами через
+  `include_str!` ✓.
+- Каталог `examples/` с showcase-приложениями ✓.
+- Кросс-платформенный CI (Linux, Windows, macOS) ✓.
+- `docs/ARCHITECTURE.md` для контрибьюторов ✓.
+- Исправлена обработка многобайтовых символов в HTML-парсере ✓.
+
 ## Не в плане
 
 - Замена Rust на другой язык.

@@ -15,8 +15,8 @@
 name = "light-fw-element-form"
 kind = "element"
 display-name = "Form elements"
-version = "0.5.0"
-core = "^0.5"
+version = "0.6.0"
+core = "^0.6"
 light-features = ["elements-form"]
 elements = ["select", "checkbox", "radio", "option"]
 
@@ -24,8 +24,8 @@ elements = ["select", "checkbox", "radio", "option"]
 name = "light-fw-behavior-validation"
 kind = "behavior"
 display-name = "Form validation"
-version = "0.5.0"
-core = "^0.5"
+version = "0.6.0"
+core = "^0.6"
 light-features = ["validation"]
 attributes = [":validator", "required"]
 directives = ["@validate"]

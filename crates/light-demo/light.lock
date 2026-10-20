@@ -1,21 +1,21 @@
 # light.lock — генерируется автоматически, не редактировать вручную.
 version = 1
-core = "0.5.0"
+core = "0.6.0"
 
 [[component]]
 name = "light-fw-behavior-validation"
-version = "0.5.0"
+version = "0.6.0"
 source = "workspace"
 
 [[component.dependencies]]
 name = "light-fw-core"
-version = "0.5.0"
+version = "0.6.0"
 
 [[component]]
 name = "light-fw-element-form"
-version = "0.5.0"
+version = "0.6.0"
 source = "workspace"
 
 [[component.dependencies]]
 name = "light-fw-core"
-version = "0.5.0"
+version = "0.6.0"

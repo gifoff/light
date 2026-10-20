@@ -22,7 +22,7 @@ Rust-код, строящий виртуальный DOM. Окна создаю�
 
 ## Статус
 
-Текущая версия — **0.5.0**. Проект в стадии **пре-1.0**: публичный API ещё не
+Текущая версия — **0.6.0**. Проект в стадии **пре-1.0**: публичный API ещё не
 стабилен и может меняться между минорными версиями.
 
 ## Быстрый старт
@@ -105,6 +105,19 @@ light init my-app --with form --with validation
 `form` добавляет `light-fw-element-form` и фичу `light/elements-form`,
 `validation` — `light-fw-behavior-validation` и фичу `light/validation`.
 В `Cargo.toml` прописываются и зависимости, и нужные фичи мета-крейта.
+
+### Готовые шаблоны
+
+Вместо пустого окна можно взять showcase-приложение:
+
+```bash
+light init my-app --template counter
+light init my-app --template todo
+light init my-app --template calculator
+```
+
+Шаблоны и их HTML встроены в бинарник через `include_str!`, поэтому создание
+проекта не требует сети. Исходники примеров лежат в `examples/`.
 
 ### Добавление компонентов
 

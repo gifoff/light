@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn adds_features_to_string_and_table_dependencies() {
         let mut doc = parse(
-            "[dependencies]\nlight = \"0.5.0\"\nlight-fw-element-form = { version = \"0.5.0\", optional = true }\n",
+            "[dependencies]\nlight = \"0.6.0\"\nlight-fw-element-form = { version = \"0.6.0\", optional = true }\n",
         )
         .unwrap();
         add_features_to_dependency(
@@ -323,12 +323,12 @@ mod tests {
         let out = doc.to_string();
         assert!(
             out.contains(
-                "light = { version = \"0.5.0\", features = [\"elements-form\", \"validation\"] }"
+                "light = { version = \"0.6.0\", features = [\"elements-form\", \"validation\"] }"
             ),
             "{out}"
         );
         assert!(
-            out.contains("light-fw-element-form = { version = \"0.5.0\", optional = true, features = [\"default\"] }"),
+            out.contains("light-fw-element-form = { version = \"0.6.0\", optional = true, features = [\"default\"] }"),
             "{out}"
         );
         assert_eq!(out.matches("\"validation\"").count(), 1, "{out}");

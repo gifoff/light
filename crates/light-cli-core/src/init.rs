@@ -18,6 +18,68 @@ pub const LIGHT_DEPENDENCY_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Содержимое `.gitignore` нового проекта.
 pub const GITIGNORE: &str = "target/\n";
 
+const COUNTER_MAIN: &str = include_str!("../../../examples/counter/src/main.rs");
+const COUNTER_HTML: &str = include_str!("../../../examples/counter/templates/counter.html");
+const TODO_MAIN: &str = include_str!("../../../examples/todo/src/main.rs");
+const TODO_HTML: &str = include_str!("../../../examples/todo/templates/todo.html");
+const CALCULATOR_MAIN: &str = include_str!("../../../examples/calculator/src/main.rs");
+const CALCULATOR_HTML: &str =
+    include_str!("../../../examples/calculator/templates/calculator.html");
+
+/// Готовый пример, который `light init --template` кладёт в новый проект.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InitTemplate {
+    /// Счётчик с реактивным состоянием.
+    Counter,
+    /// Список задач с `v-model`, `v-if` и `v-for`.
+    Todo,
+    /// Калькулятор с обработчиками кнопок.
+    Calculator,
+}
+
+impl InitTemplate {
+    /// Все поддерживаемые шаблоны.
+    pub const ALL: [Self; 3] = [Self::Counter, Self::Todo, Self::Calculator];
+
+    /// Разбирает имя шаблона из `--template`.
+    pub fn parse(value: &str) -> Result<Self> {
+        match value {
+            "counter" => Ok(Self::Counter),
+            "todo" => Ok(Self::Todo),
+            "calculator" => Ok(Self::Calculator),
+            other => Err(Error::Init(format!(
+                "неизвестный шаблон `{other}` (поддерживаются: counter, todo, calculator)"
+            ))),
+        }
+    }
+
+    /// Содержимое `src/main.rs` шаблона.
+    pub fn main_rs(self) -> &'static str {
+        match self {
+            Self::Counter => COUNTER_MAIN,
+            Self::Todo => TODO_MAIN,
+            Self::Calculator => CALCULATOR_MAIN,
+        }
+    }
+
+    /// Дополнительные HTML-шаблоны: путь в проекте и содержимое.
+    pub fn template_files(self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            Self::Counter => &[("templates/counter.html", COUNTER_HTML)],
+            Self::Todo => &[("templates/todo.html", TODO_HTML)],
+            Self::Calculator => &[("templates/calculator.html", CALCULATOR_HTML)],
+        }
+    }
+}
+
+impl FromStr for InitTemplate {
+    type Err = Error;
+
+    fn from_str(value: &str) -> Result<Self> {
+        Self::parse(value)
+    }
+}
+
 /// Дополнительный компонент, подключаемый флагом `--with`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum InitComponent {
@@ -78,6 +140,8 @@ pub struct InitOptions {
     pub minimal: bool,
     /// Дополнительные компоненты (`--with`).
     pub components: Vec<InitComponent>,
+    /// Готовый шаблон приложения (`--template`).
+    pub template: Option<InitTemplate>,
 }
 
 /// Что будет создано (результат [`plan`]).
@@ -306,13 +370,22 @@ pub fn plan(options: &InitOptions) -> Result<InitPlan> {
     }
 
     let components = normalized_components(&options.components);
+    let main = match options.template {
+        Some(template) => template.main_rs().to_string(),
+        None => main_rs(&components),
+    };
     let mut files = vec![
         (
             PathBuf::from("Cargo.toml"),
             cargo_toml(&options.name, &components),
         ),
-        (PathBuf::from("src").join("main.rs"), main_rs(&components)),
+        (PathBuf::from("src").join("main.rs"), main),
     ];
+    if let Some(template) = options.template {
+        for (path, content) in template.template_files() {
+            files.push((PathBuf::from(path), (*content).to_string()));
+        }
+    }
     if !options.minimal {
         files.push((PathBuf::from(".gitignore"), GITIGNORE.to_string()));
     }
@@ -430,6 +503,7 @@ mod tests {
             path: Some(dir.clone()),
             minimal: false,
             components: Vec::new(),
+            template: None,
         };
         let plan = plan(&options).expect("plan");
         let names: Vec<String> = plan
@@ -451,6 +525,7 @@ mod tests {
             path: Some(root.join("tiny")),
             minimal: true,
             components: Vec::new(),
+            template: None,
         };
         let plan = plan(&options).expect("plan");
         let names: Vec<String> = plan
@@ -473,6 +548,7 @@ mod tests {
             path: Some(target),
             minimal: false,
             components: Vec::new(),
+            template: None,
         };
         let error = plan(&options).expect_err("должна быть ошибка");
         assert!(error.to_string().contains("не пуст"), "{error}");
@@ -549,6 +625,50 @@ mod tests {
     }
 
     #[test]
+    fn parses_supported_templates() {
+        assert_eq!(
+            InitTemplate::parse("counter").expect("counter"),
+            InitTemplate::Counter
+        );
+        assert_eq!(
+            InitTemplate::parse("todo").expect("todo"),
+            InitTemplate::Todo
+        );
+        assert_eq!(
+            InitTemplate::parse("calculator").expect("calculator"),
+            InitTemplate::Calculator
+        );
+        let error = InitTemplate::parse("unknown").expect_err("unknown template");
+        assert!(error.to_string().contains("counter"), "{error}");
+    }
+
+    #[test]
+    fn template_plan_includes_main_and_html() {
+        let root = scratch("plan-template");
+        let options = InitOptions {
+            name: "todo-app".to_string(),
+            path: Some(root.join("todo-app")),
+            minimal: true,
+            components: Vec::new(),
+            template: Some(InitTemplate::Todo),
+        };
+        let plan = plan(&options).expect("plan");
+        let by_path = |name: &str| {
+            plan.files
+                .iter()
+                .find(|(path, _)| path.to_string_lossy().replace('\\', "/") == name)
+                .map(|(_, content)| content.as_str())
+        };
+        assert!(by_path("src/main.rs").expect("main").contains("TodoApp"));
+        assert!(
+            by_path("templates/todo.html")
+                .expect("todo template")
+                .contains("Light Todo")
+        );
+        assert_eq!(plan.files.len(), 3, "Cargo.toml + main.rs + template");
+    }
+
+    #[test]
     fn require_cargo_reports_missing_tool() {
         let error = require_cargo(&StubRunner { found: false }).expect_err("нет cargo");
         assert!(error.to_string().contains("cargo"), "{error}");
@@ -564,6 +684,7 @@ mod tests {
             path: Some(dir.clone()),
             minimal: false,
             components: Vec::new(),
+            template: None,
         };
         let report = apply(&StubRunner { found: true }, &options).expect("apply");
         assert!(report.lockfile);
@@ -585,6 +706,7 @@ mod tests {
             path: Some(dir.clone()),
             minimal: true,
             components: Vec::new(),
+            template: None,
         };
         let report = apply(&StubRunner { found: true }, &options).expect("apply");
         assert!(!report.lockfile);
@@ -602,6 +724,7 @@ mod tests {
             path: Some(dir.clone()),
             minimal: false,
             components: Vec::new(),
+            template: None,
         };
         assert!(apply(&StubRunner { found: false }, &options).is_err());
         assert!(!dir.exists(), "каталог не должен создаваться");

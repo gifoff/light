@@ -32,7 +32,7 @@ description = "Date picker component for Light"
 repository = "https://github.com/<user>/light-fw-datepicker"
 
 [dependencies]
-light = "0.5.0"
+light = "0.6.0"
 ```
 
 Если компонент использует элементы формы, подключите
@@ -40,8 +40,8 @@ light = "0.5.0"
 
 ```toml
 [dependencies]
-light = { version = "0.5.0", features = ["elements-form"] }
-light-fw-element-form = "0.5.0"
+light = { version = "0.6.0", features = ["elements-form"] }
+light-fw-element-form = "0.6.0"
 ```
 
 ## 3. Минимальный компонент
@@ -98,7 +98,7 @@ Light (`doctor`, `check`, будущему каталогу), если крей�
 [package.metadata.light]
 kind = "widget"
 display-name = "Date Picker"
-core = "^0.5"
+core = "^0.6"
 
 [package.metadata.light.registry]
 official = false

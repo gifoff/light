@@ -336,7 +336,7 @@ fn update_dry_run_reports_change() {
         .arg("--dry-run")
         .assert()
         .success()
-        .stdout(predicate::str::contains("→ 0.5.0"));
+        .stdout(predicate::str::contains("→ 0.6.0"));
     let text = std::fs::read_to_string(project.join("Cargo.toml")).expect("read");
     assert!(
         text.contains("light-fw-element-form = \"0.0.1\""),
@@ -357,7 +357,7 @@ fn update_applies_new_version() {
         .success()
         .stdout(predicate::str::contains("обновлено"));
     let text = std::fs::read_to_string(project.join("Cargo.toml")).expect("read");
-    assert!(text.contains("light-fw-element-form = \"0.5.0\""), "{text}");
+    assert!(text.contains("light-fw-element-form = \"0.6.0\""), "{text}");
 }
 
 #[test]
@@ -540,7 +540,7 @@ fn doctor_reports_core_version_from_workspace() {
         .arg(&app)
         .assert()
         .success()
-        .stdout(predicate::str::contains("light-fw-core 0.5.0"));
+        .stdout(predicate::str::contains("light-fw-core 0.6.0"));
 }
 
 #[test]
@@ -581,7 +581,7 @@ fn remove_updates_lockfile() {
         !after.contains("light-fw-element-form"),
         "компонент убран из lock: {after}"
     );
-    assert!(after.contains("core = \"0.5.0\""), "ядро в lock: {after}");
+    assert!(after.contains("core = \"0.6.0\""), "ядро в lock: {after}");
 }
 
 #[test]
@@ -688,7 +688,7 @@ fn init_creates_full_project() {
     let project = scratch.path().join("cool-app");
     let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
     assert!(manifest.contains("name = \"cool-app\""), "{manifest}");
-    assert!(manifest.contains("light = \"0.5."), "{manifest}");
+    assert!(manifest.contains("light = \"0.6."), "{manifest}");
     let main_rs = std::fs::read_to_string(project.join("src").join("main.rs")).expect("main.rs");
     assert!(main_rs.contains("Hello, Light!"), "{main_rs}");
     let gitignore = std::fs::read_to_string(project.join(".gitignore")).expect(".gitignore");
@@ -714,21 +714,57 @@ fn init_with_components_adds_dependencies_and_features() {
     let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
     assert!(
         manifest.contains(
-            "light = { version = \"0.5.0\", features = [\"elements-form\", \"validation\"] }"
+            "light = { version = \"0.6.0\", features = [\"elements-form\", \"validation\"] }"
         ),
         "{manifest}"
     );
     assert!(
-        manifest.contains("light-fw-element-form = \"0.5.0\""),
+        manifest.contains("light-fw-element-form = \"0.6.0\""),
         "{manifest}"
     );
     assert!(
-        manifest.contains("light-fw-behavior-validation = \"0.5.0\""),
+        manifest.contains("light-fw-behavior-validation = \"0.6.0\""),
         "{manifest}"
     );
 
     let main_rs = std::fs::read_to_string(project.join("src").join("main.rs")).expect("main.rs");
     assert!(main_rs.contains("Пример формы"), "{main_rs}");
+}
+
+#[test]
+fn init_with_template_creates_showcase_project() {
+    let scratch = scratch_dir("template");
+    light()
+        .arg("init")
+        .arg("todo-app")
+        .arg("--template")
+        .arg("todo")
+        .current_dir(scratch.path())
+        .assert()
+        .success();
+
+    let project = scratch.path().join("todo-app");
+    let main_rs = std::fs::read_to_string(project.join("src").join("main.rs")).expect("main.rs");
+    assert!(main_rs.contains("TodoApp"), "{main_rs}");
+    let template = std::fs::read_to_string(project.join("templates").join("todo.html"))
+        .expect("templates/todo.html");
+    assert!(template.contains("Light Todo"), "{template}");
+    assert!(project.join("light.lock").is_file(), "light.lock создаётся");
+}
+
+#[test]
+fn init_with_unknown_template_fails() {
+    let scratch = scratch_dir("template-unknown");
+    light()
+        .arg("init")
+        .arg("bad-template")
+        .arg("--template")
+        .arg("unknown")
+        .current_dir(scratch.path())
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("неизвестный шаблон"));
 }
 
 #[test]

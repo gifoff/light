@@ -1,0 +1,35 @@
+<window title="Light Calculator" width="340" height="470">
+    <titlebar background="#111827" height="34">
+        <div font-color="#F9FAFB" font-size="16">Light Calculator</div>
+    </titlebar>
+    <div direction="vertical" padding="14" background="#111827">
+        <div background="#F9FAFB" padding="12" font-size="30" font-color="#111827">
+            {{ display }}
+        </div>
+        <div direction="horizontal">
+            <button @click="digit('7')" type="button" width="64" height="48">7</button>
+            <button @click="digit('8')" type="button" width="64" height="48">8</button>
+            <button @click="digit('9')" type="button" width="64" height="48">9</button>
+            <button @click="op('/')" type="button" width="64" height="48">÷</button>
+        </div>
+        <div direction="horizontal">
+            <button @click="digit('4')" type="button" width="64" height="48">4</button>
+            <button @click="digit('5')" type="button" width="64" height="48">5</button>
+            <button @click="digit('6')" type="button" width="64" height="48">6</button>
+            <button @click="op('*')" type="button" width="64" height="48">×</button>
+        </div>
+        <div direction="horizontal">
+            <button @click="digit('1')" type="button" width="64" height="48">1</button>
+            <button @click="digit('2')" type="button" width="64" height="48">2</button>
+            <button @click="digit('3')" type="button" width="64" height="48">3</button>
+            <button @click="op('-')" type="button" width="64" height="48">−</button>
+        </div>
+        <div direction="horizontal">
+            <button @click="digit('0')" type="button" width="64" height="48">0</button>
+            <button @click="dot" type="button" width="64" height="48">.</button>
+            <button @click="equals" type="button" width="64" height="48">=</button>
+            <button @click="op('+')" type="button" width="64" height="48">+</button>
+        </div>
+        <button @click="clear" type="button">C</button>
+    </div>
+</window>

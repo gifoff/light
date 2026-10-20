@@ -1,0 +1,22 @@
+<window title="Light Todo" width="440" height="540">
+    <titlebar background="#0F172A" height="34">
+        <div font-color="#F8FAFC" font-size="16">Light Todo</div>
+    </titlebar>
+    <div direction="vertical" padding="16" background="#F8FAFC">
+        <h1>TODO</h1>
+        <div direction="horizontal">
+            <text v-model="draft" placeholder="Что нужно сделать?" width="100%" />
+            <button @click="add" :disabled="is_empty" type="button">Добавить</button>
+        </div>
+        <div role="status" aria-live="polite" font-color="#475569">{{ count_label }}</div>
+        <div v-if="has_items">
+            <div v-for="item in items">
+                <div background="#E2E8F0" padding="8" font-color="#0F172A">• {{ item }}</div>
+            </div>
+        </div>
+        <div v-else font-color="#64748B">
+            Список пуст. Добавьте первую задачу.
+        </div>
+        <button @click="clear" :disabled="is_list_empty" type="button">Очистить список</button>
+    </div>
+</window>

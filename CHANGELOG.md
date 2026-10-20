@@ -2,6 +2,20 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.6.0] - 2026-10-20
+
+### Added
+
+- `light init --template counter|todo|calculator`: готовые приложения
+  встраиваются в CLI через `include_str!` и копируются в новый проект вместе
+  с HTML-шаблонами.
+- Каталог `examples/` с showcase-приложениями counter, todo и calculator.
+
+### Fixed
+
+- Парсер `light-fw-html` больше не паникует на многобайтовых символах в начале
+  и конце текстовых узлов.
+
 ## [0.5.0] - 2026-10-20
 
 ### Added

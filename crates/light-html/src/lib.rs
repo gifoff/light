@@ -367,20 +367,25 @@ fn normalize_segments(mut segments: Vec<Segment>) -> Result<Option<Node>, String
 /// Удаляет пробельные строки на краях, содержащие перевод строки:
 /// оформление шаблона вокруг `{{ … }}` не должно попадать в вывод.
 fn trim_edge_newlines(text: &str) -> String {
-    let bytes = text.as_bytes();
     let mut start = 0;
-    while start < bytes.len() && (bytes[start] as char).is_whitespace() {
-        start += 1;
+    for (index, ch) in text.char_indices() {
+        if !ch.is_whitespace() {
+            break;
+        }
+        start = index + ch.len_utf8();
     }
     if !text[..start].contains('\n') {
         start = 0;
     }
-    let mut end = bytes.len();
-    while end > start && (bytes[end - 1] as char).is_whitespace() {
-        end -= 1;
+    let mut end = text.len();
+    for (index, ch) in text.char_indices().rev() {
+        if index < start || !ch.is_whitespace() {
+            break;
+        }
+        end = index;
     }
     if !text[end..].contains('\n') {
-        end = bytes.len();
+        end = text.len();
     }
     text[start..end].to_string()
 }
@@ -530,6 +535,13 @@ mod tests {
         let nodes = parse("<!-- комментарий -->А").expect("должен разобраться");
         assert_eq!(nodes.len(), 1);
         assert_eq!(text_of(&nodes[0]), "А");
+    }
+
+    #[test]
+    fn trims_multibyte_text_at_line_edges() {
+        let nodes = parse("<div>\n    Привет, счётчик\n</div>").expect("parse");
+        let element = root_element(&nodes[0]);
+        assert_eq!(text_of(&element.children[0]), "Привет, счётчик");
     }
 
     #[test]

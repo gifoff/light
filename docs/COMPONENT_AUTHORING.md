@@ -128,7 +128,7 @@ light-fw-element-form = { path = "../light/crates/light-element-form" }
 [package.metadata.light]
 kind = "widget"
 display-name = "Date Picker"
-core = "^0.5"
+core = "^0.6"
 
 [package.metadata.light.provides]
 elements = ["datepicker"]     # новые теги, которые предоставляет компонент
@@ -137,7 +137,7 @@ directives = []               # новые директивы (для behavior)
 
 [package.metadata.light.requires]
 components = [
-    "light-fw-element-form ^0.5",
+    "light-fw-element-form ^0.6",
 ]
 
 [package.metadata.light.registry]
@@ -151,7 +151,7 @@ tags = ["form", "date", "input", "calendar"]
   `widget`, `integration`, `subsystem`, `dev`.
 - **`display-name`** — человекочитаемое имя для CLI, документации и каталога.
 - **`core`** — **semver-range** совместимости с ядром, не точная версия.
-  `^0.5` означает «совместим с `0.5.x`, но не с `0.6`». Обновляйте значение,
+  `^0.6` означает «совместим с `0.6.x`, но не с `0.6`». Обновляйте значение,
   когда ядро выпускает новую несовместимую версию.
 - **`provides.elements`** — новые теги, которые компонент добавляет в
   разметку. По ним CLI сопоставляет использование элементов и компонентов.

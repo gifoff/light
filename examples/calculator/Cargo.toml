@@ -1,0 +1,9 @@
+[package]
+name = "example-calculator"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Calculator example for Light"
+
+[dependencies]
+light = { workspace = true }
