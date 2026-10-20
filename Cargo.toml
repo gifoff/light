@@ -11,13 +11,12 @@ members = [
     "crates/light-cli-core",
     "crates/light-cli",
 ]
-exclude = ["egui-main"]
 
 [workspace.package]
 version = "0.4.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/light-rs/light"
+repository = "https://github.com/gifoff/light"
 rust-version = "1.95"
 
 [workspace.dependencies]

@@ -34,7 +34,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-light = { git = "https://github.com/light-rs/light" }
+light = { git = "https://github.com/gifoff/light" }
 ```
 
 `src/main.rs`:
@@ -98,6 +98,10 @@ cargo run
   компоненты.
 - [docs/RELEASING.md](docs/RELEASING.md) — публикация релиза (для мейнтейнеров).
 - [docs/ROADMAP.md](docs/ROADMAP.md) — план развития.
+
+## Ссылки
+- Основной репозиторий: [GitHub](https://github.com/gifoff/light)
+- Зеркало: [GitVerse](https://gitverse.ru/gifoff/light)
 
 ## Лицензия
 
