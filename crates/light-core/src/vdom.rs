@@ -592,6 +592,12 @@ pub struct Style {
     pub max_width: Option<Size>,
     /// Максимальная высота (`max-height`), по умолчанию не ограничена.
     pub max_height: Option<Size>,
+    /// Доля свободного места по main-оси контейнера (`flex-grow`/`flex`).
+    /// `0` — не растягиваться, `1` — забрать всё свободное место.
+    pub flex_grow: f32,
+    /// Доля переполнения по main-оси, которую узел отдаёт при сжатии
+    /// (`flex-shrink`/`flex`). `0` — не сжиматься.
+    pub flex_shrink: f32,
     /// Выравнивание по горизонтали (`position-x`).
     pub align_x: Align,
     /// Выравнивание по вертикали (`position-y`).
@@ -644,6 +650,8 @@ impl Default for Style {
             min_height: None,
             max_width: None,
             max_height: None,
+            flex_grow: 0.0,
+            flex_shrink: 0.0,
             align_x: Align::Start,
             align_y: Align::Start,
             offset_x: Offset::Px(0.0),
@@ -771,7 +779,8 @@ pub enum NodeKind {
         label: String,
         /// Значение, записываемое в `v-model` при выборе.
         value: String,
-        /// Совпадает ли текущее значение `v-model` с [`Radio::value`].
+        /// Совпадает ли текущее значение `v-model` с полем `value` варианта
+        /// [`NodeKind::Radio`].
         selected: bool,
         /// Заблокирован ли переключатель (`:disabled`).
         disabled: bool,

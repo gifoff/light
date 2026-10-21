@@ -1505,6 +1505,7 @@ fn parse_size_attr(element: &Element, name: &str) -> syn::Result<Option<TokenStr
 /// построчные варианты `padding-top`/`padding-right`/`padding-bottom`/
 /// `padding-left` (аналогично `margin-*`), `font-size`,
 /// `border-size` (px), `background`, `font-color`, `border-color` (цвет),
+/// `flex-grow`/`flex-shrink` или сокращение `flex` (`1`, `1 0`),
 /// `visible` (видимость).
 fn style_token(
     generator: &Generator,
@@ -1528,6 +1529,8 @@ fn style_token(
     let min_height = optional_size_attr(generator, element, "min-height")?;
     let max_width = optional_size_attr(generator, element, "max-width")?;
     let max_height = optional_size_attr(generator, element, "max-height")?;
+    let flex_grow = flex_attr(generator, element, "flex-grow", 0)?;
+    let flex_shrink = flex_attr(generator, element, "flex-shrink", 1)?;
     let align_x = align_attr(
         generator,
         element,
@@ -1589,6 +1592,8 @@ fn style_token(
         min_height: #min_height,
         max_width: #max_width,
         max_height: #max_height,
+        flex_grow: #flex_grow,
+        flex_shrink: #flex_shrink,
         align_x: #align_x,
         align_y: #align_y,
         offset_x: #offset_x,
@@ -1608,6 +1613,56 @@ fn style_token(
         z: #z,
         ..::core::default::Default::default()
     }))
+}
+
+/// Разбирает `flex-grow`/`flex-shrink`, поддерживая сокращение `flex`
+/// (`1`, `1 0`, `1 0 0`). В сокращении grow — первый компонент, shrink —
+/// второй (по умолчанию `1`, как в CSS).
+fn flex_attr(
+    generator: &Generator,
+    element: &Element,
+    name: &str,
+    shorthand_part: usize,
+) -> syn::Result<TokenStream> {
+    if let Some(value) = dynamic_value(generator, element, name)? {
+        return Ok(quote!(::light::vdom::parse_px(&#value)));
+    }
+    if let Some(value) = attr_value(&element.attrs, name) {
+        let number = parse_flex_number(element, name, value)?;
+        return Ok(quote!(#number));
+    }
+    let Some(shorthand) = attr_value(&element.attrs, "flex") else {
+        return Ok(quote!(0.0));
+    };
+    let value = shorthand
+        .split_whitespace()
+        .nth(shorthand_part)
+        .unwrap_or("1");
+    let number = parse_flex_number(element, "flex", value)?;
+    Ok(quote!(#number))
+}
+
+/// Число для `flex-*`: без единиц, отрицательные значения не допускаются.
+fn parse_flex_number(element: &Element, name: &str, value: &str) -> syn::Result<f32> {
+    let parsed = value.trim().parse::<f32>().map_err(|_| {
+        syn::Error::new(
+            Span::call_site(),
+            format!(
+                "invalid {name}=\"{value}\" on <{}>: expected a non-negative number",
+                element.name
+            ),
+        )
+    })?;
+    if !parsed.is_finite() || parsed < 0.0 {
+        return Err(syn::Error::new(
+            Span::call_site(),
+            format!(
+                "invalid {name}=\"{value}\" on <{}>: expected a non-negative number",
+                element.name
+            ),
+        ));
+    }
+    Ok(parsed)
 }
 
 /// Необязательный размер (`min-width`/`max-width` и т. п.) как `Option<Size>`.

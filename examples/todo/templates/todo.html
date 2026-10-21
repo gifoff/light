@@ -1,12 +1,16 @@
-<window title="Light Todo" width="440" height="540">
-    <titlebar background="#0F172A" height="34">
-        <div font-color="#F8FAFC" font-size="16">Light Todo</div>
+<window title="Light Todo" width="440" height="540" resizable="false">
+    <titlebar background="#0F172A" height="34" padding-left="12" padding-right="8" align-items="center">
+        <div direction="horizontal" align-items="center" font-color="#F8FAFC" font-size="16">Light Todo</div>
+        <div direction="horizontal" align-items="center" position-x="right">
+            <button @click="minimize()" type="button" width="30" height="24" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#F8FAFC">−</button>
+            <button @click="close()" type="button" width="30" height="24" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#F8FAFC">×</button>
+        </div>
     </titlebar>
     <div direction="vertical" padding="16" background="#F8FAFC">
         <h1>TODO</h1>
         <div direction="horizontal">
-            <text v-model="draft" placeholder="Что нужно сделать?" width="100%" />
-            <button @click="add" :disabled="is_empty" type="button">Добавить</button>
+            <text v-model="draft" placeholder="Что нужно сделать?" flex="1" min-width="0" />
+            <button @click="add" :disabled="is_empty" type="button" flex-shrink="0">Добавить</button>
         </div>
         <div role="status" aria-live="polite" font-color="#475569">{{ count_label }}</div>
         <div v-if="has_items">

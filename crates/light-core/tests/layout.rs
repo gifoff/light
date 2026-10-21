@@ -1127,6 +1127,57 @@ fn position_self_overrides_align_items() {
 }
 
 #[test]
+fn flex_grow_fills_free_space_on_main_axis() {
+    let mut grow = column("g", vec![]);
+    grow.style = Style {
+        flex_grow: 1.0,
+        ..Style::default()
+    };
+    let root = column(
+        "",
+        vec![sized_column("fixed", Size::Px(50.0), Size::Px(20.0)), grow],
+    );
+    let layout = layout_at(&root, 200.0, 100.0);
+    let fixed = layout.rect_of("fixed").unwrap();
+    let grown = layout.rect_of("g").unwrap();
+    assert_eq!(fixed, Rect::new(0.0, 0.0, 50.0, 20.0));
+    assert_eq!(grown.y, 20.0 + SPACING);
+    assert_eq!(grown.h, 100.0 - 20.0 - SPACING, "grow забирает остаток");
+}
+
+#[test]
+fn flex_grow_shares_row_width() {
+    let mut fixed = sized_column("fixed", Size::Px(50.0), Size::Px(20.0));
+    fixed.style.flex_shrink = 0.0;
+    let mut grow = column("g", vec![]);
+    grow.style = Style {
+        flex_grow: 2.0,
+        ..Style::default()
+    };
+    let root = VElement::container("", NodeKind::Row, vec![fixed, grow]);
+    let layout = layout_at(&root, 200.0, 100.0);
+    assert_eq!(layout.rect_of("fixed").unwrap().w, 50.0);
+    assert_eq!(
+        layout.rect_of("g").unwrap(),
+        Rect::new(50.0 + SPACING, 0.0, 200.0 - 50.0 - SPACING, 100.0)
+    );
+}
+
+#[test]
+fn flex_shrink_redistributes_overflow_by_weight() {
+    let mut first = sized_column("a", Size::Px(80.0), Size::Px(20.0));
+    first.style.flex_shrink = 1.0;
+    let mut second = sized_column("b", Size::Px(80.0), Size::Px(20.0));
+    second.style.flex_shrink = 2.0;
+    let root = VElement::container("", NodeKind::Row, vec![first, second]);
+    let layout = layout_at(&root, 100.0, 100.0);
+    // Переполнение 66: первый отдаёт 22, второй — 44.
+    assert_eq!(layout.rect_of("a").unwrap().w, 58.0);
+    assert_eq!(layout.rect_of("b").unwrap().w, 36.0);
+    assert_eq!(layout.rect_of("b").unwrap().x, 58.0 + SPACING);
+}
+
+#[test]
 fn justify_content_centers_bare_text_in_h3() {
     let mut h3 = column("h3", vec![text("t", "Привет")]);
     h3.style = Style {

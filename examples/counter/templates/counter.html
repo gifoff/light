@@ -1,6 +1,10 @@
-<window title="Light Counter" width="360" height="280">
-    <titlebar background="#111827" height="34">
-        <div font-color="#F9FAFB" font-size="16">Light Counter</div>
+<window title="Light Counter" width="360" height="280" resizable="false">
+    <titlebar background="#111827" height="34" padding-left="12" padding-right="8" align-items="center">
+        <div direction="horizontal" align-items="center" font-color="#F9FAFB" font-size="16">Light Counter</div>
+        <div direction="horizontal" align-items="center" position-x="right">
+            <button @click="minimize()" type="button" width="30" height="24" font-size="14" background="#111827" border-color="#111827" font-color="#F9FAFB">−</button>
+            <button @click="close()" type="button" width="30" height="24" font-size="14" background="#111827" border-color="#111827" font-color="#F9FAFB">×</button>
+        </div>
     </titlebar>
     <div direction="vertical" padding="18" background="#F3F4F6">
         <div font-size="13" font-color="#6B7280">

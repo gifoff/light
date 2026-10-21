@@ -141,6 +141,27 @@ pub trait Component {
         crate::control::is_maximized()
     }
 
+    /// Закрывает активное окно.
+    ///
+    /// Доступно в шаблонах как обработчик: `@click="close()"`.
+    fn close(&self) {
+        crate::control::request(crate::control::WindowCommand::Close);
+    }
+
+    /// Сворачивает активное окно.
+    ///
+    /// Доступно в шаблонах как обработчик: `@click="minimize()"`.
+    fn minimize(&self) {
+        crate::control::request(crate::control::WindowCommand::Minimize);
+    }
+
+    /// Переключает развёрнутое состояние активного окна.
+    ///
+    /// Доступно в шаблонах как обработчик: `@click="toggle_maximize()"`.
+    fn toggle_maximize(&self) {
+        crate::control::request(crate::control::WindowCommand::ToggleMaximize);
+    }
+
     /// Описание системного окна компонента.
     ///
     /// По умолчанию берётся из корневого элемента дерева, возвращённого

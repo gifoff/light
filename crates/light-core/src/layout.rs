@@ -176,6 +176,12 @@ struct FlowContext {
     height_known: bool,
     /// Ось, по которой родитель растягивает потомков с `Auto` размером.
     stretch: Option<Axis>,
+    /// Принудительная ширина от `flex-grow`/`flex-shrink` (внутренняя, без
+    /// внешних отступов); переопределяет `width`.
+    forced_w: Option<f32>,
+    /// Принудительная высота от `flex-grow`/`flex-shrink` (внутренняя, без
+    /// внешних отступов); переопределяет `height`.
+    forced_h: Option<f32>,
 }
 
 /// Метрики текста, необходимые для раскладки.
@@ -256,6 +262,8 @@ impl Layout {
                 width_known: true,
                 height_known: true,
                 stretch: Some(Axis::Width),
+                forced_w: None,
+                forced_h: None,
             },
             None,
             metrics,
@@ -446,26 +454,28 @@ impl Layout {
         );
         let stretch_w = is_container && flow.stretch == Some(Axis::Width);
         let stretch_h = is_container && flow.stretch == Some(Axis::Height);
-        let definite_w = if root {
+        let definite_w = flow.forced_w.unwrap_or(if root {
             avail_w
         } else if matches!(style.width, Size::Auto) {
             if stretch_w { avail_w } else { 0.0 }
         } else {
             style.resolve_width(0.0, avail_w)
-        };
-        let definite_h = if root {
+        });
+        let definite_h = flow.forced_h.unwrap_or(if root {
             avail_h
         } else if matches!(style.height, Size::Auto) {
             if stretch_h { avail_h } else { 0.0 }
         } else {
             style.resolve_height(0.0, avail_h)
-        };
+        });
         // Определён ли размер узла по оси (для процентов его детей).
-        let width_known = root
+        let width_known = flow.forced_w.is_some()
+            || root
             || matches!(style.width, Size::Px(_))
             || (matches!(style.width, Size::Percent(_)) && flow.width_known)
             || (matches!(style.width, Size::Auto) && stretch_w);
-        let height_known = root
+        let height_known = flow.forced_h.is_some()
+            || root
             || matches!(style.height, Size::Px(_))
             || (matches!(style.height, Size::Percent(_)) && flow.height_known)
             || (matches!(style.height, Size::Auto) && stretch_h);
@@ -487,13 +497,19 @@ impl Layout {
             width_known,
             height_known,
             stretch: child_stretch,
+            forced_w: None,
+            forced_h: None,
         };
 
         let (w, h) = match &vnode.kind {
             NodeKind::Text { content } => {
                 let (content_w, content_h) = metrics.measure(content, font_size);
-                let w = style.resolve_width(content_w + inset.horizontal(), avail_w);
-                let h = style.resolve_height(content_h + inset.vertical(), avail_h);
+                let w = flow.forced_w.unwrap_or_else(|| {
+                    style.resolve_width(content_w + inset.horizontal(), avail_w)
+                });
+                let h = flow
+                    .forced_h
+                    .unwrap_or_else(|| style.resolve_height(content_h + inset.vertical(), avail_h));
                 self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
                 (w, h)
             }
@@ -531,6 +547,8 @@ impl Layout {
                             width_known: inner_w > 0.0,
                             height_known: inner_h > 0.0,
                             stretch: None,
+                            forced_w: None,
+                            forced_h: None,
                         },
                         Some(index),
                         metrics,
@@ -546,11 +564,15 @@ impl Layout {
                 if any_child {
                     content_w = cursor_x - inner_left - SPACING;
                 }
-                let w = style.resolve_width(content_w + btn_inset.horizontal(), avail_w);
-                let h = style.resolve_height(
-                    (content_h + btn_inset.vertical()).max(BUTTON_MIN_H),
-                    avail_h,
-                );
+                let w = flow.forced_w.unwrap_or_else(|| {
+                    style.resolve_width(content_w + btn_inset.horizontal(), avail_w)
+                });
+                let h = flow.forced_h.unwrap_or_else(|| {
+                    style.resolve_height(
+                        (content_h + btn_inset.vertical()).max(BUTTON_MIN_H),
+                        avail_h,
+                    )
+                });
                 let node = &mut self.nodes[index];
                 node.rect = Rect::new(flow_x, flow_y, w, h);
                 #[cfg(debug_assertions)]
@@ -583,8 +605,12 @@ impl Layout {
                 } else {
                     FIELD_MIN_H
                 };
-                let w = style.resolve_width(FIELD_WIDTH + inset.horizontal(), avail_w);
-                let h = style.resolve_height(default_h + inset.vertical(), avail_h);
+                let w = flow.forced_w.unwrap_or_else(|| {
+                    style.resolve_width(FIELD_WIDTH + inset.horizontal(), avail_w)
+                });
+                let h = flow
+                    .forced_h
+                    .unwrap_or_else(|| style.resolve_height(default_h + inset.vertical(), avail_h));
                 self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
                 (w, h)
             }
@@ -593,8 +619,12 @@ impl Layout {
                 let (label_w, label_h) = metrics.measure(label, font_size);
                 let content_w = CHECKBOX_BOX + CHECKBOX_GAP + label_w;
                 let content_h = CHECKBOX_BOX.max(label_h);
-                let w = style.resolve_width(content_w + inset.horizontal(), avail_w);
-                let h = style.resolve_height(content_h + inset.vertical(), avail_h);
+                let w = flow.forced_w.unwrap_or_else(|| {
+                    style.resolve_width(content_w + inset.horizontal(), avail_w)
+                });
+                let h = flow
+                    .forced_h
+                    .unwrap_or_else(|| style.resolve_height(content_h + inset.vertical(), avail_h));
                 self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
                 (w, h)
             }
@@ -603,8 +633,12 @@ impl Layout {
                 let (label_w, label_h) = metrics.measure(label, font_size);
                 let content_w = CHECKBOX_BOX + CHECKBOX_GAP + label_w;
                 let content_h = CHECKBOX_BOX.max(label_h);
-                let w = style.resolve_width(content_w + inset.horizontal(), avail_w);
-                let h = style.resolve_height(content_h + inset.vertical(), avail_h);
+                let w = flow.forced_w.unwrap_or_else(|| {
+                    style.resolve_width(content_w + inset.horizontal(), avail_w)
+                });
+                let h = flow
+                    .forced_h
+                    .unwrap_or_else(|| style.resolve_height(content_h + inset.vertical(), avail_h));
                 self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
                 (w, h)
             }
@@ -615,8 +649,12 @@ impl Layout {
                     .map(|option| metrics.measure(&option.label, font_size).0)
                     .fold(0.0_f32, f32::max);
                 let content_w = SELECT_WIDTH.max(widest + 2.0 * SELECT_PAD_X + CHECKBOX_BOX);
-                let w = style.resolve_width(content_w + inset.horizontal(), avail_w);
-                let h = style.resolve_height(FIELD_MIN_H + inset.vertical(), avail_h);
+                let w = flow.forced_w.unwrap_or_else(|| {
+                    style.resolve_width(content_w + inset.horizontal(), avail_w)
+                });
+                let h = flow.forced_h.unwrap_or_else(|| {
+                    style.resolve_height(FIELD_MIN_H + inset.vertical(), avail_h)
+                });
                 self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
                 (w, h)
             }
@@ -629,6 +667,7 @@ impl Layout {
                 let mut cursor_y = child_content.top;
                 let mut content_w = 0.0_f32;
                 let mut content_h = 0.0_f32;
+                let mut child_sizes = Vec::with_capacity(vnode.children.len());
                 for child in &vnode.children {
                     if !child.style.visible {
                         continue;
@@ -644,6 +683,7 @@ impl Layout {
                             color: font_color,
                         },
                     );
+                    child_sizes.push((child_w, child_h));
                     if horizontal {
                         cursor_x += child_w + SPACING;
                         content_h = content_h.max(child_h);
@@ -659,24 +699,107 @@ impl Layout {
                         content_h = cursor_y - child_content.top - SPACING;
                     }
                 }
-                let (w, h) = if root {
-                    (avail_w, avail_h)
-                } else if stretch_w {
-                    (
-                        style.resolve_width(avail_w, avail_w),
-                        style.resolve_height(content_h + inset.vertical(), avail_h),
-                    )
-                } else if stretch_h {
-                    (
-                        style.resolve_width(content_w + inset.horizontal(), avail_w),
-                        style.resolve_height(avail_h, avail_h),
-                    )
+                // Второй проход: распределяем свободное место (`flex-grow`) или
+                // переполнение (`flex-shrink`) между прямыми детьми по main-оси.
+                let main_avail = if horizontal {
+                    child_content.width
                 } else {
-                    (
-                        style.resolve_width(content_w + inset.horizontal(), avail_w),
-                        style.resolve_height(content_h + inset.vertical(), avail_h),
-                    )
+                    child_content.height
                 };
+                let used_main = if horizontal { content_w } else { content_h };
+                let free = main_avail - used_main;
+                let total_flex: f32 = vnode
+                    .children
+                    .iter()
+                    .filter(|child| child.style.visible)
+                    .map(|child| {
+                        if free > 0.0 {
+                            child.style.flex_grow
+                        } else {
+                            child.style.flex_shrink
+                        }
+                    })
+                    .sum();
+                if free != 0.0 && total_flex > 0.0 {
+                    let forced: Vec<(Option<f32>, Option<f32>)> = vnode
+                        .children
+                        .iter()
+                        .filter(|child| child.style.visible)
+                        .zip(child_sizes.iter())
+                        .map(|(child, &(child_w, child_h))| {
+                            let weight = if free > 0.0 {
+                                child.style.flex_grow
+                            } else {
+                                child.style.flex_shrink
+                            };
+                            let extra = free * weight / total_flex;
+                            if horizontal {
+                                let step = child.style.margin.left + child.style.margin.right;
+                                (Some((child_w - step + extra).max(0.0)), None)
+                            } else {
+                                let step = child.style.margin.top + child.style.margin.bottom;
+                                (None, Some((child_h - step + extra).max(0.0)))
+                            }
+                        })
+                        .collect();
+                    // Пересобираем поддерево с принудительными main-размерами.
+                    self.nodes.truncate(index + 1);
+                    self.nodes[index].children.clear();
+                    cursor_x = child_content.left;
+                    cursor_y = child_content.top;
+                    content_w = 0.0;
+                    content_h = 0.0;
+                    let mut visible = vnode
+                        .children
+                        .iter()
+                        .filter(|child| child.style.visible)
+                        .zip(forced.iter());
+                    for (child, &(forced_w, forced_h)) in &mut visible {
+                        let (child_w, child_h) = self.place(
+                            child,
+                            Point::new(cursor_x, cursor_y),
+                            FlowContext {
+                                forced_w,
+                                forced_h,
+                                ..child_flow
+                            },
+                            Some(index),
+                            metrics,
+                            Inherited {
+                                size: font_size,
+                                color: font_color,
+                            },
+                        );
+                        if horizontal {
+                            cursor_x += child_w + SPACING;
+                            content_h = content_h.max(child_h);
+                        } else {
+                            cursor_y += child_h + SPACING;
+                            content_w = content_w.max(child_w);
+                        }
+                    }
+                    if !vnode.children.is_empty() {
+                        if horizontal {
+                            content_w = cursor_x - child_content.left - SPACING;
+                        } else {
+                            content_h = cursor_y - child_content.top - SPACING;
+                        }
+                    }
+                }
+                let w = flow.forced_w.unwrap_or(if root {
+                    avail_w
+                } else if stretch_w {
+                    style.resolve_width(avail_w, avail_w)
+                } else {
+                    style.resolve_width(content_w + inset.horizontal(), avail_w)
+                });
+                let h = flow.forced_h.unwrap_or(if root {
+                    avail_h
+                } else if stretch_h {
+                    style.resolve_height(avail_h, avail_h)
+                } else {
+                    style.resolve_height(content_h + inset.vertical(), avail_h)
+                });
                 let node = &mut self.nodes[index];
                 node.rect = Rect::new(flow_x, flow_y, w, h);
                 // Выравниваем прямых детей относительно итогового content box.
