@@ -33,6 +33,7 @@ pub trait EnvironmentProbe: Send + Sync {
 }
 
 /// Реальный опрос окружения через запуск процессов.
+#[derive(Debug, Clone, Copy)]
 pub struct SystemProbe {
     runner: SystemRunner,
     assume_offline: bool,

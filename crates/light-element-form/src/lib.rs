@@ -8,6 +8,7 @@
 //! элементы формы, добавляет `light-fw-element-form` (или включает фичу
 //! `light/elements-form`), а сборка без формы не тянет её код.
 
+#![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
 pub use light_fw_core::vdom::{NodeKind, SelectOption, VElement};

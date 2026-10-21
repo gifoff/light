@@ -45,7 +45,7 @@ struct Pool {
 
 /// Ключ узла по идентификатору AccessKit (обратный поиск).
 ///
-/// Используется оконным бэкендом, чтобы сопоставить [`ActionRequest`]
+/// Используется оконным бэкендом, чтобы сопоставить [`accesskit::ActionRequest`]
 /// с узлом виртуального дерева. Возвращает `None`, если узел не найден.
 pub fn find_key_for_node_id(root: &VElement, id: NodeId) -> Option<&'static str> {
     if node_id_for_key(root.key) == id {

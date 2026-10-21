@@ -34,11 +34,17 @@ pub struct LightManifest {
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ComponentKind {
+    /// Элемент интерфейса (тег или атрибут).
     Element,
+    /// Поведение (валидация, фокус, горячие клавиши).
     Behavior,
+    /// Готовый виджет.
     Widget,
+    /// Интеграция с внешней системой.
     Integration,
+    /// Подсистема (рендеринг, доступность).
     Subsystem,
+    /// Инструмент разработки.
     Dev,
 }
 
@@ -264,7 +270,7 @@ pub fn has_package_section(cargo_toml: &str) -> Result<bool> {
 /// Делает путь абсолютным относительно текущего каталога, не обращаясь к ФС.
 ///
 /// Нужно перед подъёмом вверх по дереву каталогов: у относительного пути вида
-/// `.` нет родительского компонента, поэтому [`Path::pop`] не может подняться
+/// `.` нет родительского компонента, поэтому [`PathBuf::pop`] не может подняться
 /// выше (`crates/light-demo` → `crates` → корень теряется).
 pub fn absolute(path: &Path) -> PathBuf {
     if path.is_absolute() {

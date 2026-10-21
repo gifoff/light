@@ -37,6 +37,7 @@ impl ComponentInfo {
 }
 
 /// Реестр компонентов с индексами по элементам, атрибутам и директивам.
+#[derive(Debug, Clone)]
 pub struct ComponentRegistry {
     components: Vec<ComponentInfo>,
     by_name: HashMap<String, usize>,

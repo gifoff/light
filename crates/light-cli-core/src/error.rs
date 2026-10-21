@@ -1,39 +1,52 @@
 use thiserror::Error;
 
+/// Ошибки CLI-операций `light`.
 #[derive(Debug, Error)]
 pub enum Error {
+    /// Ошибка ввода-вывода.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// Ошибка разбора TOML.
     #[error("TOML parse error: {0}")]
     Toml(#[from] toml_edit::TomlError),
 
+    /// Ошибка сериализации TOML.
     #[error("TOML serialize error: {0}")]
     TomlSer(#[from] toml_edit::ser::Error),
 
+    /// Ошибка JSON.
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
+    /// Ошибка разбора semver-версии или диапазона.
     #[error("Semver error: {0}")]
     Semver(#[from] semver::Error),
 
+    /// Ошибка обхода каталога.
     #[error("Walkdir error: {0}")]
     Walkdir(#[from] walkdir::Error),
 
+    /// Ошибка чтения `.gitignore`/`.ignore`.
     #[error("Ignore error: {0}")]
     Ignore(#[from] ignore::Error),
 
+    /// Ошибка разбора HTML-шаблона.
     #[error("Template parse error: {0}")]
     TemplateParse(String),
 
+    /// Ошибка манифеста компонента.
     #[error("Manifest error: {0}")]
     Manifest(String),
 
     /// Внешний процесс завершился с ненулевым кодом.
     #[error("команда `{program}` завершилась с кодом {code}: {stderr}")]
     CommandFailed {
+        /// Имя запущенной программы.
         program: String,
+        /// Код возврата.
         code: i32,
+        /// Вывод в stderr.
         stderr: String,
     },
 
@@ -51,7 +64,12 @@ pub enum Error {
 
     /// Компонент несовместим с текущим ядром проекта или другими компонентами.
     #[error("компонент `{component}` несовместим: {reason}")]
-    Incompatible { component: String, reason: String },
+    Incompatible {
+        /// Имя компонента.
+        component: String,
+        /// Причина несовместимости.
+        reason: String,
+    },
 
     /// Компонент не подключён к проекту.
     #[error("компонент `{0}` не установлен")]
@@ -95,7 +113,12 @@ pub enum Error {
     #[error(
         "crate {name} v{version} already published; bump version in Cargo.toml before publishing"
     )]
-    AlreadyPublished { name: String, version: String },
+    AlreadyPublished {
+        /// Имя крейта.
+        name: String,
+        /// Уже опубликованная версия.
+        version: String,
+    },
 
     /// Сетевой запрос к crates.io завершился ошибкой.
     #[cfg(feature = "network")]
@@ -103,4 +126,5 @@ pub enum Error {
     Http(#[from] reqwest::Error),
 }
 
+/// Результат CLI-операции с [`enum@Error`].
 pub type Result<T> = std::result::Result<T, Error>;

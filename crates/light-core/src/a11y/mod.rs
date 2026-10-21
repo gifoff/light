@@ -8,7 +8,7 @@
 //!
 //! * [`roles`] — сопоставление HTML-подобных тегов Light и атрибута
 //!   `role="…"` с [`AriaRole`](accesskit::Role);
-//! * [`focus`] — фокусируемые узлы и порядок обхода клавишей `Tab`;
+//! * [`mod@focus`] — фокусируемые узлы и порядок обхода клавишей `Tab`;
 //! * [`tree`] — построение [`accesskit::TreeUpdate`] из дерева узлов;
 //! * [`actions`] — преобразование запросов AccessKit (`click`, `focus`,
 //!   `set-value`) в события Light;

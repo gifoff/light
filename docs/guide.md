@@ -540,6 +540,9 @@ $ light add light-fw-datepicker --features calendar,timezone --yes
 | `position-offset-y` | `10`, `10px`, `10%`       | Сдвиг после выравнивания по Y.            |
 | `justify-content`   | `start` / `center` / `end` | Выравнивание **содержимого** по main-оси контейнера (`Column` — вертикаль, `Row` — горизонталь). По умолчанию `start`. |
 | `align-items`       | `start` / `center` / `end` | Выравнивание **содержимого** по cross-оси контейнера (`Column` — горизонталь, `Row` — вертикаль). По умолчанию `start`. |
+| `flex-grow`         | число                     | Доля свободного места по main-оси контейнера. `0` — не растягиваться (по умолчанию). |
+| `flex-shrink`       | число                     | Доля переполнения по main-оси, которую элемент отдаёт при сжатии. `0` — не сжиматься (по умолчанию). |
+| `flex`              | `1`, `1 0`                | Сокращение: `flex-grow` и `flex-shrink` (как в CSS). |
 | `padding`           | число (px)                | Внутренний отступ со всех сторон.         |
 | `padding-top` / `padding-right` / `padding-bottom` / `padding-left` | число (px) | Внутренний отступ отдельной стороны (переопределяет `padding`). |
 | `margin`            | число (px)                | Внешний отступ со всех сторон.            |
@@ -572,6 +575,7 @@ $ light add light-fw-datepicker --features calendar,timezone --yes
 - размеры (`width`/`height`/`min-*`/`max-*`) — `auto`, `10`, `10px`, `50%`;
 - `position-x` (`left`/`center`/`right`), `position-y` (`top`/`center`/`bottom`);
 - `justify-content`/`align-items` (`start`/`center`/`end`);
+- `flex-grow`/`flex-shrink` — неотрицательное число;
 - смещения (`position-offset-*`) — `10`, `-8px`, `10%`;
 - `padding`/`margin` — число (px): базовое значение для всех сторон, статические `padding-*`/`margin-*` переопределяют отдельные стороны;
 - `border-size`/`font-size` — число (px);
@@ -598,6 +602,19 @@ $ light add light-fw-datepicker --features calendar,timezone --yes
 - `Row` (и `<titlebar>`): main — горизонталь, cross — вертикаль.
 
 Оба принимают `start` (по умолчанию), `center` и `end`. `justify-content` сдвигает всю группу детей вдоль main-оси; `align-items` выравнивает каждого ребёнка по cross-оси независимо. `position-x`/`position-y` конкретного ребёнка **переопределяет** `align-items` родителя (как `align-self` в CSS).
+
+### Растягивание и сжатие (`flex-grow` / `flex-shrink`)
+
+`flex-grow` распределяет свободное место по main-оси между детьми с ненулевым весом. `flex-shrink` распределяет переполнение: элемент с большим весом отдаёт больше своего размера. Для обычного поля ввода рядом с кнопкой удобно сокращение `flex="1"`:
+
+```html
+<div direction="horizontal">
+    <text v-model="draft" flex="1" min-width="0" />
+    <button @click="add" flex-shrink="0">Добавить</button>
+</div>
+```
+
+Для сетки кнопок задайте `flex-grow` строкам, а кнопкам — `height="100%"`: строки заберут свободную высоту, а кнопки заполнят её.
 
 Типичный случай — центрирование заголовка в титульной полосе. Сам `<h3>` растянут на всю высоту, поэтому `position-y` у него ничего не центрирует: нужно выровнять его **содержимое** (текст):
 

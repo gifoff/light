@@ -338,7 +338,7 @@ impl<'a> Canvas<'a> {
 
 /// Состояние взаимодействия для отрисовки: поле в фокусе, позиция каретки,
 /// выделение и кнопка под курсором.
-#[derive(Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Interaction<'a> {
     /// Ключ текстового поля в фокусе.
     pub focused: Option<&'a str>,

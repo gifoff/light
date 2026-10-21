@@ -8,6 +8,7 @@
 //! которому нужна валидация, добавляет `light-fw-behavior-validation` (или включает
 //! фичу `light/validation`), а сборка без валидации не тянет её код.
 
+#![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
 pub use light_fw_core::validation::{

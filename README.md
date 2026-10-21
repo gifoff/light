@@ -120,6 +120,12 @@ light init my-app --template calculator
 Шаблоны и их HTML встроены в бинарник через `include_str!`, поэтому создание
 проекта не требует сети. Исходники примеров лежат в `examples/`.
 
+## Showcase
+
+| Calculator | Todo |
+| --- | --- |
+| ![Calculator](docs/assets/calculator.png) | ![Todo](docs/assets/todo.png) |
+
 ### Добавление компонентов
 
 ```bash
