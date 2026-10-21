@@ -212,6 +212,7 @@ pub fn run(args: PublishArgs) -> anyhow::Result<i32> {
     let retry = RetryConfig::from_env();
     let sleeper = SystemSleeper;
     let mut published_names: Vec<String> = Vec::new();
+    let mut skipped_names: Vec<String> = Vec::new();
     for name in &pending {
         let version = version_of(&workspace, name);
         match publish::publish_with_retries(
@@ -222,6 +223,10 @@ pub fn run(args: PublishArgs) -> anyhow::Result<i32> {
             &invocation,
             &retry,
         ) {
+            Ok(attempt) if attempt.already_published => {
+                skipped_names.push(name.clone());
+                println!("  {name:<28} {version:<8} skipped (already published via cargo index)");
+            }
             Ok(attempt) if attempt.success => {
                 published_names.push(name.clone());
                 let suffix = if attempt.retries > 0 {
@@ -237,7 +242,7 @@ pub fn run(args: PublishArgs) -> anyhow::Result<i32> {
             {
                 println!("  {name:<28} {version:<8} rate limited");
                 eprintln!("{}", rate_limit_message(&attempt.stderr));
-                print_published(&published_names, pending.len());
+                print_progress(&published_names, skipped_names.len(), pending.len());
                 return Ok(1);
             }
             Ok(attempt) => {
@@ -245,20 +250,31 @@ pub fn run(args: PublishArgs) -> anyhow::Result<i32> {
                     "  {name:<28} {version:<8} failed: {}",
                     stderr_tail(&attempt.stderr, 400)
                 );
-                print_published(&published_names, pending.len());
+                print_progress(&published_names, skipped_names.len(), pending.len());
                 println!("        next: fix error, then `light publish {name}`");
                 return Ok(1);
             }
             Err(error) => {
                 println!("  {name:<28} {version:<8} failed: {error}");
-                print_published(&published_names, pending.len());
+                print_progress(&published_names, skipped_names.len(), pending.len());
                 println!("        next: fix error, then `light publish {name}`");
                 return Ok(1);
             }
         }
     }
-    println!("published: {}/{}", published_names.len(), pending.len());
+    println!(
+        "{}",
+        summary(published_names.len(), skipped_names.len(), pending.len())
+    );
     Ok(0)
+}
+
+fn summary(published: usize, skipped: usize, total: usize) -> String {
+    format!(
+        "published/skipped: {}/{} ({published} published, {skipped} skipped)",
+        published + skipped,
+        total
+    )
 }
 
 fn rate_limit_message(stderr: &str) -> String {
@@ -270,13 +286,17 @@ fn rate_limit_message(stderr: &str) -> String {
     }
 }
 
-fn print_published(names: &[String], total: usize) {
+fn print_progress(names: &[String], skipped: usize, total: usize) {
     let list = if names.is_empty() {
         "(none)".to_string()
     } else {
         names.join(", ")
     };
-    println!("        published: {}/{} ({list})", names.len(), total);
+    let completed = names.len() + skipped;
+    println!(
+        "        published/skipped: {completed}/{total} ({} published, {skipped} skipped, {list})",
+        names.len()
+    );
 }
 
 fn partition_pending(order: &[String], published: &BTreeSet<String>) -> (Vec<String>, usize) {
@@ -313,8 +333,16 @@ fn stderr_tail(stderr: &str, max: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::partition_pending;
+    use super::{partition_pending, summary};
     use std::collections::BTreeSet;
+
+    #[test]
+    fn summary_counts_skipped_as_completed() {
+        assert_eq!(
+            summary(7, 1, 8),
+            "published/skipped: 8/8 (7 published, 1 skipped)"
+        );
+    }
 
     #[test]
     fn partition_pending_skips_already_published() {

@@ -41,4 +41,4 @@ template-window = []
 syn.workspace = true
 quote.workspace = true
 proc-macro2.workspace = true
-light-fw-html = { path = "../light-html", version = "0.6.0" }
+light-fw-html = { path = "../light-html", version = "0.6.1" }

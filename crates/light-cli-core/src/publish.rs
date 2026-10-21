@@ -598,6 +598,8 @@ pub fn publish_args(name: &str, invocation: &PublishInvocation) -> Vec<String> {
 /// Причина сбоя `cargo publish`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureKind {
+    /// Версия уже есть в git-индексе crates.io, хотя API её ещё не показывает.
+    AlreadyPublished,
     /// Индекс crates.io ещё не увидел предыдущий крейт — стоит повторить.
     IndexStale,
     /// crates.io ограничил частоту публикаций — ретраи бесполезны.
@@ -605,6 +607,18 @@ pub enum FailureKind {
     /// Прочая ошибка — ретраи не помогут.
     Other,
 }
+
+/// Паттерны stdout/stderr, означающие, что версия уже есть в git-индексе.
+///
+/// crates.io API может отставать от индекса, который использует `cargo`;
+/// в этом случае `cargo publish` завершается ошибкой, хотя публиковать уже
+/// нечего.
+pub const ALREADY_PUBLISHED_PATTERNS: &[&str] = &[
+    "already exists on crates.io index",
+    "already uploaded",
+    "already been published",
+    "already published",
+];
 
 /// Паттерны stderr, означающие «индекс ещё не обновился».
 ///
@@ -623,7 +637,7 @@ pub const RATE_LIMIT_PATTERNS: &[&str] = &[
     "too many requests",
 ];
 
-/// Классифицирует stderr `cargo publish` (exit code всегда 101, поэтому — по тексту).
+/// Классифицирует вывод `cargo publish` (exit code всегда 101, поэтому — по тексту).
 pub fn classify_publish_failure(stderr: &str) -> FailureKind {
     let lower = stderr.to_lowercase();
     if RATE_LIMIT_PATTERNS
@@ -631,6 +645,11 @@ pub fn classify_publish_failure(stderr: &str) -> FailureKind {
         .any(|pattern| lower.contains(pattern))
     {
         FailureKind::RateLimited
+    } else if ALREADY_PUBLISHED_PATTERNS
+        .iter()
+        .any(|pattern| lower.contains(pattern))
+    {
+        FailureKind::AlreadyPublished
     } else if INDEX_STALE_PATTERNS
         .iter()
         .any(|pattern| lower.contains(pattern))
@@ -762,8 +781,10 @@ impl Sleeper for SystemSleeper {
 /// Итог публикации одного крейта.
 #[derive(Debug, Clone)]
 pub struct PublishAttempt {
-    /// Успешно ли опубликован.
+    /// Успешно ли опубликован в этот раз.
     pub success: bool,
+    /// Версия уже была в git-индексе crates.io, публикация пропущена.
+    pub already_published: bool,
     /// Число сделанных повторов.
     pub retries: u32,
     /// stderr последней неудачной попытки.
@@ -773,7 +794,8 @@ pub struct PublishAttempt {
 /// Публикует крейт с ретраями на устаревание индекса crates.io.
 ///
 /// Ретраи делаются только для [`FailureKind::IndexStale`]; прочие ошибки
-/// возвращаются сразу.
+/// возвращаются сразу. Если версия уже есть в git-индексе, попытка помечается
+/// [`PublishAttempt::already_published`] и не считается сбоем.
 pub fn publish_with_retries(
     runner: &dyn CommandRunner,
     sleeper: &dyn Sleeper,
@@ -789,17 +811,27 @@ pub fn publish_with_retries(
         if output.success() {
             return Ok(PublishAttempt {
                 success: true,
+                already_published: false,
                 retries,
                 stderr: String::new(),
             });
         }
-        let stderr = output.stderr;
-        let kind = classify_publish_failure(&stderr);
+        let diagnostics = format!("{}\n{}", output.stdout, output.stderr);
+        let kind = classify_publish_failure(&diagnostics);
+        if kind == FailureKind::AlreadyPublished {
+            return Ok(PublishAttempt {
+                success: false,
+                already_published: true,
+                retries,
+                stderr: output.stderr,
+            });
+        }
         if kind != FailureKind::IndexStale || retries >= retry.max_retries {
             return Ok(PublishAttempt {
                 success: false,
+                already_published: false,
                 retries,
-                stderr,
+                stderr: output.stderr,
             });
         }
         sleeper.sleep(retry.delay(retries));
@@ -1273,6 +1305,20 @@ mod tests {
     }
 
     #[test]
+    fn classify_detects_already_published() {
+        assert_eq!(
+            classify_publish_failure(
+                "error: crate light-fw-html@0.6.1 already exists on crates.io index"
+            ),
+            FailureKind::AlreadyPublished
+        );
+        assert_eq!(
+            classify_publish_failure("error: crate version `0.6.1` is already uploaded"),
+            FailureKind::AlreadyPublished
+        );
+    }
+
+    #[test]
     fn rate_limit_reset_extracts_timestamp() {
         let stderr = "error: the remote server responded with an error (status 429 Too Many \
                       Requests): too many new crates. Please try again after \
@@ -1312,6 +1358,50 @@ mod tests {
             classify_publish_failure(&attempt.stderr),
             FailureKind::RateLimited
         );
+    }
+
+    #[test]
+    fn publish_treats_already_published_as_skip_without_retry() {
+        let runner = ScriptedRunner::new(vec![fail_output(
+            "error: crate light-fw-html@0.6.1 already exists on crates.io index",
+        )]);
+        let sleeper = RecordingSleeper::new();
+        let attempt = publish_with_retries(
+            &runner,
+            &sleeper,
+            Path::new("."),
+            "light-fw-html",
+            &PublishInvocation::default(),
+            &RetryConfig::default(),
+        )
+        .expect("publish");
+        assert!(!attempt.success);
+        assert!(attempt.already_published);
+        assert_eq!(attempt.retries, 0);
+        assert!(sleeper.sleeps().is_empty());
+        assert_eq!(runner.call_count(), 1);
+    }
+
+    #[test]
+    fn publish_detects_already_published_in_stdout() {
+        let runner = ScriptedRunner::new(vec![CommandOutput {
+            status: 101,
+            stdout: "error: crate version `0.6.1` is already uploaded".to_string(),
+            stderr: String::new(),
+        }]);
+        let sleeper = RecordingSleeper::new();
+        let attempt = publish_with_retries(
+            &runner,
+            &sleeper,
+            Path::new("."),
+            "light-fw-html",
+            &PublishInvocation::default(),
+            &RetryConfig::default(),
+        )
+        .expect("publish");
+        assert!(!attempt.success);
+        assert!(attempt.already_published);
+        assert!(sleeper.sleeps().is_empty());
     }
 
     #[test]

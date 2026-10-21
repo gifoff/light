@@ -2,6 +2,15 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.6.1] - 2026-10-21
+
+### Fixed
+
+- `light publish` больше не падает, если `cargo publish` сообщает, что версия
+  уже есть в git-индексе crates.io (`already exists on crates.io index`,
+  `already uploaded`). Такой крейт помечается как пропущенный, публикация
+  остальных продолжается, а итоговый счётчик учитывает его как завершённый.
+
 ## [0.6.0] - 2026-10-20
 
 ### Added
