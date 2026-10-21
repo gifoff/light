@@ -153,6 +153,25 @@ light add light-fw-datepicker --features calendar,timezone
 | `light-fw-cli` | Утилита `light`: проверка проекта и управление компонентами. |
 | `light-fw-cli-core` | Ядро CLI: анализ проекта, `light.lock`, управление компонентами. |
 
+## Производительность
+
+Бенчмарки запускаются через [Criterion](https://github.com/bheisler/criterion.rs):
+
+```bash
+cargo bench -p light-fw-core --bench performance
+```
+
+Ориентировочные результаты на Intel Core i5-13500 (Windows, release-профиль):
+
+| Сценарий | Время |
+| --- | --- |
+| VDOM diff, 1000 элементов, 10 изменений | ~101 µs |
+| Раскладка flex-дерева из 1000 элементов | ~143 µs |
+| Отрисовка 1000 прямоугольников в RGBA-буфер 800×600 | ~11.9 ms |
+| Отрисовка 100 текстовых строк | ~9.4 ms |
+
+Подробности и методика — в [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+
 ## Документация
 
 Сайт: [gifoff.github.io/light](https://gifoff.github.io/light/).
@@ -176,6 +195,7 @@ mdbook serve
 - [docs/EXTERNAL_COMPONENTS.md](docs/EXTERNAL_COMPONENTS.md) — краткий гайд по
   созданию и публикации стороннего компонента.
 - [docs/RELEASING.md](docs/RELEASING.md) — публикация релиза (для мейнтейнеров).
+- [docs/BENCHMARKS.md](docs/BENCHMARKS.md) — бенчмарки и их результаты.
 - [docs/ROADMAP.md](docs/ROADMAP.md) — план развития.
 
 ## Ссылки

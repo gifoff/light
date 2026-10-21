@@ -10,6 +10,7 @@
   - [Сторонние компоненты](EXTERNAL_COMPONENTS.md)
   - [Принципы дизайна](DESIGN_PRINCIPLES.md)
 - [Миграция 0.3 → 0.4](MIGRATION_0.3_TO_0.4.md)
+- [Бенчмарки](BENCHMARKS.md)
 - [Размер бинарников](footprint-report.md)
 - [Инструкция по релизам](RELEASING.md)
 - [Roadmap](ROADMAP.md)
