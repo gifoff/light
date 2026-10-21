@@ -3,7 +3,7 @@ members = ["app", "light", "light-core", "form"]
 resolver = "2"
 
 [workspace.package]
-version = "0.6.1"
+version = "0.7.0"
 
 [workspace.dependencies]
 light-fw-core = { path = "light-core" }

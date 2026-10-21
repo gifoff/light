@@ -579,7 +579,7 @@ mod tests {
             .resolve("light-fw-element-form")
             .expect("registry fallback");
         assert_eq!(resolved.source, SourceKind::CratesIo);
-        assert_eq!(resolved.version, semver::Version::new(0, 6, 1));
+        assert_eq!(resolved.version, semver::Version::new(0, 7, 0));
     }
 
     #[test]

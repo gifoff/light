@@ -2,6 +2,31 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.7.0] - 2026-10-21
+
+### Added
+
+- `flex-grow`, `flex-shrink` и сокращение `flex` в шаблонах и
+  `Style::flex_grow`/`Style::flex_shrink`: свободное место и переполнение
+  распределяются по main-оси `Column`/`Row` с учётом весов.
+- `Component::close()`, `Component::minimize()` и
+  `Component::toggle_maximize()` — обработчики для кнопок кастомного titlebar:
+  `@click="close()"` и т. п.
+- Бенчмарки Criterion для VDOM diff, раскладки, прямоугольников и текста;
+  [docs/BENCHMARKS.md](docs/BENCHMARKS.md) с методикой и результатами.
+- Раздел Showcase в README со скриншотами примеров.
+
+### Changed
+
+- Примеры counter, todo и calculator получили кнопки сворачивания/закрытия,
+  вертикальное центрирование заголовка и `resizable="false"`.
+- Кнопочная сетка калькулятора заполняет свободную высоту окна, а строка ввода
+  todo растягивается на доступную ширину без переполнения.
+- Публичные крейты включают `#![deny(missing_docs)]`; документированы
+  недостающие элементы, исправлены broken intra-doc links, `cargo doc` проходит
+  без предупреждений.
+- Встроенный реестр CLI и примеры манифестов обновлены до `0.7.0`/`^0.7`.
+
 ## [0.6.1] - 2026-10-21
 
 ### Fixed
