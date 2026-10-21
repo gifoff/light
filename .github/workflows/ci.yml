@@ -68,6 +68,14 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: cargo test --all-features -j 2
 
+      - name: Compile benchmarks (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: cargo bench --no-run
+
+      - name: Compile benchmarks (Windows)
+        if: matrix.os == 'windows-latest'
+        run: cargo bench --no-run -j 2
+
   # Feature combinations are checked separately on Linux: they catch code that
   # is valid only with `--all-features` but broken with a reduced feature set.
   features:

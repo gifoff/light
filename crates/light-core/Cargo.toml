@@ -95,5 +95,11 @@ a11y-keyboard = ["a11y"]
 include = ["light-fw-macros/include"]
 
 [dev-dependencies]
+criterion = "0.5"
 insta = { version = "1", features = ["json"] }
 serde_json = "1"
+
+[[bench]]
+name = "performance"
+harness = false
+required-features = ["window"]
