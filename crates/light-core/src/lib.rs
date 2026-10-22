@@ -102,8 +102,8 @@ pub use render::RendererBackend;
 #[cfg(feature = "wgpu-backend")]
 pub use render::WgpuBackend;
 pub use vdom::{
-    Align, Edges, Event, KeyInfo, MouseButton, NodeKind, Offset, Resize, SelectOption, Size, Style,
-    VElement, VNode, VWindow,
+    Align, Edges, Event, KeyInfo, MouseButton, NodeKind, Offset, Overflow, Position, Resize,
+    SelectOption, Size, Style, VElement, VNode, VWindow,
 };
 
 /// Открывает окно с интерфейсом компонента и запускает цикл событий.

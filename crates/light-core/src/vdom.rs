@@ -171,6 +171,49 @@ impl Default for Offset {
     }
 }
 
+/// Режим переполнения контейнера по оси (`overflow`, `overflow-x`,
+/// `overflow-y`).
+///
+/// `Visible` не создаёт прокрутку и не обрезает содержимое. `Hidden` обрезает
+/// содержимое по границам контейнера. `Auto` обрезает содержимое и включает
+/// прокрутку, если оно не помещается. `Scroll` резервирует полосу прокрутки
+/// всегда, но в текущей реализации отрисовывается так же, как `Auto`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Overflow {
+    /// Содержимое может выходить за границы контейнера.
+    #[default]
+    Visible,
+    /// Содержимое обрезается по границам контейнера.
+    Hidden,
+    /// Содержимое обрезается, прокрутка появляется при переполнении.
+    Auto,
+    /// Содержимое обрезается, полоса прокрутки резервируется всегда.
+    Scroll,
+}
+
+impl Overflow {
+    /// Обрезает ли режим содержимое по границам контейнера.
+    pub const fn clips(self) -> bool {
+        !matches!(self, Overflow::Visible)
+    }
+
+    /// Разрешена ли прокрутка по оси.
+    pub const fn scrollable(self) -> bool {
+        matches!(self, Overflow::Auto | Overflow::Scroll)
+    }
+}
+
+/// Участие узла в нормальном потоке (`position`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Position {
+    /// Обычный поток: узел занимает место у соседей.
+    #[default]
+    Flow,
+    /// Абсолютное позиционирование относительно content box родителя: узел не
+    /// занимает места в потоке и не влияет на размер родителя.
+    Absolute,
+}
+
 /// Отступы по четырём сторонам (`padding-*`, `margin-*`).
 ///
 /// Значения — в логических пикселях. Атрибут без суффикса (`padding`/`margin`)
@@ -443,6 +486,44 @@ pub fn parse_align_items(value: &str) -> Align {
     })
 }
 
+fn overflow_impl(value: &str) -> Option<Overflow> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "visible" => Some(Overflow::Visible),
+        "hidden" => Some(Overflow::Hidden),
+        "auto" => Some(Overflow::Auto),
+        "scroll" => Some(Overflow::Scroll),
+        _ => None,
+    }
+}
+
+/// Разбирает `overflow`/`overflow-x`/`overflow-y` (`visible`, `hidden`,
+/// `auto`, `scroll`). Некорректное значение в debug-сборке вызывает
+/// `debug_assert!`, а в release возвращает [`Overflow::Visible`].
+pub fn parse_overflow(value: &str) -> Overflow {
+    overflow_impl(value).unwrap_or_else(|| {
+        debug_assert!(false, "invalid overflow value: \"{value}\"");
+        Overflow::Visible
+    })
+}
+
+fn position_impl(value: &str) -> Option<Position> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "flow" | "static" | "relative" => Some(Position::Flow),
+        "absolute" => Some(Position::Absolute),
+        _ => None,
+    }
+}
+
+/// Разбирает `position` (`flow`/`static`/`relative` или `absolute`).
+/// Некорректное значение в debug-сборке вызывает `debug_assert!`, а в release
+/// возвращает [`Position::Flow`].
+pub fn parse_position(value: &str) -> Position {
+    position_impl(value).unwrap_or_else(|| {
+        debug_assert!(false, "invalid position value: \"{value}\"");
+        Position::Flow
+    })
+}
+
 fn px_impl(value: &str) -> Option<f32> {
     let value = value.trim();
     let number = value.strip_suffix("px").unwrap_or(value).trim();
@@ -598,6 +679,12 @@ pub struct Style {
     /// Доля переполнения по main-оси, которую узел отдаёт при сжатии
     /// (`flex-shrink`/`flex`). `0` — не сжиматься.
     pub flex_shrink: f32,
+    /// Участие в нормальном потоке (`position`).
+    pub position: Position,
+    /// Переполнение по горизонтали (`overflow-x`).
+    pub overflow_x: Overflow,
+    /// Переполнение по вертикали (`overflow-y`).
+    pub overflow_y: Overflow,
     /// Выравнивание по горизонтали (`position-x`).
     pub align_x: Align,
     /// Выравнивание по вертикали (`position-y`).
@@ -652,6 +739,9 @@ impl Default for Style {
             max_height: None,
             flex_grow: 0.0,
             flex_shrink: 0.0,
+            position: Position::Flow,
+            overflow_x: Overflow::Visible,
+            overflow_y: Overflow::Visible,
             align_x: Align::Start,
             align_y: Align::Start,
             offset_x: Offset::Px(0.0),

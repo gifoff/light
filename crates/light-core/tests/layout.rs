@@ -2,10 +2,12 @@
 
 extern crate light_fw_core as light;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use light::layout::{Layout, Point, Rect, SPACING, TextMetrics, damage_regions, snapshot_rects};
-use light::vdom::{Align, Edges, NodeKind, Offset, Size, Style, VElement, diff};
+use light::vdom::{
+    Align, Edges, NodeKind, Offset, Overflow, Position, Size, Style, VElement, diff,
+};
 
 /// Метрики заглушка: знак шириной 8px, высота строки 16px.
 struct StubMetrics;
@@ -300,6 +302,81 @@ fn auto_container_hugs_content_in_horizontal_flow() {
         layout.rect_of("inner").expect("рамка"),
         Rect::new(0.0, 0.0, 16.0, 16.0 + SPACING + 16.0),
         "в горизонтальном потоке ширина контейнера — по содержимому"
+    );
+}
+
+#[test]
+fn row_stretches_auto_height_children_to_tallest_sibling() {
+    let sidebar = column("sidebar", vec![text("short", "А")]);
+    let main = column("main", vec![text("a", "А"), text("b", "Б"), text("c", "В")]);
+    let row = VElement::container("row", NodeKind::Row, vec![sidebar, main]);
+    let root = column("", vec![row]);
+    let layout = build(&root);
+
+    assert_eq!(
+        layout.rect_of("main").expect("контент").h,
+        16.0 + SPACING + 16.0 + SPACING + 16.0
+    );
+    assert_eq!(
+        layout.rect_of("sidebar").expect("сайдбар").h,
+        layout.rect_of("main").expect("контент").h,
+        "короткий ребёнок Row растягивается по высоте самого высокого соседа"
+    );
+}
+
+#[test]
+fn overflow_auto_scrolls_and_clips_children() {
+    let mut list = column("list", vec![text("a", "А"), text("b", "Б"), text("c", "В")]);
+    list.style = Style {
+        height: Size::Px(50.0),
+        overflow_y: Overflow::Auto,
+        ..Style::default()
+    };
+    let root = column("", vec![list]);
+    let mut layout = build(&root);
+
+    let list_rect = layout.rect_of("list").expect("список");
+    assert_eq!(list_rect.h, 50.0, "высота контейнера ограничена");
+    assert_eq!(
+        layout.node("list").expect("список").scroll_height,
+        16.0 + SPACING + 16.0 + SPACING + 16.0
+    );
+    assert_eq!(layout.node("list").expect("список").max_scroll_y(), 10.0);
+
+    layout.apply_scroll_offsets(&HashMap::from([("list", Point::new(0.0, 100.0))]));
+    assert_eq!(layout.scroll_offset("list").y, 10.0, "смещение клампится");
+    assert_eq!(layout.rect_of("a").expect("первый").y, -10.0);
+    assert_eq!(
+        layout.node("a").expect("первый").clip_rect,
+        Some(Rect::new(0.0, 0.0, 400.0, 50.0))
+    );
+    assert_eq!(
+        layout
+            .scroll_target(Point::new(10.0, 10.0), false)
+            .map(|node| node.key),
+        Some("list")
+    );
+}
+
+#[test]
+fn absolute_child_is_centered_and_out_of_flow() {
+    let mut panel = column("panel", vec![text("label", "ОК")]);
+    panel.style = Style {
+        position: Position::Absolute,
+        align_x: Align::Center,
+        align_y: Align::Center,
+        width: Size::Px(100.0),
+        height: Size::Px(50.0),
+        ..Style::default()
+    };
+    let root = column("", vec![text("flow", "А"), panel]);
+    let layout = build(&root);
+
+    assert_eq!(layout.rect_of("flow").expect("поток").y, 0.0);
+    assert_eq!(
+        layout.rect_of("panel").expect("панель"),
+        Rect::new(150.0, 125.0, 100.0, 50.0),
+        "absolute центрируется в content box и не сдвигает поток"
     );
 }
 

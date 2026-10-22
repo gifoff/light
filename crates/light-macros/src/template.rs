@@ -1557,7 +1557,8 @@ fn parse_size_attr(element: &Element, name: &str) -> syn::Result<Option<TokenStr
 /// `padding-left` (аналогично `margin-*`), `font-size`,
 /// `border-size` (px), `background`, `font-color`, `border-color` (цвет),
 /// `flex-grow`/`flex-shrink` или сокращение `flex` (`1`, `1 0`),
-/// `visible` (видимость).
+/// `position` (`flow`/`absolute`), `overflow`/`overflow-x`/`overflow-y`
+/// (`visible`/`hidden`/`auto`/`scroll`), `visible` (видимость).
 fn style_token(
     generator: &Generator,
     element: &Element,
@@ -1582,6 +1583,8 @@ fn style_token(
     let max_height = optional_size_attr(generator, element, "max-height")?;
     let flex_grow = flex_attr(generator, element, "flex-grow", 0)?;
     let flex_shrink = flex_attr(generator, element, "flex-shrink", 1)?;
+    let position = position_attr(generator, element)?;
+    let (overflow_x, overflow_y) = overflow_attr(generator, element)?;
     let align_x = align_attr(
         generator,
         element,
@@ -1645,6 +1648,9 @@ fn style_token(
         max_height: #max_height,
         flex_grow: #flex_grow,
         flex_shrink: #flex_shrink,
+        position: #position,
+        overflow_x: #overflow_x,
+        overflow_y: #overflow_y,
         align_x: #align_x,
         align_y: #align_y,
         offset_x: #offset_x,
@@ -1852,6 +1858,43 @@ fn offset_attr(generator: &Generator, element: &Element, name: &str) -> syn::Res
         return Ok(quote!(::light::vdom::parse_offset(&#value)));
     }
     offset_token(element, name)
+}
+
+/// Участие в потоке (`position`): `flow`/`static`/`relative` или `absolute`.
+fn position_attr(generator: &Generator, element: &Element) -> syn::Result<TokenStream> {
+    if let Some(value) = dynamic_value(generator, element, "position")? {
+        return Ok(quote!(::light::vdom::parse_position(&#value)));
+    }
+    Ok(match attr_value(&element.attrs, "position") {
+        Some(value) => quote!(::light::vdom::parse_position(#value)),
+        None => quote!(::light::vdom::Position::Flow),
+    })
+}
+
+/// Переполнение (`overflow`, `overflow-x`, `overflow-y`): `overflow` задаёт
+/// значение для обеих осей, `overflow-x`/`overflow-y` переопределяют ось.
+fn overflow_attr(
+    generator: &Generator,
+    element: &Element,
+) -> syn::Result<(TokenStream, TokenStream)> {
+    let base = if let Some(value) = dynamic_value(generator, element, "overflow")? {
+        quote!(::light::vdom::parse_overflow(&#value))
+    } else {
+        match attr_value(&element.attrs, "overflow") {
+            Some(value) => quote!(::light::vdom::parse_overflow(#value)),
+            None => quote!(::light::vdom::Overflow::Visible),
+        }
+    };
+    let axis = |name: &str| -> syn::Result<TokenStream> {
+        if let Some(value) = dynamic_value(generator, element, name)? {
+            return Ok(quote!(::light::vdom::parse_overflow(&#value)));
+        }
+        Ok(match attr_value(&element.attrs, name) {
+            Some(value) => quote!(::light::vdom::parse_overflow(#value)),
+            None => base.clone(),
+        })
+    };
+    Ok((axis("overflow-x")?, axis("overflow-y")?))
 }
 
 /// Отступы (`padding`/`margin`): динамический `:name="путь"` задаёт базовое

@@ -6,7 +6,9 @@ use std::collections::{BTreeSet, HashMap};
 #[cfg(debug_assertions)]
 use std::env;
 
-use crate::vdom::{Align, Edges, NodeKind, Offset, Resize, Size, Style, VElement};
+use crate::vdom::{
+    Align, Edges, NodeKind, Offset, Overflow, Position, Resize, Size, Style, VElement,
+};
 
 /// Шрифт интерфейса по умолчанию (px).
 pub const FONT_SIZE: f32 = 16.0;
@@ -78,6 +80,16 @@ impl Rect {
             && point.x <= self.x + self.w
             && point.y >= self.y
             && point.y <= self.y + self.h
+    }
+
+    /// Пересечение двух прямоугольников; пустой прямоугольник при отсутствии
+    /// пересечения.
+    pub fn intersection(self, other: Self) -> Self {
+        let x = self.x.max(other.x);
+        let y = self.y.max(other.y);
+        let right = (self.x + self.w).min(other.x + other.w);
+        let bottom = (self.y + self.h).min(other.y + other.h);
+        Self::new(x, y, (right - x).max(0.0), (bottom - y).max(0.0))
     }
 
     /// Объединение двух прямоугольников.
@@ -208,9 +220,45 @@ pub struct PlacedNode {
     pub rect: Rect,
     /// Индексы детей в плоском списке раскладки.
     pub children: Vec<usize>,
+    /// Режим переполнения по горизонтали.
+    pub overflow_x: Overflow,
+    /// Режим переполнения по вертикали.
+    pub overflow_y: Overflow,
+    /// Полная ширина содержимого (включая прокручиваемую часть).
+    pub scroll_width: f32,
+    /// Полная высота содержимого (включая прокручиваемую часть).
+    pub scroll_height: f32,
+    /// Текущее горизонтальное смещение прокрутки.
+    pub scroll_x: f32,
+    /// Текущее вертикальное смещение прокрутки.
+    pub scroll_y: f32,
+    /// Обрезка, унаследованная от прокручиваемых предков. Собственное
+    /// переполнение узла в этот прямоугольник не входит.
+    pub clip_rect: Option<Rect>,
 }
 
 impl PlacedNode {
+    /// Content box узла: прямоугольник внутри рамки и внутренних отступов.
+    pub fn content_rect(&self) -> Rect {
+        let inset = self.style.inset();
+        Rect::new(
+            self.rect.x + inset.left,
+            self.rect.y + inset.top,
+            (self.rect.w - inset.horizontal()).max(0.0),
+            (self.rect.h - inset.vertical()).max(0.0),
+        )
+    }
+
+    /// Максимальное горизонтальное смещение прокрутки.
+    pub fn max_scroll_x(&self) -> f32 {
+        (self.scroll_width - self.rect.w).max(0.0)
+    }
+
+    /// Максимальное вертикальное смещение прокрутки.
+    pub fn max_scroll_y(&self) -> f32 {
+        (self.scroll_height - self.rect.h).max(0.0)
+    }
+
     /// Интерактивен ли узел (кнопка, поле или элемент формы).
     pub fn is_interactive(&self) -> bool {
         match self.kind {
@@ -301,6 +349,85 @@ impl Layout {
         self.nodes.iter().find(|node| node.key == key)
     }
 
+    /// Применяет сохранённые смещения прокрутки, сдвигает прокручиваемое
+    /// содержимое и вычисляет `clip_rect` для потомков.
+    ///
+    /// Вызывается после [`Self::build`] каждый раз, когда окно перерисовывается.
+    /// Смещения клампятся по фактическому размеру содержимого.
+    pub fn apply_scroll_offsets(&mut self, offsets: &HashMap<&'static str, Point>) {
+        if self.nodes.is_empty() {
+            return;
+        }
+        self.nodes[0].scroll_x = 0.0;
+        self.nodes[0].scroll_y = 0.0;
+        for index in 1..self.nodes.len() {
+            let offset = offsets
+                .get(&self.nodes[index].key)
+                .copied()
+                .unwrap_or(Point { x: 0.0, y: 0.0 });
+            let node = &mut self.nodes[index];
+            node.scroll_x = if node.overflow_x.scrollable() {
+                offset.x.clamp(0.0, node.max_scroll_x())
+            } else {
+                0.0
+            };
+            node.scroll_y = if node.overflow_y.scrollable() {
+                offset.y.clamp(0.0, node.max_scroll_y())
+            } else {
+                0.0
+            };
+        }
+        self.nodes[0].clip_rect = None;
+        let end = self.nodes.len();
+        self.apply_clip_and_shift(0, end);
+    }
+
+    /// Самый глубокий прокручиваемый узел под точкой по выбранной оси.
+    pub fn scroll_target(&self, point: Point, horizontal: bool) -> Option<&PlacedNode> {
+        self.hit_stack(point).into_iter().find(|node| {
+            if horizontal {
+                node.overflow_x.scrollable() && node.max_scroll_x() > 0.5
+            } else {
+                node.overflow_y.scrollable() && node.max_scroll_y() > 0.5
+            }
+        })
+    }
+
+    /// Смещение прокрутки узла по ключу.
+    pub fn scroll_offset(&self, key: &str) -> Point {
+        self.node(key)
+            .map(|node| Point::new(node.scroll_x, node.scroll_y))
+            .unwrap_or(Point { x: 0.0, y: 0.0 })
+    }
+
+    fn apply_clip_and_shift(&mut self, index: usize, end: usize) {
+        let node = &self.nodes[index];
+        let scroll_x = node.scroll_x;
+        let scroll_y = node.scroll_y;
+        let own_clip = if node.overflow_x.clips() || node.overflow_y.clips() {
+            let clip = node.content_rect();
+            Some(match node.clip_rect {
+                Some(parent) => parent.intersection(clip),
+                None => clip,
+            })
+        } else {
+            node.clip_rect
+        };
+        let children = node.children.clone();
+        for (position, child) in children.iter().enumerate() {
+            let child = *child;
+            let child_end = children.get(position + 1).copied().unwrap_or(end);
+            if scroll_x != 0.0 || scroll_y != 0.0 {
+                for node in &mut self.nodes[child..child_end] {
+                    node.rect.x -= scroll_x;
+                    node.rect.y -= scroll_y;
+                }
+            }
+            self.nodes[child].clip_rect = own_clip;
+            self.apply_clip_and_shift(child, child_end);
+        }
+    }
+
     /// Интерактивный узел под точкой: кнопка или незаблокированное поле.
     ///
     /// Сначала проверяются поздние соседи и потомки (они выше в порядке
@@ -334,7 +461,7 @@ impl Layout {
         stack: &mut Vec<&'a PlacedNode>,
     ) -> bool {
         let node = &self.nodes[index];
-        if !node.rect.contains(point) {
+        if !node.rect.contains(point) || node.clip_rect.is_some_and(|clip| !clip.contains(point)) {
             return false;
         }
         for &child in node.children.iter().rev() {
@@ -389,7 +516,7 @@ impl Layout {
 
     fn hit(&self, index: usize, point: Point) -> Option<&PlacedNode> {
         let node = &self.nodes[index];
-        if !node.rect.contains(point) {
+        if !node.rect.contains(point) || node.clip_rect.is_some_and(|clip| !clip.contains(point)) {
             return None;
         }
         for &child in node.children.iter().rev() {
@@ -578,7 +705,7 @@ impl Layout {
                 let mut content_h = 0.0_f32;
                 let mut any_child = false;
                 for child in &vnode.children {
-                    if !child.style.visible {
+                    if !child.style.visible || child.style.position == Position::Absolute {
                         continue;
                     }
                     let (child_w, child_h) = self.place(
@@ -710,10 +837,12 @@ impl Layout {
                 let mut content_w = 0.0_f32;
                 let mut content_h = 0.0_f32;
                 let mut child_sizes = Vec::with_capacity(vnode.children.len());
+                let mut any_flow = false;
                 for child in &vnode.children {
-                    if !child.style.visible {
+                    if !child.style.visible || child.style.position == Position::Absolute {
                         continue;
                     }
+                    any_flow = true;
                     let (child_w, child_h) = self.place(
                         child,
                         Point::new(cursor_x, cursor_y),
@@ -734,7 +863,7 @@ impl Layout {
                         content_w = content_w.max(child_w);
                     }
                 }
-                if !vnode.children.is_empty() {
+                if any_flow {
                     if horizontal {
                         content_w = cursor_x - child_content.left - SPACING;
                     } else {
@@ -753,7 +882,7 @@ impl Layout {
                 let total_flex: f32 = vnode
                     .children
                     .iter()
-                    .filter(|child| child.style.visible)
+                    .filter(|child| child.style.visible && child.style.position == Position::Flow)
                     .map(|child| {
                         if free > 0.0 {
                             child.style.flex_grow
@@ -766,7 +895,9 @@ impl Layout {
                     let forced: Vec<(Option<f32>, Option<f32>)> = vnode
                         .children
                         .iter()
-                        .filter(|child| child.style.visible)
+                        .filter(|child| {
+                            child.style.visible && child.style.position == Position::Flow
+                        })
                         .zip(child_sizes.iter())
                         .map(|(child, &(child_w, child_h))| {
                             let weight = if free > 0.0 {
@@ -794,7 +925,9 @@ impl Layout {
                     let mut visible = vnode
                         .children
                         .iter()
-                        .filter(|child| child.style.visible)
+                        .filter(|child| {
+                            child.style.visible && child.style.position == Position::Flow
+                        })
                         .zip(forced.iter());
                     for (child, &(forced_w, forced_h)) in &mut visible {
                         let (child_w, child_h) = self.place(
@@ -820,7 +953,7 @@ impl Layout {
                             content_w = content_w.max(child_w);
                         }
                     }
-                    if !vnode.children.is_empty() {
+                    if any_flow {
                         if horizontal {
                             content_w = cursor_x - child_content.left - SPACING;
                         } else {
@@ -842,10 +975,43 @@ impl Layout {
                 } else {
                     style.resolve_height(content_h + inset.vertical(), avail_h)
                 });
-                let node = &mut self.nodes[index];
-                node.rect = Rect::new(flow_x, flow_y, w, h);
-                // Выравниваем прямых детей относительно итогового content box.
-                let content = ContentBox::from_rect(node.rect, inset);
+                self.nodes[index].rect = Rect::new(flow_x, flow_y, w, h);
+                let content = ContentBox::from_rect(self.nodes[index].rect, inset);
+                // В горизонтальном контейнере с высотой по содержимому дети с
+                // `height:auto` растягиваются на итоговую высоту после того,
+                // как она стала известна (аналог `align-items: stretch`).
+                if horizontal && !height_known && style.align_items == Align::Start {
+                    (content_w, content_h) = self.stretch_row_children(
+                        vnode, index, content, metrics, font_size, font_color,
+                    );
+                }
+                // Абсолютные дети не участвуют в потоке и раскладываются после
+                // того, как известен итоговый content box родителя.
+                for child in &vnode.children {
+                    if !child.style.visible || child.style.position != Position::Absolute {
+                        continue;
+                    }
+                    self.place(
+                        child,
+                        Point::new(content.left, content.top),
+                        FlowContext {
+                            content,
+                            width_known: true,
+                            height_known: true,
+                            stretch: None,
+                            forced_w: None,
+                            forced_h: None,
+                        },
+                        Some(index),
+                        metrics,
+                        Inherited {
+                            size: font_size,
+                            color: font_color,
+                        },
+                    );
+                }
+                self.nodes[index].scroll_width = (content_w + inset.horizontal()).max(w);
+                self.nodes[index].scroll_height = (content_h + inset.vertical()).max(h);
                 let used_main = if horizontal { content_w } else { content_h };
                 let cross_attr = if horizontal {
                     "position-y"
@@ -855,7 +1021,7 @@ impl Layout {
                 let explicit_cross: Vec<bool> = vnode
                     .children
                     .iter()
-                    .filter(|child| child.style.visible)
+                    .filter(|child| child.style.visible && child.style.position == Position::Flow)
                     .map(|child| child.attr(cross_attr).is_some())
                     .collect();
                 self.align_container_content(
@@ -870,6 +1036,10 @@ impl Layout {
             }
         };
 
+        if !is_container {
+            self.nodes[start].scroll_width = w;
+            self.nodes[start].scroll_height = h;
+        }
         // Записываем разрешённый размер/цвет шрифта, чтобы отрисовщик и
         // наследование стилей (голый текст в контейнерах) работали корректно.
         self.nodes[start].style.font_size = Some(font_size);
@@ -879,6 +1049,94 @@ impl Layout {
             self.nodes[start].style.font_color = Some(color);
         }
         (w + step_w, h + step_h)
+    }
+
+    /// Повторно раскладывает детей горизонтального контейнера, растягивая
+    /// детей с `height:auto` на итоговую высоту content box.
+    fn stretch_row_children(
+        &mut self,
+        vnode: &VElement,
+        index: usize,
+        content: ContentBox,
+        metrics: &dyn TextMetrics,
+        font_size: f32,
+        font_color: Option<u32>,
+    ) -> (f32, f32) {
+        let needed = self.nodes[index].children.iter().any(|&child| {
+            let node = &self.nodes[child];
+            let explicit_position = vnode
+                .children
+                .iter()
+                .find(|entry| entry.key == node.key)
+                .is_some_and(|entry| entry.attr("position-y").is_some());
+            let stretch = node.style.height == Size::Auto
+                && node.style.align_y == Align::Start
+                && !explicit_position;
+            stretch && (content.height - node.style.margin.vertical() - node.rect.h).abs() > 0.5
+        });
+        if !needed {
+            return self.row_content_size(index);
+        }
+        let saved: Vec<(&'static str, f32)> = self.nodes[index]
+            .children
+            .iter()
+            .map(|&child| (self.nodes[child].key, self.nodes[child].rect.w))
+            .collect();
+        self.nodes.truncate(index + 1);
+        self.nodes[index].children.clear();
+        let mut cursor_x = content.left;
+        for child in &vnode.children {
+            if !child.style.visible || child.style.position == Position::Absolute {
+                continue;
+            }
+            let Some(&(_, width)) = saved.iter().find(|(key, _)| *key == child.key) else {
+                continue;
+            };
+            let explicit_position = child.attr("position-y").is_some();
+            let height = if child.style.height == Size::Auto
+                && child.style.align_y == Align::Start
+                && !explicit_position
+            {
+                Some((content.height - child.style.margin.vertical()).max(0.0))
+            } else {
+                None
+            };
+            let (child_w, _) = self.place(
+                child,
+                Point::new(cursor_x, content.top),
+                FlowContext {
+                    content,
+                    width_known: true,
+                    height_known: true,
+                    stretch: None,
+                    forced_w: Some(width),
+                    forced_h: height,
+                },
+                Some(index),
+                metrics,
+                Inherited {
+                    size: font_size,
+                    color: font_color,
+                },
+            );
+            cursor_x += child_w + SPACING;
+        }
+        self.row_content_size(index)
+    }
+
+    fn row_content_size(&self, index: usize) -> (f32, f32) {
+        let children = &self.nodes[index].children;
+        let mut width = 0.0_f32;
+        let mut height = 0.0_f32;
+        for &child in children {
+            let node = &self.nodes[child];
+            width += node.rect.w + node.style.margin.horizontal();
+            height = height.max(node.rect.h + node.style.margin.vertical());
+        }
+        if children.len() > 1 {
+            width += SPACING * (children.len() - 1) as f32;
+        }
+        (width, height)
     }
 
     /// Выравнивает прямых детей узла `index` по `justify-content`/`align-items`
@@ -914,10 +1172,16 @@ impl Layout {
         };
         let children = self.nodes[index].children.clone();
         let end = self.nodes.len();
+        let mut flow_position = 0;
         for (position, &child) in children.iter().enumerate() {
+            if self.nodes[child].style.position == Position::Absolute {
+                continue;
+            }
             let child_end = children.get(position + 1).copied().unwrap_or(end);
             let rect = self.nodes[child].rect;
-            let delta_cross = if explicit_cross.get(position).copied().unwrap_or(false) {
+            let explicit = explicit_cross.get(flow_position).copied().unwrap_or(false);
+            flow_position += 1;
+            let delta_cross = if explicit {
                 0.0
             } else {
                 let free_cross = if horizontal {
@@ -1037,6 +1301,13 @@ impl Layout {
             style: vnode.style,
             rect,
             children: Vec::new(),
+            overflow_x: vnode.style.overflow_x,
+            overflow_y: vnode.style.overflow_y,
+            scroll_width: rect.w,
+            scroll_height: rect.h,
+            scroll_x: 0.0,
+            scroll_y: 0.0,
+            clip_rect: None,
         });
         let index = self.nodes.len() - 1;
         if let Some(parent) = parent {

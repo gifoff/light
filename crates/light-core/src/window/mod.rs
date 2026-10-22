@@ -21,8 +21,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
-use winit::event::{ElementState, KeyEvent, MouseButton, WindowEvent};
+use winit::dpi::{LogicalSize, PhysicalPosition};
+use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 #[cfg(feature = "a11y-winit")]
 use winit::event_loop::EventLoopProxy;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -175,6 +175,8 @@ struct WindowState {
     dragging: bool,
     resizing: Option<&'static str>,
     resized: HashMap<&'static str, (f32, f32)>,
+    /// Смещения прокрутки прокручиваемых контейнеров по ключу узла.
+    scroll: HashMap<&'static str, Point>,
     /// Сообщения об ошибках валидации: ключ поля → текст (перерисовка поверх
     /// дерева компонента, как и `resized`).
     validation: HashMap<String, String>,
@@ -222,7 +224,8 @@ impl WindowState {
             inner: self.font.as_ref(),
             scale: self.scale,
         };
-        let layout = Layout::build(&tree, (self.width as f32, self.height as f32), &metrics);
+        let mut layout = Layout::build(&tree, (self.width as f32, self.height as f32), &metrics);
+        layout.apply_scroll_offsets(&self.scroll);
         let tree = Arc::new(tree);
         let damage = if self.full_redraw {
             vec![Rect::new(0.0, 0.0, self.width as f32, self.height as f32)]
@@ -1877,6 +1880,19 @@ impl App {
         if let (Some(width), Some(height)) = (config.max_width, config.max_height) {
             window.set_max_inner_size(Some(LogicalSize::new(width, height)));
         }
+        if let Some(parent_token) = parent
+            && let Some(parent_window) = self
+                .windows
+                .values()
+                .find(|state| state.token == parent_token)
+            && let Ok(parent_position) = parent_window.window.outer_position()
+        {
+            let parent_size = parent_window.window.inner_size();
+            let child_size = window.outer_size();
+            let x = parent_position.x + (parent_size.width as i32 - child_size.width as i32) / 2;
+            let y = parent_position.y + (parent_size.height as i32 - child_size.height as i32) / 2;
+            window.set_outer_position(PhysicalPosition::new(x, y));
+        }
         let size = window.inner_size();
         let width = size.width.max(1);
         let height = size.height.max(1);
@@ -1926,6 +1942,7 @@ impl App {
             dragging: false,
             resizing: None,
             resized: HashMap::new(),
+            scroll: HashMap::new(),
             validation: HashMap::new(),
             modifiers: ModifiersState::empty(),
             cursor: Point::new(0.0, 0.0),
@@ -2155,6 +2172,7 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::CursorLeft { .. } => window.on_cursor_left(),
             WindowEvent::MouseInput { state, button, .. } => window.on_mouse(state, button),
             WindowEvent::KeyboardInput { event, .. } => window.on_key(&event),
+            WindowEvent::MouseWheel { delta, .. } => window.on_wheel(delta),
             WindowEvent::RedrawRequested => {
                 if let Err(error) = window.redraw() {
                     self.error = Some(error);
@@ -2176,6 +2194,43 @@ impl WindowState {
             self.anchor = None;
             self.undo.clear();
             self.redo.clear();
+            self.invalidate();
+        }
+    }
+
+    /// Прокрутка контейнера под курсором колесом мыши или трекпадом.
+    fn on_wheel(&mut self, delta: MouseScrollDelta) {
+        let step = 32.0 * self.scale;
+        let (dx, dy) = match delta {
+            MouseScrollDelta::LineDelta(x, y) => (x * step, y * step),
+            MouseScrollDelta::PixelDelta(position) => (position.x as f32, position.y as f32),
+        };
+        let mut changed = false;
+        if dy != 0.0
+            && let Some((key, max)) = self
+                .layout
+                .as_ref()
+                .and_then(|layout| layout.scroll_target(self.cursor, false))
+                .map(|node| (node.key, node.max_scroll_y()))
+        {
+            let offset = self.scroll.entry(key).or_insert(Point::new(0.0, 0.0));
+            let next = (offset.y - dy).clamp(0.0, max);
+            changed |= next != offset.y;
+            offset.y = next;
+        }
+        if dx != 0.0
+            && let Some((key, max)) = self
+                .layout
+                .as_ref()
+                .and_then(|layout| layout.scroll_target(self.cursor, true))
+                .map(|node| (node.key, node.max_scroll_x()))
+        {
+            let offset = self.scroll.entry(key).or_insert(Point::new(0.0, 0.0));
+            let next = (offset.x - dx).clamp(0.0, max);
+            changed |= next != offset.x;
+            offset.x = next;
+        }
+        if changed {
             self.invalidate();
         }
     }

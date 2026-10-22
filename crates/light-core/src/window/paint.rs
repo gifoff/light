@@ -1,6 +1,10 @@
 //! Программная отрисовка: прямоугольники, рамки и текст в пиксельный буфер
 //! формата RGBA.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use ab_glyph::{Font, FontVec, PxScale, ScaleFont, point};
 
 use super::font::measure;
@@ -70,6 +74,14 @@ pub const FIELD_INVALID: u32 = rgb(0xD9, 0x53, 0x4F);
 pub const REQUIRED_COLOR: u32 = rgb(0xD9, 0x53, 0x4F);
 /// Цвет кольца фокуса клавиатурной навигации.
 pub const FOCUS_RING: u32 = rgb(0x4A, 0x90, 0xD9);
+/// Дорожка полосы прокрутки.
+pub const SCROLLBAR_TRACK: u32 = rgba(0x5B, 0x64, 0x72, 0x28);
+/// Ползунок полосы прокрутки.
+pub const SCROLLBAR_THUMB: u32 = rgba(0x5B, 0x64, 0x72, 0x90);
+/// Толщина полосы прокрутки (px).
+pub const SCROLLBAR_SIZE: f32 = 9.0;
+/// Минимальная длина ползунка полосы прокрутки (px).
+pub const SCROLLBAR_MIN_THUMB: f32 = 20.0;
 /// Толщина кольца фокуса (px).
 pub const FOCUS_RING_WIDTH: f32 = 2.0;
 /// Отступ кольца фокуса внутрь узла (px).
@@ -91,6 +103,73 @@ const MENU_HOVER: u32 = rgb(0xE3, 0xEC, 0xFB);
 const MENU_TEXT: u32 = rgb(0x1F, 0x24, 0x2B);
 /// Заблокированный пункт меню.
 const MENU_TEXT_DISABLED: u32 = rgb(0xA6, 0xAD, 0xB8);
+
+/// Максимальное число растрированных глифов в кэше.
+const GLYPH_CACHE_LIMIT: usize = 8192;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct GlyphKey {
+    font: usize,
+    id: u16,
+    size: u32,
+    x: u32,
+    baseline: u32,
+}
+
+#[derive(Debug)]
+struct CachedGlyph {
+    min_x: i32,
+    min_y: i32,
+    coverage: Vec<(u32, u32, f32)>,
+}
+
+thread_local! {
+    /// Растрированные глифы: повторная отрисовка текста не запускает
+    /// растеризацию заново (важно для смены вкладок и hover-состояний).
+    static GLYPH_CACHE: RefCell<HashMap<GlyphKey, Rc<CachedGlyph>>> =
+        RefCell::new(HashMap::new());
+}
+
+fn cached_glyph(
+    font: &FontVec,
+    id: ab_glyph::GlyphId,
+    size: f32,
+    pen: f32,
+    baseline: f32,
+) -> Option<Rc<CachedGlyph>> {
+    let key = GlyphKey {
+        font: font as *const FontVec as usize,
+        id: id.0,
+        size: size.to_bits(),
+        x: pen.to_bits(),
+        baseline: baseline.to_bits(),
+    };
+    if let Some(glyph) = GLYPH_CACHE.with(|cache| cache.borrow().get(&key).cloned()) {
+        return Some(glyph);
+    }
+    let scale = PxScale::from(size);
+    let glyph = id.with_scale_and_position(scale, point(pen, baseline));
+    let outlined = font.outline_glyph(glyph)?;
+    let bounds = outlined.px_bounds();
+    let mut coverage = Vec::new();
+    outlined.draw(|gx, gy, cov| {
+        if cov > 0.0 {
+            coverage.push((gx, gy, cov));
+        }
+    });
+    let glyph = Rc::new(CachedGlyph {
+        min_x: bounds.min.x as i32,
+        min_y: bounds.min.y as i32,
+        coverage,
+    });
+    GLYPH_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() < GLYPH_CACHE_LIMIT {
+            cache.insert(key, Rc::clone(&glyph));
+        }
+    });
+    Some(glyph)
+}
 
 /// Пиксельный буфер кадра (RGBA, 4 байта на пиксель) с ограничением (clip)
 /// на повреждённую область.
@@ -260,17 +339,10 @@ impl<'a> Canvas<'a> {
         let mut pen = x;
         for ch in text.chars() {
             let id = font.glyph_id(ch);
-            let glyph = id.with_scale_and_position(scale_px, point(pen, baseline));
-            if let Some(outlined) = font.outline_glyph(glyph) {
-                let bounds = outlined.px_bounds();
-                outlined.draw(|gx, gy, cov| {
-                    self.blend(
-                        bounds.min.x as i32 + gx as i32,
-                        bounds.min.y as i32 + gy as i32,
-                        color,
-                        cov,
-                    );
-                });
+            if let Some(glyph) = cached_glyph(font, id, size, pen, baseline) {
+                for &(gx, gy, cov) in &glyph.coverage {
+                    self.blend(glyph.min_x + gx as i32, glyph.min_y + gy as i32, color, cov);
+                }
             }
             pen += scaled.h_advance(id);
         }
@@ -465,190 +537,273 @@ pub fn render(
             crate::vdom::NodeKind::Select { .. } => Some(style.background.unwrap_or(FIELD_BG)),
             _ => style.background,
         };
-        if let Some(color) = background {
-            canvas.fill_rect(color, rect);
-        }
-        match &node.kind {
-            crate::vdom::NodeKind::Column
-            | crate::vdom::NodeKind::Row
-            | crate::vdom::NodeKind::Window => {}
-            crate::vdom::NodeKind::TitleBar => {
-                if style.border_size > 0.0 {
-                    if let Some(color) = style.border_color {
-                        canvas.stroke_rect(color, rect, thickness);
+        let draw = |canvas: &mut Canvas| {
+            if let Some(color) = background {
+                canvas.fill_rect(color, rect);
+            }
+            match &node.kind {
+                crate::vdom::NodeKind::Column
+                | crate::vdom::NodeKind::Row
+                | crate::vdom::NodeKind::Window => {}
+                crate::vdom::NodeKind::TitleBar => {
+                    if style.border_size > 0.0 {
+                        if let Some(color) = style.border_color {
+                            canvas.stroke_rect(color, rect, thickness);
+                        }
+                    } else {
+                        canvas.fill_rect(
+                            TITLEBAR_BORDER,
+                            Rect::new(rect.x, rect.y + rect.h - border, rect.w, border),
+                        );
                     }
-                } else {
-                    canvas.fill_rect(
-                        TITLEBAR_BORDER,
-                        Rect::new(rect.x, rect.y + rect.h - border, rect.w, border),
-                    );
                 }
-            }
-            crate::vdom::NodeKind::Text { content } => {
-                let color = if style.font_color.is_none() && dimmed[index] {
-                    BUTTON_LABEL_DISABLED
-                } else {
-                    style.font_color.unwrap_or(COLOR_TEXT)
-                };
-                canvas.draw_text(
-                    font,
-                    content,
-                    rect.x + inset.left,
-                    rect.y + inset.top,
-                    color,
-                    size,
-                );
-            }
-            #[cfg(feature = "image-support")]
-            crate::vdom::NodeKind::Image { src, data, .. } => {
-                if let Some(image) = super::image::load(src, data) {
-                    let image_rect = Rect::new(
+                crate::vdom::NodeKind::Text { content } => {
+                    let color = if style.font_color.is_none() && dimmed[index] {
+                        BUTTON_LABEL_DISABLED
+                    } else {
+                        style.font_color.unwrap_or(COLOR_TEXT)
+                    };
+                    canvas.draw_text(
+                        font,
+                        content,
                         rect.x + inset.left,
                         rect.y + inset.top,
-                        (rect.w - inset.horizontal()).max(0.0),
-                        (rect.h - inset.vertical()).max(0.0),
+                        color,
+                        size,
                     );
-                    canvas.draw_image(&image, image_rect);
                 }
-                if style.border_size > 0.0
-                    && let Some(color) = style.border_color
-                {
-                    canvas.stroke_rect(color, rect, thickness);
+                #[cfg(feature = "image-support")]
+                crate::vdom::NodeKind::Image { src, data, .. } => {
+                    if let Some(image) = super::image::load(src, data) {
+                        let image_rect = Rect::new(
+                            rect.x + inset.left,
+                            rect.y + inset.top,
+                            (rect.w - inset.horizontal()).max(0.0),
+                            (rect.h - inset.vertical()).max(0.0),
+                        );
+                        canvas.draw_image(&image, image_rect);
+                    }
+                    if style.border_size > 0.0
+                        && let Some(color) = style.border_color
+                    {
+                        canvas.stroke_rect(color, rect, thickness);
+                    }
                 }
-            }
-            crate::vdom::NodeKind::Button { .. } => {
-                canvas.stroke_rect(style.border_color.unwrap_or(BUTTON_BORDER), rect, thickness);
-            }
-            crate::vdom::NodeKind::TextField {
-                value,
-                placeholder,
-                disabled,
-                multiline,
-                resize,
-                masked,
-            } => {
-                let frame = if style.invalid {
-                    FIELD_INVALID
-                } else if focused == Some(node.key) {
-                    FIELD_BORDER_FOCUS
-                } else {
-                    style.border_color.unwrap_or(FIELD_BORDER)
-                };
-                let frame_thickness = if style.invalid {
-                    (2.0 * scale).max(thickness)
-                } else {
-                    thickness
-                };
-                canvas.stroke_rect(frame, rect, frame_thickness);
-                let display;
-                let (text, color) = if value.is_empty() {
-                    (placeholder.as_str(), COLOR_MUTED)
-                } else if *masked {
-                    display = "\u{2022}".repeat(value.chars().count());
-                    (display.as_str(), style.font_color.unwrap_or(COLOR_TEXT))
-                } else {
-                    (value.as_str(), style.font_color.unwrap_or(COLOR_TEXT))
-                };
-                let active = focused == Some(node.key) && !*disabled;
-                render_field(
-                    canvas,
-                    font,
-                    rect,
-                    inset,
-                    scale,
-                    size,
-                    border,
-                    text,
-                    color,
-                    *multiline,
-                    active,
-                    caret_pos,
-                    if active { selection } else { None },
-                );
-                if *resize != crate::vdom::Resize::None {
-                    draw_grip(canvas, rect, scale);
+                crate::vdom::NodeKind::Button { .. } => {
+                    canvas.stroke_rect(
+                        style.border_color.unwrap_or(BUTTON_BORDER),
+                        rect,
+                        thickness,
+                    );
                 }
-                if style.required {
-                    draw_field_required(canvas, font, rect, scale, size, style.required_indicator);
-                }
-            }
-            #[cfg(feature = "elements-checkbox")]
-            crate::vdom::NodeKind::Checkbox {
-                label,
-                checked,
-                disabled,
-            } => {
-                draw_checkbox(
-                    canvas, font, rect, inset, scale, size, label, *checked, *disabled, style,
-                );
-                if style.required {
-                    let end = rect.x
-                        + inset.left
-                        + CHECKBOX_BOX * scale
-                        + CHECKBOX_GAP * scale
-                        + measure(font, label, size).0;
-                    draw_inline_required(
+                crate::vdom::NodeKind::TextField {
+                    value,
+                    placeholder,
+                    disabled,
+                    multiline,
+                    resize,
+                    masked,
+                } => {
+                    let frame = if style.invalid {
+                        FIELD_INVALID
+                    } else if focused == Some(node.key) {
+                        FIELD_BORDER_FOCUS
+                    } else {
+                        style.border_color.unwrap_or(FIELD_BORDER)
+                    };
+                    let frame_thickness = if style.invalid {
+                        (2.0 * scale).max(thickness)
+                    } else {
+                        thickness
+                    };
+                    canvas.stroke_rect(frame, rect, frame_thickness);
+                    let display;
+                    let (text, color) = if value.is_empty() {
+                        (placeholder.as_str(), COLOR_MUTED)
+                    } else if *masked {
+                        display = "\u{2022}".repeat(value.chars().count());
+                        (display.as_str(), style.font_color.unwrap_or(COLOR_TEXT))
+                    } else {
+                        (value.as_str(), style.font_color.unwrap_or(COLOR_TEXT))
+                    };
+                    let active = focused == Some(node.key) && !*disabled;
+                    render_field(
                         canvas,
                         font,
-                        end,
                         rect,
+                        inset,
                         scale,
                         size,
-                        style.required_indicator,
+                        border,
+                        text,
+                        color,
+                        *multiline,
+                        active,
+                        caret_pos,
+                        if active { selection } else { None },
                     );
+                    if *resize != crate::vdom::Resize::None {
+                        draw_grip(canvas, rect, scale);
+                    }
+                    if style.required {
+                        draw_field_required(
+                            canvas,
+                            font,
+                            rect,
+                            scale,
+                            size,
+                            style.required_indicator,
+                        );
+                    }
                 }
-            }
-            #[cfg(feature = "elements-radio")]
-            crate::vdom::NodeKind::Radio {
-                label,
-                selected,
-                disabled,
-                ..
-            } => {
-                draw_radio(
-                    canvas, font, rect, inset, scale, size, label, *selected, *disabled, style,
-                );
-                if style.required {
-                    let end = rect.x
-                        + inset.left
-                        + CHECKBOX_BOX * scale
-                        + CHECKBOX_GAP * scale
-                        + measure(font, label, size).0;
-                    draw_inline_required(
-                        canvas,
-                        font,
-                        end,
-                        rect,
-                        scale,
-                        size,
-                        style.required_indicator,
+                #[cfg(feature = "elements-checkbox")]
+                crate::vdom::NodeKind::Checkbox {
+                    label,
+                    checked,
+                    disabled,
+                } => {
+                    draw_checkbox(
+                        canvas, font, rect, inset, scale, size, label, *checked, *disabled, style,
                     );
+                    if style.required {
+                        let end = rect.x
+                            + inset.left
+                            + CHECKBOX_BOX * scale
+                            + CHECKBOX_GAP * scale
+                            + measure(font, label, size).0;
+                        draw_inline_required(
+                            canvas,
+                            font,
+                            end,
+                            rect,
+                            scale,
+                            size,
+                            style.required_indicator,
+                        );
+                    }
                 }
-            }
-            #[cfg(feature = "elements-select")]
-            crate::vdom::NodeKind::Select {
-                value,
-                options,
-                disabled,
-            } => {
-                draw_select(
-                    canvas,
-                    font,
-                    rect,
-                    inset,
-                    scale,
-                    size,
-                    thickness,
+                #[cfg(feature = "elements-radio")]
+                crate::vdom::NodeKind::Radio {
+                    label,
+                    selected,
+                    disabled,
+                    ..
+                } => {
+                    draw_radio(
+                        canvas, font, rect, inset, scale, size, label, *selected, *disabled, style,
+                    );
+                    if style.required {
+                        let end = rect.x
+                            + inset.left
+                            + CHECKBOX_BOX * scale
+                            + CHECKBOX_GAP * scale
+                            + measure(font, label, size).0;
+                        draw_inline_required(
+                            canvas,
+                            font,
+                            end,
+                            rect,
+                            scale,
+                            size,
+                            style.required_indicator,
+                        );
+                    }
+                }
+                #[cfg(feature = "elements-select")]
+                crate::vdom::NodeKind::Select {
                     value,
                     options,
-                    *disabled,
-                    style,
-                    open_select == Some(node.key),
-                );
-                if style.required {
-                    draw_field_required(canvas, font, rect, scale, size, style.required_indicator);
+                    disabled,
+                } => {
+                    draw_select(
+                        canvas,
+                        font,
+                        rect,
+                        inset,
+                        scale,
+                        size,
+                        thickness,
+                        value,
+                        options,
+                        *disabled,
+                        style,
+                        open_select == Some(node.key),
+                    );
+                    if style.required {
+                        draw_field_required(
+                            canvas,
+                            font,
+                            rect,
+                            scale,
+                            size,
+                            style.required_indicator,
+                        );
+                    }
                 }
             }
+        };
+        if let Some(clip) = node.clip_rect {
+            canvas.clipped(clip, draw);
+        } else {
+            draw(canvas);
+        }
+    }
+
+    for node in nodes {
+        let vertical = node.overflow_y.scrollable() && node.max_scroll_y() > 0.5;
+        let horizontal = node.overflow_x.scrollable() && node.max_scroll_x() > 0.5;
+        if !vertical && !horizontal {
+            continue;
+        }
+        let rect = node.rect;
+        if !canvas.intersects(rect) {
+            continue;
+        }
+        let draw = |canvas: &mut Canvas| {
+            let bar = SCROLLBAR_SIZE * scale;
+            let min_thumb = (SCROLLBAR_MIN_THUMB * scale).min(bar * 2.0);
+            if vertical {
+                let track = Rect::new(rect.x + rect.w - bar, rect.y, bar, rect.h);
+                canvas.fill_rect(SCROLLBAR_TRACK, track);
+                let thumb_h =
+                    (track.h * rect.h / node.scroll_height).clamp(min_thumb.min(track.h), track.h);
+                let travel = track.h - thumb_h;
+                let position = if node.max_scroll_y() > 0.0 {
+                    node.scroll_y / node.max_scroll_y()
+                } else {
+                    0.0
+                };
+                canvas.fill_rect(
+                    SCROLLBAR_THUMB,
+                    Rect::new(track.x, track.y + travel * position, bar, thumb_h),
+                );
+            }
+            if horizontal {
+                let width = if vertical {
+                    (rect.w - bar).max(0.0)
+                } else {
+                    rect.w
+                };
+                let track = Rect::new(rect.x, rect.y + rect.h - bar, width, bar);
+                canvas.fill_rect(SCROLLBAR_TRACK, track);
+                let thumb_w =
+                    (track.w * rect.w / node.scroll_width).clamp(min_thumb.min(track.w), track.w);
+                let travel = track.w - thumb_w;
+                let position = if node.max_scroll_x() > 0.0 {
+                    node.scroll_x / node.max_scroll_x()
+                } else {
+                    0.0
+                };
+                canvas.fill_rect(
+                    SCROLLBAR_THUMB,
+                    Rect::new(track.x + travel * position, track.y, thumb_w, bar),
+                );
+            }
+        };
+        if let Some(clip) = node.clip_rect {
+            canvas.clipped(clip, draw);
+        } else {
+            draw(canvas);
         }
     }
 
