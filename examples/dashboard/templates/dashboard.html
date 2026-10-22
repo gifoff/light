@@ -8,7 +8,7 @@
             <button @click="close()" type="button" width="32" height="26" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#CBD5E1">X</button>
         </div>
     </titlebar>
-    <div direction="horizontal" flex-grow="1" background="#F1F5F9">
+    <div direction="horizontal" flex-grow="1" flex-shrink="1" background="#F1F5F9">
         <div direction="vertical" width="220" padding="16" background="#111827">
             <div direction="horizontal" align-items="center" margin-bottom="22">
                 <image src="assets/logo.png" width="34" height="34" alt="Light" />
@@ -17,19 +17,23 @@
                     <div font-color="#94A3B8" font-size="12">Workspace</div>
                 </div>
             </div>
-            <div font-color="#64748B" font-size="11" margin-bottom="8" margin-left="10">НАВИГАЦИЯ</div>
-            <button @click="show_tab('overview')" type="button" width="100%" height="40" margin-bottom="6" padding="10" font-size="14" :background="overview_bg" :border-color="overview_bg" font-color="#E2E8F0">Обзор</button>
-            <button @click="show_tab('projects')" type="button" width="100%" height="40" margin-bottom="6" padding="10" font-size="14" :background="projects_bg" :border-color="projects_bg" font-color="#E2E8F0">Проекты</button>
-            <button @click="show_tab('activity')" type="button" width="100%" height="40" margin-bottom="6" padding="10" font-size="14" :background="activity_bg" :border-color="activity_bg" font-color="#E2E8F0">Активность</button>
-            <div flex-grow="1" />
-            <div direction="horizontal" align-items="center" padding="10" background="#1F2937" border-radius="8">
+            <div direction="vertical" flex-grow="1" flex-shrink="1" overflow-y="auto">
+                <div font-color="#64748B" font-size="11" margin-bottom="8" margin-left="10">НАВИГАЦИЯ</div>
+                <button @click="show_tab('overview')" type="button" width="100%" height="40" margin-bottom="6" padding="10" font-size="14" :background="overview_bg" :border-color="overview_bg" font-color="#E2E8F0">Обзор</button>
+                <button @click="show_tab('projects')" type="button" width="100%" height="40" margin-bottom="6" padding="10" font-size="14" :background="projects_bg" :border-color="projects_bg" font-color="#E2E8F0">Проекты</button>
+                <button @click="show_tab('activity')" type="button" width="100%" height="40" margin-bottom="6" padding="10" font-size="14" :background="activity_bg" :border-color="activity_bg" font-color="#E2E8F0">Активность</button>
+            </div>
+            <div direction="horizontal" align-items="center" padding="10" background="#1F2937" border-radius="8" margin-top="12">
                 <button @click="toggle_avatar" type="button" width="40" height="40" padding="0" background="#1F2937" border-color="#1F2937">
                     <image v-if="alternate_avatar" src="assets/logo.png" width="36" height="36" alt="Аватар" />
                     <image v-else src="assets/avatar.png" width="36" height="36" alt="Алексей Ковалёв" />
                 </button>
-                <div direction="vertical" margin-left="10">
-                    <text v-model="profile_name" width="126" height="30" font-size="13" background="#111827" border-color="#374151" font-color="#F9FAFB" />
-                    <div font-color="#94A3B8" font-size="11">Product design</div>
+                <div direction="horizontal" align-items="center" flex-grow="1" margin-left="10">
+                    <div direction="vertical" flex-grow="1">
+                        <div font-color="#F9FAFB" font-size="13">{{ profile_name }}</div>
+                        <div font-color="#94A3B8" font-size="11">Product design</div>
+                    </div>
+                    <button @click="open_profile_modal" type="button" width="24" height="24" padding="0" background="#1F2937" border-color="#1F2937" font-color="#CBD5E1" font-size="14">✎</button>
                 </div>
             </div>
         </div>
@@ -176,6 +180,31 @@
             <div direction="horizontal" width="100%" justify-content="end" margin-top="20">
                 <button @click="close_task_modal" type="button" width="104" height="38" margin-right="8" background="#F1F5F9" border-color="#CBD5E1" font-color="#334155">Отмена</button>
                 <button @click="create_task" :disabled="is_new_task_empty" type="button" width="132" height="38" background="#2563EB" border-color="#2563EB" font-color="#FFFFFF">Создать задачу</button>
+            </div>
+        </div>
+    </div>
+    <div v-if="profile_modal_open" position="absolute" width="100%" height="100%" background="#0F172ACC" z="100">
+        <div direction="vertical" position="absolute" position-x="center" position-y="center" width="430" padding="22" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="12" z="101">
+            <div direction="horizontal" align-items="center" margin-bottom="16">
+                <div font-color="#0F172A" font-size="19">Профиль</div>
+                <button @click="close_profile_modal" type="button" position-x="right" width="32" height="30" padding="0" font-size="17" background="#F1F5F9" border-color="#E2E8F0" font-color="#334155">X</button>
+            </div>
+            <div font-color="#475569" font-size="12" margin-bottom="6">Имя</div>
+            <text v-model="profile_draft" width="100%" height="38" font-size="14" placeholder="Как вас зовут?" />
+            <div direction="horizontal" align-items="center" margin-top="16">
+                <button @click="toggle_avatar" type="button" width="44" height="44" padding="0" background="#F1F5F9" border-color="#E2E8F0">
+                    <image v-if="alternate_avatar" src="assets/logo.png" width="36" height="36" alt="Текущий аватар" />
+                    <image v-else src="assets/avatar.png" width="36" height="36" alt="Текущий аватар" />
+                </button>
+                <div direction="vertical" margin-left="12" flex-grow="1">
+                    <div font-color="#0F172A" font-size="13">Аватар</div>
+                    <div font-color="#64748B" font-size="11">Нажмите, чтобы сменить</div>
+                </div>
+                <button @click="toggle_avatar" type="button" width="126" height="34" background="#F1F5F9" border-color="#CBD5E1" font-color="#334155" font-size="12">Сменить аватар</button>
+            </div>
+            <div direction="horizontal" width="100%" justify-content="end" margin-top="20">
+                <button @click="close_profile_modal" type="button" width="104" height="38" margin-right="8" background="#F1F5F9" border-color="#CBD5E1" font-color="#334155">Отмена</button>
+                <button @click="save_profile" :disabled="is_profile_draft_empty" type="button" width="104" height="38" background="#2563EB" border-color="#2563EB" font-color="#FFFFFF">Сохранить</button>
             </div>
         </div>
     </div>

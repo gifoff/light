@@ -16,6 +16,10 @@ struct Dashboard {
     #[default(false)]
     alternate_avatar: bool,
     #[default(false)]
+    profile_modal_open: bool,
+    #[default(String::new())]
+    profile_draft: String,
+    #[default(false)]
     modal_open: bool,
     #[default(String::new())]
     new_task: String,
@@ -87,6 +91,30 @@ impl Dashboard {
 
     fn toggle_avatar(&self) {
         self.set_alternate_avatar(!self.alternate_avatar());
+    }
+
+    fn open_profile_modal(&self) {
+        self.set_profile_draft(self.profile_name());
+        self.set_profile_modal_open(true);
+    }
+
+    fn close_profile_modal(&self) {
+        self.set_profile_modal_open(false);
+        self.set_profile_draft(String::new());
+    }
+
+    fn is_profile_draft_empty(&self) -> bool {
+        self.profile_draft().trim().is_empty()
+    }
+
+    fn save_profile(&self) {
+        let name = self.profile_draft().trim().to_owned();
+        if name.is_empty() {
+            return;
+        }
+        self.set_profile_name(name);
+        self.set_profile_modal_open(false);
+        self.set_profile_draft(String::new());
     }
 
     fn open_task_modal(&self) {
