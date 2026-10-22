@@ -1,0 +1,18 @@
+[package]
+name = "example-dashboard"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Dashboard example for Light with images, tabs and a modal"
+
+[dependencies]
+light = { workspace = true, features = [
+    "align-content",
+    "cursor-theming",
+    "dynamic-attrs",
+    "image-support",
+    "min-max-size",
+    "offset-position",
+    "window-modal",
+    "z-order",
+] }

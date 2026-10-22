@@ -1,0 +1,20 @@
+<window title="Новая задача" width="440" height="336" modal="true" resizable="false" background="#F8FAFC">
+    <titlebar background="#0F172A" height="36" padding-left="14" padding-right="8" align-items="center">
+        <div direction="horizontal" align-items="center" font-color="#F8FAFC" font-size="14">Новая задача</div>
+        <div direction="horizontal" align-items="center" position-x="right">
+            <button @click="close()" type="button" width="30" height="24" font-size="13" background="#0F172A" border-color="#0F172A" font-color="#CBD5E1">X</button>
+        </div>
+    </titlebar>
+    <div direction="vertical" padding="20" background="#F8FAFC">
+        <div font-color="#0F172A" font-size="18">Создать задачу</div>
+        <div font-color="#64748B" font-size="12" margin-top="4" margin-bottom="16">Задача появится в общем списке команды.</div>
+        <div font-color="#334155" font-size="12" margin-bottom="6">Название</div>
+        <text v-model="title" placeholder="Например, подготовить релиз" width="100%" height="38" margin-bottom="14" />
+        <div font-color="#334155" font-size="12" margin-bottom="6">Исполнитель</div>
+        <text v-model="owner" width="100%" height="38" margin-bottom="18" />
+        <div direction="horizontal" justify-content="end" align-items="center">
+            <button @click="close()" type="button" width="96" height="36" margin-right="8" padding="10" background="#FFFFFF" border-color="#CBD5E1" font-color="#334155">Отмена</button>
+            <button @click="create" :disabled="is_title_empty" type="button" width="120" height="36" padding="10" background="#2563EB" border-color="#2563EB" font-color="#FFFFFF">Создать</button>
+        </div>
+    </div>
+</window>

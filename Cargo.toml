@@ -13,6 +13,7 @@ members = [
     "examples/counter",
     "examples/todo",
     "examples/calculator",
+    "examples/dashboard",
 ]
 
 [workspace.package]

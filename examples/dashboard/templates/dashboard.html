@@ -1,0 +1,151 @@
+<window title="Light Dashboard" width="920" height="640" min-width="760" min-height="560" icon="assets/icon.png" background="#F1F5F9">
+    <titlebar background="#0F172A" height="38" padding-left="14" padding-right="8" align-items="center">
+        <image src="assets/logo.png" width="22" height="22" alt="Light" />
+        <div direction="horizontal" align-items="center" font-color="#F8FAFC" font-size="15" margin-left="8">Light Dashboard</div>
+        <div direction="horizontal" align-items="center" position-x="right">
+            <button @click="minimize()" type="button" width="32" height="26" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#CBD5E1">_</button>
+            <button @click="toggle_maximize()" type="button" width="32" height="26" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#CBD5E1">[]</button>
+            <button @click="close()" type="button" width="32" height="26" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#CBD5E1">X</button>
+        </div>
+    </titlebar>
+    <div direction="horizontal" flex-grow="1" background="#F1F5F9">
+        <div direction="vertical" width="220" padding="16" background="#111827">
+            <div direction="horizontal" align-items="center" margin-bottom="22">
+                <image src="assets/logo.png" width="34" height="34" alt="Light" />
+                <div direction="vertical" margin-left="10">
+                    <div font-color="#F9FAFB" font-size="16">Light</div>
+                    <div font-color="#94A3B8" font-size="12">Workspace</div>
+                </div>
+            </div>
+            <div font-color="#64748B" font-size="11" margin-bottom="8" margin-left="10">НАВИГАЦИЯ</div>
+            <button @click="show_tab('overview')" type="button" width="100%" height="40" margin-bottom="6" padding="10" font-size="14" :background="overview_bg" :border-color="overview_bg" font-color="#E2E8F0">Обзор</button>
+            <button @click="show_tab('projects')" type="button" width="100%" height="40" margin-bottom="6" padding="10" font-size="14" :background="projects_bg" :border-color="projects_bg" font-color="#E2E8F0">Проекты</button>
+            <button @click="show_tab('activity')" type="button" width="100%" height="40" margin-bottom="6" padding="10" font-size="14" :background="activity_bg" :border-color="activity_bg" font-color="#E2E8F0">Активность</button>
+            <div flex-grow="1" />
+            <div direction="horizontal" align-items="center" padding="10" background="#1F2937" border-radius="8">
+                <image src="assets/avatar.png" width="36" height="36" alt="Алексей Ковалёв" />
+                <div direction="vertical" margin-left="10">
+                    <div font-color="#F9FAFB" font-size="13">Алексей Ковалёв</div>
+                    <div font-color="#94A3B8" font-size="11">Product design</div>
+                </div>
+            </div>
+        </div>
+        <div direction="vertical" flex-grow="1" padding="24">
+            <div direction="horizontal" align-items="center">
+                <div direction="vertical">
+                    <div font-color="#0F172A" font-size="26">Панель управления</div>
+                    <div font-color="#64748B" font-size="13" margin-top="4">Сводка по задачам и проектам команды</div>
+                </div>
+                <button @click="open_modal()" type="button" position-x="right" width="138" height="40" padding="10" background="#2563EB" border-color="#2563EB" font-color="#FFFFFF" font-size="14">Новая задача</button>
+            </div>
+            <div direction="horizontal" align-items="center" margin-top="18" height="38">
+                <button @click="show_tab('overview')" type="button" height="34" padding="10" font-size="13" :background="overview_bg" :border-color="overview_bg" font-color="#FFFFFF">Обзор</button>
+                <button @click="show_tab('projects')" type="button" height="34" margin-left="8" padding="10" font-size="13" :background="projects_bg" :border-color="projects_bg" font-color="#FFFFFF">Проекты</button>
+                <button @click="show_tab('activity')" type="button" height="34" margin-left="8" padding="10" font-size="13" :background="activity_bg" :border-color="activity_bg" font-color="#FFFFFF">Активность</button>
+            </div>
+
+            <div v-if="is_overview" direction="vertical" margin-top="18">
+                <div direction="horizontal" height="104">
+                    <div direction="vertical" flex-grow="1" margin-right="14" padding="16" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="10">
+                        <div font-color="#64748B" font-size="12">Открытые задачи</div>
+                        <div font-color="#2563EB" font-size="30" margin-top="4">{{ open_tasks }}</div>
+                        <div font-color="#94A3B8" font-size="11" margin-top="2">{{ task_label }}</div>
+                    </div>
+                    <div direction="vertical" flex-grow="1" margin-right="14" padding="16" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="10">
+                        <div font-color="#64748B" font-size="12">Завершено за неделю</div>
+                        <div font-color="#059669" font-size="30" margin-top="4">{{ done_tasks }}</div>
+                        <div font-color="#94A3B8" font-size="11" margin-top="2">{{ done_label }}</div>
+                    </div>
+                    <div direction="vertical" flex-grow="1" padding="16" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="10">
+                        <div font-color="#64748B" font-size="12">Активные проекты</div>
+                        <div font-color="#7C3AED" font-size="30" margin-top="4">{{ active_projects }}</div>
+                        <div font-color="#94A3B8" font-size="11" margin-top="2">{{ projects_label }}</div>
+                    </div>
+                </div>
+                <div direction="horizontal" height="190" margin-top="16" padding="16" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="10" align-items="center">
+                    <image src="assets/chart.png" width="360" height="120" alt="График завершённых задач" />
+                    <div direction="vertical" margin-left="26">
+                        <div font-color="#0F172A" font-size="16">Активность за неделю</div>
+                        <div font-color="#64748B" font-size="12" margin-top="6">Команда закрыла 42 задачи.</div>
+                        <div font-color="#059669" font-size="13" margin-top="14">+18% к прошлой неделе</div>
+                        <div font-color="#94A3B8" font-size="11" margin-top="6">Лучший день — четверг, 11 задач.</div>
+                    </div>
+                </div>
+                <div direction="vertical" flex-grow="1" margin-top="16" padding="16" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="10">
+                    <div font-color="#0F172A" font-size="15" margin-bottom="8">Последние события</div>
+                    <div direction="horizontal" align-items="center" height="28">
+                        <div width="8" height="8" background="#2563EB" border-radius="4" margin-right="10" />
+                        <div font-color="#334155" font-size="13">Анна завершила «Редизайн настроек»</div>
+                    </div>
+                    <div direction="horizontal" align-items="center" height="28">
+                        <div width="8" height="8" background="#059669" border-radius="4" margin-right="10" />
+                        <div font-color="#334155" font-size="13">Максим создал задачу «Экспорт отчётов»</div>
+                    </div>
+                    <div direction="horizontal" align-items="center" height="28">
+                        <div width="8" height="8" background="#F59E0B" border-radius="4" margin-right="10" />
+                        <div font-color="#334155" font-size="13">Ольга оставила комментарий в проекте Atlas</div>
+                    </div>
+                </div>
+            </div>
+
+            <div v-else-if="is_projects" direction="vertical" margin-top="18">
+                <div direction="vertical" margin-bottom="12" padding="16" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="10">
+                    <div direction="horizontal" align-items="center">
+                        <div direction="vertical">
+                            <div font-color="#0F172A" font-size="15">Atlas — новый интерфейс</div>
+                            <div font-color="#64748B" font-size="12" margin-top="3">Анна, Максим, Ольга</div>
+                        </div>
+                        <div position-x="right" font-color="#2563EB" font-size="13">72%</div>
+                    </div>
+                    <div width="100%" height="8" margin-top="12" background="#E2E8F0" border-radius="4">
+                        <div :width="atlas_progress" height="8" background="#2563EB" border-radius="4" />
+                    </div>
+                </div>
+                <div direction="vertical" margin-bottom="12" padding="16" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="10">
+                    <div direction="horizontal" align-items="center">
+                        <div direction="vertical">
+                            <div font-color="#0F172A" font-size="15">Mobile app</div>
+                            <div font-color="#64748B" font-size="12" margin-top="3">Ирина, Павел</div>
+                        </div>
+                        <div position-x="right" font-color="#7C3AED" font-size="13">45%</div>
+                    </div>
+                    <div width="100%" height="8" margin-top="12" background="#E2E8F0" border-radius="4">
+                        <div :width="mobile_progress" height="8" background="#7C3AED" border-radius="4" />
+                    </div>
+                </div>
+                <div direction="vertical" padding="16" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="10">
+                    <div direction="horizontal" align-items="center">
+                        <div direction="vertical">
+                            <div font-color="#0F172A" font-size="15">Библиотека компонентов</div>
+                            <div font-color="#64748B" font-size="12" margin-top="3">Сергей, Дарья</div>
+                        </div>
+                        <div position-x="right" font-color="#059669" font-size="13">88%</div>
+                    </div>
+                    <div width="100%" height="8" margin-top="12" background="#E2E8F0" border-radius="4">
+                        <div :width="library_progress" height="8" background="#059669" border-radius="4" />
+                    </div>
+                </div>
+            </div>
+
+            <div v-else direction="vertical" margin-top="18" padding="16" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="10">
+                <div font-color="#0F172A" font-size="15" margin-bottom="10">Лента активности</div>
+                <div direction="horizontal" align-items="center" height="46">
+                    <div width="10" height="10" background="#2563EB" border-radius="5" margin-right="12" />
+                    <div font-color="#334155" font-size="13">Анна закрыла 4 задачи в проекте Atlas</div>
+                </div>
+                <div direction="horizontal" align-items="center" height="46">
+                    <div width="10" height="10" background="#059669" border-radius="5" margin-right="12" />
+                    <div font-color="#334155" font-size="13">Павел обновил дизайн-систему до версии 2.4</div>
+                </div>
+                <div direction="horizontal" align-items="center" height="46">
+                    <div width="10" height="10" background="#F59E0B" border-radius="5" margin-right="12" />
+                    <div font-color="#334155" font-size="13">Ольга перенесла релиз Mobile app на пятницу</div>
+                </div>
+                <div direction="horizontal" align-items="center" height="46">
+                    <div width="10" height="10" background="#7C3AED" border-radius="5" margin-right="12" />
+                    <div font-color="#334155" font-size="13">Сергей добавил 6 компонентов в библиотеку</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</window>
