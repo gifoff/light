@@ -23,20 +23,23 @@
             <button @click="show_tab('activity')" type="button" width="100%" height="40" margin-bottom="6" padding="10" font-size="14" :background="activity_bg" :border-color="activity_bg" font-color="#E2E8F0">Активность</button>
             <div flex-grow="1" />
             <div direction="horizontal" align-items="center" padding="10" background="#1F2937" border-radius="8">
-                <image src="assets/avatar.png" width="36" height="36" alt="Алексей Ковалёв" />
+                <button @click="toggle_avatar" type="button" width="40" height="40" padding="0" background="#1F2937" border-color="#1F2937">
+                    <image v-if="alternate_avatar" src="assets/logo.png" width="36" height="36" alt="Аватар" />
+                    <image v-else src="assets/avatar.png" width="36" height="36" alt="Алексей Ковалёв" />
+                </button>
                 <div direction="vertical" margin-left="10">
-                    <div font-color="#F9FAFB" font-size="13">Алексей Ковалёв</div>
+                    <text v-model="profile_name" width="126" height="30" font-size="13" background="#111827" border-color="#374151" font-color="#F9FAFB" />
                     <div font-color="#94A3B8" font-size="11">Product design</div>
                 </div>
             </div>
         </div>
-        <div direction="vertical" flex-grow="1" padding="24">
+        <div direction="vertical" flex-grow="1" padding="24" overflow-y="auto">
             <div direction="horizontal" align-items="center">
                 <div direction="vertical">
                     <div font-color="#0F172A" font-size="26">Панель управления</div>
                     <div font-color="#64748B" font-size="13" margin-top="4">Сводка по задачам и проектам команды</div>
                 </div>
-                <button @click="open_modal()" type="button" position-x="right" width="138" height="40" padding="10" background="#2563EB" border-color="#2563EB" font-color="#FFFFFF" font-size="14">Новая задача</button>
+                <button @click="open_task_modal" type="button" position-x="right" width="138" height="40" padding="10" background="#2563EB" border-color="#2563EB" font-color="#FFFFFF" font-size="14">Новая задача</button>
             </div>
             <div direction="horizontal" align-items="center" margin-top="18" height="38">
                 <button @click="show_tab('overview')" type="button" height="34" padding="10" font-size="13" :background="overview_bg" :border-color="overview_bg" font-color="#FFFFFF">Обзор</button>
@@ -63,16 +66,28 @@
                     </div>
                 </div>
                 <div direction="horizontal" height="190" margin-top="16" padding="16" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="10" align-items="center">
-                    <image src="assets/chart.png" width="360" height="120" alt="График завершённых задач" />
+                    <div direction="horizontal" width="360" height="120" align-items="end">
+                        <div :height="bar_0" width="30" margin-right="10" background="#93C5FD" border-radius="5" />
+                        <div :height="bar_1" width="30" margin-right="10" background="#60A5FA" border-radius="5" />
+                        <div :height="bar_2" width="30" margin-right="10" background="#3B82F6" border-radius="5" />
+                        <div :height="bar_3" width="30" margin-right="10" background="#2563EB" border-radius="5" />
+                        <div :height="bar_4" width="30" margin-right="10" background="#1D4ED8" border-radius="5" />
+                        <div :height="bar_5" width="30" margin-right="10" background="#1E40AF" border-radius="5" />
+                        <div :height="bar_6" width="30" background="#172554" border-radius="5" />
+                    </div>
                     <div direction="vertical" margin-left="26">
                         <div font-color="#0F172A" font-size="16">Активность за неделю</div>
-                        <div font-color="#64748B" font-size="12" margin-top="6">Команда закрыла 42 задачи.</div>
+                        <div font-color="#64748B" font-size="12" margin-top="6">Команда закрыла {{ weekly_total }} задачи.</div>
                         <div font-color="#059669" font-size="13" margin-top="14">+18% к прошлой неделе</div>
                         <div font-color="#94A3B8" font-size="11" margin-top="6">Лучший день — четверг, 11 задач.</div>
                     </div>
                 </div>
                 <div direction="vertical" flex-grow="1" margin-top="16" padding="16" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="10">
                     <div font-color="#0F172A" font-size="15" margin-bottom="8">Последние события</div>
+                    <div v-for="task in tasks" direction="horizontal" align-items="center" height="28">
+                        <div width="8" height="8" background="#059669" border-radius="4" margin-right="10" />
+                        <div font-color="#334155" font-size="13">Создана задача «{{ task }}»</div>
+                    </div>
                     <div direction="horizontal" align-items="center" height="28">
                         <div width="8" height="8" background="#2563EB" border-radius="4" margin-right="10" />
                         <div font-color="#334155" font-size="13">Анна завершила «Редизайн настроек»</div>
@@ -145,6 +160,22 @@
                     <div width="10" height="10" background="#7C3AED" border-radius="5" margin-right="12" />
                     <div font-color="#334155" font-size="13">Сергей добавил 6 компонентов в библиотеку</div>
                 </div>
+            </div>
+        </div>
+    </div>
+    <div v-if="modal_open" position="absolute" width="100%" height="100%" background="#0F172ACC" z="100">
+        <div direction="vertical" position="absolute" position-x="center" position-y="center" width="430" padding="22" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="12" z="101">
+            <div direction="horizontal" align-items="center" margin-bottom="16">
+                <div font-color="#0F172A" font-size="19">Новая задача</div>
+                <button @click="close_task_modal" type="button" position-x="right" width="32" height="30" padding="0" font-size="17" background="#F1F5F9" border-color="#E2E8F0" font-color="#334155">X</button>
+            </div>
+            <div font-color="#475569" font-size="12" margin-bottom="6">Название</div>
+            <text v-model="new_task" width="100%" height="38" font-size="14" placeholder="Что нужно сделать?" />
+            <div font-color="#475569" font-size="12" margin-top="14" margin-bottom="6">Ответственный</div>
+            <text v-model="new_owner" width="100%" height="38" font-size="14" />
+            <div direction="horizontal" width="100%" justify-content="end" margin-top="20">
+                <button @click="close_task_modal" type="button" width="104" height="38" margin-right="8" background="#F1F5F9" border-color="#CBD5E1" font-color="#334155">Отмена</button>
+                <button @click="create_task" :disabled="is_new_task_empty" type="button" width="132" height="38" background="#2563EB" border-color="#2563EB" font-color="#FFFFFF">Создать задачу</button>
             </div>
         </div>
     </div>
