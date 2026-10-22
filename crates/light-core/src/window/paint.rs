@@ -245,26 +245,18 @@ impl<'a> Canvas<'a> {
         }
     }
 
-    /// Рисует строку: левый верхний угол визуального поля текста — `(x, y)`.
+    /// Рисует строку: `(x, y)` — левый верхний угол типографской строки.
+    ///
+    /// Высота строки — `ascent - descent` (см. [`super::font::measure`]),
+    /// поэтому базовая линия находится на `y + ascent`, а нижние выносные
+    /// элементы доходят до `y + height`.
     pub fn draw_text(&mut self, font: &FontVec, text: &str, x: f32, y: f32, color: u32, size: f32) {
         if text.is_empty() {
             return;
         }
         let scale_px = PxScale::from(size);
         let scaled = font.as_scaled(scale_px);
-        // Положение точки глифа — базовая линия строки; подбираем сдвиг так,
-        // чтобы визуальный верх строки совпал с `y` (по знаку с контуром).
-        let top_offset = ['Ж', 'H', 'A']
-            .iter()
-            .find_map(|&probe| {
-                let glyph = font
-                    .glyph_id(probe)
-                    .with_scale_and_position(scale_px, point(0.0, 0.0));
-                font.outline_glyph(glyph)
-                    .map(|outlined| outlined.px_bounds().min.y)
-            })
-            .unwrap_or(0.0);
-        let baseline = y - top_offset;
+        let baseline = y + scaled.ascent();
         let mut pen = x;
         for ch in text.chars() {
             let id = font.glyph_id(ch);
@@ -944,6 +936,7 @@ fn render_field(
     let text_left = rect.x + inset.left + pad_x;
     let text_max_w = (rect.w - inset.horizontal() - 2.0 * pad_x).max(1.0);
     let row_h = super::text::row_height(font, size);
+    let line_box_h = measure(font, "", size).1;
     let inner = Rect::new(
         rect.x + border,
         rect.y + border,
@@ -970,7 +963,7 @@ fn render_field(
                     font,
                     &line.text,
                     text_left,
-                    y + (row_h - size) / 2.0,
+                    y + (row_h - line_box_h) / 2.0,
                     color,
                     size,
                 );
@@ -1002,7 +995,7 @@ fn render_field(
         };
         let max_scroll = (full.width - text_max_w).max(0.0);
         let scroll_x = (caret_prefix + 2.0 * scale - text_max_w).clamp(0.0, max_scroll);
-        let y = rect.y + (rect.h - row_h) / 2.0;
+        let y = rect.y + (rect.h - line_box_h) / 2.0;
         canvas.clipped(inner, |c| {
             draw_selection(
                 c,
@@ -1010,18 +1003,11 @@ fn render_field(
                 full,
                 selection,
                 text_left - scroll_x,
-                y,
+                rect.y + (rect.h - row_h) / 2.0,
                 row_h,
                 size,
             );
-            c.draw_text(
-                font,
-                text,
-                text_left - scroll_x,
-                y + (row_h - size) / 2.0,
-                color,
-                size,
-            );
+            c.draw_text(font, text, text_left - scroll_x, y, color, size);
         });
         if focused {
             canvas.clipped(inner, |c| {
@@ -1130,6 +1116,40 @@ mod tests {
             | ((pixels[i + 1] as u32) << 16)
             | ((pixels[i + 2] as u32) << 8)
             | pixels[i + 3] as u32
+    }
+
+    #[test]
+    fn text_fits_vertical_line_box() {
+        let Ok(metrics) = crate::window::font::FontMetrics::load() else {
+            return;
+        };
+        let font = metrics.font();
+        let size = 20.0;
+        let (_, height) = measure(font, "Ag", size);
+        let (width, canvas_height) = (80u32, 60u32);
+        let mut pixels = vec![0u8; (width * canvas_height * 4) as usize];
+        let region = Rect::new(0.0, 0.0, width as f32, canvas_height as f32);
+        let mut canvas = Canvas::new(&mut pixels, width, canvas_height, region);
+        let top = 10.0;
+        canvas.draw_text(font, "Ag", 5.0, top, 0xFFFF_FFFF, size);
+
+        let mut min_y = canvas_height;
+        let mut max_y = 0;
+        for y in 0..canvas_height {
+            for x in 0..width {
+                if pixel(&pixels, width, x, y) != 0 {
+                    min_y = min_y.min(y);
+                    max_y = max_y.max(y);
+                }
+            }
+        }
+
+        assert!(min_y >= top as u32, "glyph above line box: {min_y}");
+        assert!(
+            max_y <= (top + height).ceil() as u32,
+            "glyph below line box: {max_y} > {}",
+            (top + height).ceil()
+        );
     }
 
     #[test]

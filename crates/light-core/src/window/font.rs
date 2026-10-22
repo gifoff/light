@@ -74,13 +74,17 @@ impl TextMetrics for FontMetrics {
 }
 
 /// Размер строки при заданном размере шрифта: (ширина, высота).
+///
+/// Высота — это типографская строка без `line-gap`: от `ascent` до `descent`.
+/// Именно она используется в раскладке, чтобы `align-items: center`/`end`
+/// центрировал глифы, а не невидимый запас между строками.
 pub fn measure(font: &FontVec, text: &str, font_size: f32) -> (f32, f32) {
     let scaled = font.as_scaled(PxScale::from(font_size));
     let width: f32 = text
         .chars()
         .map(|ch| scaled.h_advance(font.glyph_id(ch)))
         .sum();
-    (width, scaled.height())
+    (width, scaled.ascent() - scaled.descent())
 }
 
 /// Горизонтальный шаг одного символа при заданном размере шрифта.
@@ -89,7 +93,28 @@ pub fn advance(font: &FontVec, ch: char, font_size: f32) -> f32 {
     scaled.h_advance(font.glyph_id(ch))
 }
 
-/// Высота строки шрифта при заданном размере.
+/// Высота строки шрифта при заданном размере, включая `line-gap`.
+///
+/// Для расстояния между строками многострочного текста. Для геометрической
+/// высоты текстового узла используйте [`measure`].
 pub fn line_height(font: &FontVec, font_size: f32) -> f32 {
     font.as_scaled(PxScale::from(font_size)).height()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn measure_excludes_line_gap() {
+        let Ok(metrics) = FontMetrics::load() else {
+            return;
+        };
+        let size = 20.0;
+        let scaled = metrics.font().as_scaled(PxScale::from(size));
+        let (_, height) = metrics.measure("Ag", size);
+
+        assert!((height - (scaled.ascent() - scaled.descent())).abs() < 0.01);
+        assert!((scaled.height() - height - scaled.line_gap()).abs() < 0.01);
+    }
 }

@@ -16,6 +16,19 @@ impl TextMetrics for StubMetrics {
     }
 }
 
+/// Метрики, у которых высота строки зависит от размера шрифта и не включает
+/// line-gap: 20px шрифт даёт 18px типографской строки.
+struct SizedMetrics;
+
+impl TextMetrics for SizedMetrics {
+    fn measure(&self, text: &str, font_size: f32) -> (f32, f32) {
+        (
+            text.chars().count() as f32 * font_size * 0.5,
+            font_size * 0.9,
+        )
+    }
+}
+
 fn text(key: &'static str, content: &str) -> VElement {
     VElement::leaf(
         key,
@@ -1107,6 +1120,45 @@ fn align_items_in_row_centers_vertically() {
     };
     let layout = layout_at(&root, 200.0, 100.0);
     assert_eq!(layout.rect_of("0").unwrap().y, 40.0);
+}
+
+#[test]
+fn align_items_center_centers_text_visual_box() {
+    let mut label = text("label", "Ag");
+    label.style.font_size = Some(20.0);
+    let mut root = VElement::container("", NodeKind::Row, vec![label]);
+    root.style = Style {
+        align_items: Align::Center,
+        ..Style::default()
+    };
+    let layout = Layout::build(&root, (200.0, 100.0), &SizedMetrics);
+    let rect = layout.rect_of("label").expect("text node");
+
+    assert!((rect.h - 18.0).abs() < 0.01, "height = 20 * 0.9");
+    assert!(
+        (rect.y - (100.0 - rect.h) / 2.0).abs() < 0.01,
+        "center: y = (100 - 18) / 2"
+    );
+}
+
+#[test]
+fn align_items_end_puts_text_visual_box_on_bottom_edge() {
+    let mut label = text("label", "Ag");
+    label.style.font_size = Some(20.0);
+    let mut root = VElement::container("", NodeKind::Row, vec![label]);
+    root.style = Style {
+        align_items: Align::End,
+        ..Style::default()
+    };
+    let layout = Layout::build(&root, (200.0, 100.0), &SizedMetrics);
+    let rect = layout.rect_of("label").expect("text node");
+
+    assert!((rect.h - 18.0).abs() < 0.01, "height = 20 * 0.9");
+    assert!((rect.y - 82.0).abs() < 0.01, "end: y = 100 - 18");
+    assert!(
+        (rect.y + rect.h - 100.0).abs() < 0.01,
+        "bottom edge must reach container bottom"
+    );
 }
 
 #[test]
