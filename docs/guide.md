@@ -512,7 +512,7 @@ $ light add light-fw-datepicker --features calendar,timezone --yes
 Для `<image>` включите фичу `image-support`:
 
 ```toml
-light = { version = "0.9.0", features = ["image-support"] }
+light = { version = "0.9.1", features = ["image-support"] }
 ```
 
 ```html
