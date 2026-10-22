@@ -25,7 +25,7 @@ Rust-код, строящий виртуальный DOM. Окна создаю�
 
 ## Статус
 
-Текущая версия — **0.8.0**. Проект в стадии **пре-1.0**: публичный API ещё не
+Текущая версия — **0.9.0**. Проект в стадии **пре-1.0**: публичный API ещё не
 стабилен и может меняться между минорными версиями.
 
 ## Быстрый старт
@@ -124,9 +124,9 @@ light init my-app --template calculator
 
 ## Showcase
 
-| Calculator | Todo |
-| --- | --- |
-| ![Calculator](docs/assets/calculator.png) | ![Todo](docs/assets/todo.png) |
+| Calculator | Todo | Dashboard |
+| --- | --- | --- |
+| ![Calculator](docs/assets/calculator.png) | ![Todo](docs/assets/todo.png) | ![Dashboard](docs/assets/dashboard.png) |
 
 Полноценный dashboard с изображениями, вкладками и модальным окном:
 

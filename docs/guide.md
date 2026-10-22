@@ -512,7 +512,7 @@ $ light add light-fw-datepicker --features calendar,timezone --yes
 Для `<image>` включите фичу `image-support`:
 
 ```toml
-light = { version = "0.8.0", features = ["image-support"] }
+light = { version = "0.9.0", features = ["image-support"] }
 ```
 
 ```html
@@ -573,6 +573,8 @@ light = { version = "0.8.0", features = ["image-support"] }
 | `flex-grow`         | число                     | Доля свободного места по main-оси контейнера. `0` — не растягиваться (по умолчанию). |
 | `flex-shrink`       | число                     | Доля переполнения по main-оси, которую элемент отдаёт при сжатии. `0` — не сжиматься (по умолчанию). |
 | `flex`              | `1`, `1 0`                | Сокращение: `flex-grow` и `flex-shrink` (как в CSS). |
+| `position`          | `flow` / `absolute`       | `absolute` выводит элемент из потока; координаты и выравнивание считаются от content box родителя. |
+| `overflow` / `overflow-x` / `overflow-y` | `visible` / `hidden` / `auto` / `scroll` | Обрезка и прокрутка содержимого. `auto` показывает полосу прокрутки только при переполнении. |
 | `padding`           | число (px)                | Внутренний отступ со всех сторон.         |
 | `padding-top` / `padding-right` / `padding-bottom` / `padding-left` | число (px) | Внутренний отступ отдельной стороны (переопределяет `padding`). |
 | `margin`            | число (px)                | Внешний отступ со всех сторон.            |
@@ -605,6 +607,8 @@ light = { version = "0.8.0", features = ["image-support"] }
 - размеры (`width`/`height`/`min-*`/`max-*`) — `auto`, `10`, `10px`, `50%`;
 - `position-x` (`left`/`center`/`right`), `position-y` (`top`/`center`/`bottom`);
 - `justify-content`/`align-items` (`start`/`center`/`end`);
+- `position` (`flow`/`absolute`), `overflow`/`overflow-x`/`overflow-y`
+  (`visible`/`hidden`/`auto`/`scroll`);
 - `flex-grow`/`flex-shrink` — неотрицательное число;
 - смещения (`position-offset-*`) — `10`, `-8px`, `10%`;
 - `padding`/`margin` — число (px): базовое значение для всех сторон, статические `padding-*`/`margin-*` переопределяют отдельные стороны;
@@ -645,6 +649,39 @@ light = { version = "0.8.0", features = ["image-support"] }
 ```
 
 Для сетки кнопок задайте `flex-grow` строкам, а кнопкам — `height="100%"`: строки заберут свободную высоту, а кнопки заполнят её.
+
+### Переполнение, прокрутка и абсолютное позиционирование
+
+`overflow-y="auto"` (или `overflow="auto"` для обеих осей) обрезает содержимое
+по границам контейнера и включает прокрутку колесом мыши. Дети сдвигаются на
+сохранённое смещение, попадания мыши учитывают обрезку, а справа/снизу
+рисуется полоса прокрутки. Поддерживаются `visible`, `hidden`, `auto` и
+`scroll`; `overflow-x`/`overflow-y` переопределяют `overflow` для одной оси.
+
+```html
+<div direction="vertical" height="240" overflow-y="auto">
+    <!-- длинный список -->
+</div>
+```
+
+`position="absolute"` выводит элемент из потока: он не занимает место у
+соседей и не влияет на размер родителя. Координаты и `position-x`/`position-y`
+отсчитываются от content box родителя. Это удобно для модальных окон-оверлеев:
+
+```html
+<div v-if="modal_open" position="absolute" width="100%" height="100%"
+     background="#0F172ACC" z="100">
+    <div position="absolute" position-x="center" position-y="center"
+         width="420" padding="20" background="#FFFFFF" border-radius="12">
+        ...
+    </div>
+</div>
+```
+
+![Модальное окно в dashboard](assets/dashboard-modal.png)
+
+`z` задаёт порядок оверлея среди соседей, поэтому панель рисуется поверх
+остального интерфейса и первой получает клики.
 
 Типичный случай — центрирование заголовка в титульной полосе. Сам `<h3>` растянут на всю высоту, поэтому `position-y` у него ничего не центрирует: нужно выровнять его **содержимое** (текст):
 

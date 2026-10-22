@@ -688,7 +688,7 @@ fn init_creates_full_project() {
     let project = scratch.path().join("cool-app");
     let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
     assert!(manifest.contains("name = \"cool-app\""), "{manifest}");
-    assert!(manifest.contains("light = \"0.8."), "{manifest}");
+    assert!(manifest.contains("light = \"0.9."), "{manifest}");
     let main_rs = std::fs::read_to_string(project.join("src").join("main.rs")).expect("main.rs");
     assert!(main_rs.contains("Hello, Light!"), "{main_rs}");
     let gitignore = std::fs::read_to_string(project.join(".gitignore")).expect(".gitignore");
@@ -714,16 +714,16 @@ fn init_with_components_adds_dependencies_and_features() {
     let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
     assert!(
         manifest.contains(
-            "light = { version = \"0.8.0\", features = [\"elements-form\", \"validation\"] }"
+            "light = { version = \"0.9.0\", features = [\"elements-form\", \"validation\"] }"
         ),
         "{manifest}"
     );
     assert!(
-        manifest.contains("light-fw-element-form = \"0.8.0\""),
+        manifest.contains("light-fw-element-form = \"0.9.0\""),
         "{manifest}"
     );
     assert!(
-        manifest.contains("light-fw-behavior-validation = \"0.8.0\""),
+        manifest.contains("light-fw-behavior-validation = \"0.9.0\""),
         "{manifest}"
     );
 
