@@ -104,6 +104,8 @@ pub fn default_role(kind: &NodeKind) -> Role {
             multiline: true, ..
         } => Role::MultilineTextInput,
         NodeKind::TextField { .. } => Role::TextInput,
+        #[cfg(feature = "image-support")]
+        NodeKind::Image { .. } => Role::Image,
         #[cfg(feature = "elements-checkbox")]
         NodeKind::Checkbox { .. } => Role::CheckBox,
         #[cfg(feature = "elements-radio")]

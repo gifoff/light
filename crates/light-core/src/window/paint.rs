@@ -276,6 +276,36 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    /// Рисует изображение, растягивая его по nearest-neighbor в `rect`.
+    ///
+    /// Пиксели источника смешиваются с фоном как source-over с прямой альфой.
+    #[cfg(feature = "image-support")]
+    pub fn draw_image(&mut self, image: &super::image::DecodedImage, rect: Rect) {
+        if image.width == 0 || image.height == 0 || rect.w <= 0.0 || rect.h <= 0.0 {
+            return;
+        }
+        let (cx0, cy0, cx1, cy1) = self.clip;
+        let x0 = rect.x.floor().max(cx0 as f32) as i32;
+        let y0 = rect.y.floor().max(cy0 as f32) as i32;
+        let x1 = (rect.x + rect.w).ceil().min(cx1 as f32) as i32;
+        let y1 = (rect.y + rect.h).ceil().min(cy1 as f32) as i32;
+        for y in y0..y1 {
+            let v = ((y as f32 + 0.5 - rect.y) / rect.h * image.height as f32) as u32;
+            let v = v.min(image.height - 1);
+            for x in x0..x1 {
+                let u = ((x as f32 + 0.5 - rect.x) / rect.w * image.width as f32) as u32;
+                let u = u.min(image.width - 1);
+                let index = ((v * image.width + u) * 4) as usize;
+                let pixel = &image.pixels[index..index + 4];
+                let color = (pixel[0] as u32) << 24
+                    | (pixel[1] as u32) << 16
+                    | (pixel[2] as u32) << 8
+                    | pixel[3] as u32;
+                self.blend(x, y, color, 1.0);
+            }
+        }
+    }
+
     fn set(&mut self, x: u32, y: u32, pixel: [u8; 4]) {
         let index = (y * self.width + x) as usize * 4;
         if let Some(target) = self.pixels.get_mut(index..index + 4) {
@@ -468,6 +498,23 @@ pub fn render(
                     color,
                     size,
                 );
+            }
+            #[cfg(feature = "image-support")]
+            crate::vdom::NodeKind::Image { src, data, .. } => {
+                if let Some(image) = super::image::load(src, data) {
+                    let image_rect = Rect::new(
+                        rect.x + inset.left,
+                        rect.y + inset.top,
+                        (rect.w - inset.horizontal()).max(0.0),
+                        (rect.h - inset.vertical()).max(0.0),
+                    );
+                    canvas.draw_image(&image, image_rect);
+                }
+                if style.border_size > 0.0
+                    && let Some(color) = style.border_color
+                {
+                    canvas.stroke_rect(color, rect, thickness);
+                }
             }
             crate::vdom::NodeKind::Button { .. } => {
                 canvas.stroke_rect(style.border_color.unwrap_or(BUTTON_BORDER), rect, thickness);

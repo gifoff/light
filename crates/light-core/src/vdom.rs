@@ -736,6 +736,20 @@ pub enum NodeKind {
         /// Отображаемый текст.
         content: String,
     },
+    /// Изображение (`<image>`), встроенное в бинарник на этапе компиляции.
+    #[cfg(feature = "image-support")]
+    Image {
+        /// Путь к файлу из атрибута `src` (используется как ключ кэша и имя).
+        src: &'static str,
+        /// Содержимое PNG-файла.
+        data: &'static [u8],
+        /// Ширина исходного изображения в пикселях.
+        width: u32,
+        /// Высота исходного изображения в пикселях.
+        height: u32,
+        /// Альтернативный текст (`alt`) для дерева доступности.
+        alt: String,
+    },
     /// Кнопка-контейнер: содержимое (`children`) выкладывается горизонтально и
     /// центрируется по обеим осям. Подпись собирается из текста детей.
     Button {
@@ -1487,6 +1501,8 @@ fn kind_compatible(a: &NodeKind, b: &NodeKind) -> bool {
         | (NodeKind::Text { .. }, NodeKind::Text { .. })
         | (NodeKind::Button { .. }, NodeKind::Button { .. })
         | (NodeKind::TextField { .. }, NodeKind::TextField { .. }) => true,
+        #[cfg(feature = "image-support")]
+        (NodeKind::Image { src: src_a, .. }, NodeKind::Image { src: src_b, .. }) => src_a == src_b,
         #[cfg(feature = "elements-checkbox")]
         (NodeKind::Checkbox { .. }, NodeKind::Checkbox { .. }) => true,
         #[cfg(feature = "elements-radio")]
@@ -1505,6 +1521,23 @@ fn diff_kind(old: &NodeKind, new: &NodeKind, key: &'static str, patch: &mut Patc
                     key,
                     content: b.clone(),
                 });
+                patch.changed.insert(key);
+            }
+        }
+        #[cfg(feature = "image-support")]
+        (
+            NodeKind::Image {
+                data: data_a,
+                alt: alt_a,
+                ..
+            },
+            NodeKind::Image {
+                data: data_b,
+                alt: alt_b,
+                ..
+            },
+        ) => {
+            if data_a != data_b || alt_a != alt_b {
                 patch.changed.insert(key);
             }
         }

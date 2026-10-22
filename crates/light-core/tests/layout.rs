@@ -1252,3 +1252,81 @@ fn justify_content_centers_bare_text_in_h3() {
         "текст по центру h3 по горизонтали"
     );
 }
+
+#[cfg(feature = "image-support")]
+fn image(key: &'static str, width: u32, height: u32) -> VElement {
+    VElement::leaf(
+        key,
+        NodeKind::Image {
+            src: key,
+            data: b"",
+            width,
+            height,
+            alt: String::new(),
+        },
+    )
+}
+
+#[cfg(feature = "image-support")]
+#[test]
+fn image_uses_intrinsic_size_when_auto() {
+    let root = column("", vec![image("img", 4, 2)]);
+    let layout = build(&root);
+    assert_eq!(
+        layout.rect_of("img").unwrap(),
+        Rect::new(0.0, 0.0, 4.0, 2.0)
+    );
+}
+
+#[cfg(feature = "image-support")]
+#[test]
+fn image_preserves_aspect_ratio_for_width_and_height() {
+    let mut by_width = image("w", 4, 2);
+    by_width.style = Style {
+        width: Size::Px(100.0),
+        ..Style::default()
+    };
+    let layout = build(&column("", vec![by_width]));
+    assert_eq!(
+        layout.rect_of("w").unwrap(),
+        Rect::new(0.0, 0.0, 100.0, 50.0)
+    );
+
+    let mut by_height = image("h", 4, 2);
+    by_height.style = Style {
+        height: Size::Px(100.0),
+        ..Style::default()
+    };
+    let layout = build(&column("", vec![by_height]));
+    assert_eq!(
+        layout.rect_of("h").unwrap(),
+        Rect::new(0.0, 0.0, 200.0, 100.0)
+    );
+}
+
+#[cfg(feature = "image-support")]
+#[test]
+fn image_explicit_size_and_padding() {
+    let mut both = image("both", 4, 2);
+    both.style = Style {
+        width: Size::Px(30.0),
+        height: Size::Px(40.0),
+        padding: Edges::all(5.0),
+        ..Style::default()
+    };
+    let layout = build(&column("", vec![both]));
+    assert_eq!(
+        layout.rect_of("both").unwrap(),
+        Rect::new(0.0, 0.0, 30.0, 40.0)
+    );
+
+    let mut padded = image("pad", 4, 2);
+    padded.style = Style {
+        width: Size::Px(100.0),
+        padding: Edges::all(5.0),
+        ..Style::default()
+    };
+    let layout = build(&column("", vec![padded]));
+    assert_eq!(layout.rect_of("pad").unwrap().w, 100.0);
+    assert_eq!(layout.rect_of("pad").unwrap().h, 55.0);
+}

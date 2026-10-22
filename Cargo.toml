@@ -27,6 +27,7 @@ winit = "0.30"
 pixels = "0.17"
 softbuffer = "0.4"
 ab_glyph = "0.2"
+png = "0.17"
 
 light = { path = "crates/light", version = "0.7.0" }
 light-fw-core = { path = "crates/light-core", version = "0.7.0" }

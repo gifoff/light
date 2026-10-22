@@ -51,6 +51,10 @@ validation = ["light-fw-core/validation", "dep:light-fw-behavior-validation"]
 # Ограничения размера (`min-width`/`max-width`/`min-height`/`max-height`).
 min-max-size = ["light-fw-core/min-max-size"]
 
+# --- Изображения -------------------------------------------------------
+# `<image>` и PNG-иконки окон.
+image-support = ["light-fw-core/image-support"]
+
 # --- Окно --------------------------------------------------------------
 # Базовое окно на winit с программной отрисовкой.
 window = ["light-fw-core/window"]

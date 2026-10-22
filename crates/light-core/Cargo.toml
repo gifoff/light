@@ -18,6 +18,7 @@ winit = { workspace = true, optional = true }
 pixels = { workspace = true, optional = true }
 softbuffer = { workspace = true, optional = true }
 ab_glyph = { workspace = true, optional = true }
+png = { workspace = true, optional = true }
 accesskit = { version = "0.25", optional = true, features = ["serde"] }
 accesskit_winit = { version = "0.34", optional = true }
 
@@ -58,6 +59,10 @@ required-fields = ["light-fw-macros/required-fields"]
 validation = ["light-fw-macros/validation"]
 # Ограничения размера (`min-width`/`max-width`/`min-height`/`max-height`).
 min-max-size = ["light-fw-macros/min-max-size"]
+
+# --- Изображения -------------------------------------------------------
+# `<image>` и PNG-иконки окон: декодирование PNG и вывод RGBA.
+image-support = ["light-fw-macros/image-support", "dep:png"]
 
 # --- Окно --------------------------------------------------------------
 # Базовое окно на winit с программной отрисовкой.

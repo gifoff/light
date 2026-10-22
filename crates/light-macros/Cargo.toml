@@ -32,6 +32,8 @@ dynamic-attrs = []
 required-fields = []
 validation = []
 min-max-size = []
+# Изображения: элемент `<image>` и PNG-иконки окон.
+image-support = []
 # Прочее.
 include = []
 template-modal = []

@@ -792,6 +792,7 @@ impl Generator {
             "checkbox" => "elements-checkbox",
             "radio" => "elements-radio",
             "select" => "elements-select",
+            "image" => "image-support",
             _ => return None,
         };
         let enabled = [
@@ -799,6 +800,7 @@ impl Generator {
             ("elements-checkbox", cfg!(feature = "elements-checkbox")),
             ("elements-radio", cfg!(feature = "elements-radio")),
             ("elements-select", cfg!(feature = "elements-select")),
+            ("image-support", cfg!(feature = "image-support")),
         ]
         .into_iter()
         .find(|(name, _)| *name == feature)
@@ -835,12 +837,13 @@ impl Generator {
             "checkbox" => self.gen_checkbox(element, key),
             "radio" => self.gen_radio(element, key),
             "select" => self.gen_select(element, key),
+            "image" => self.gen_image(element, key),
             other => Err(syn::Error::new(
                 Span::call_site(),
                 format!(
                     "неизвестный элемент <{other}>; поддерживаются: \
                      <div>, <span>, <h1>…<h5>, <text>, <password>, <checkbox>, <radio>, \
-                     <select>, <option>, <button>, <titlebar>, <include>, <template>"
+                     <select>, <option>, <button>, <titlebar>, <image>, <include>, <template>"
                 ),
             )),
         }
@@ -1055,6 +1058,54 @@ impl Generator {
             ::light::vdom::VElement::container(#key, ::light::vdom::NodeKind::TitleBar, __children)
                 .with_style(#style)
                 #meta
+        }})
+    }
+
+    /// Строит `<image>`: встраивает PNG в бинарник и берёт размеры из IHDR.
+    fn gen_image(&mut self, element: &Element, key: &KeyExpr) -> syn::Result<TokenStream> {
+        if attr_value(&element.attrs, ":src").is_some() {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "динамический :src у <image> не поддерживается; укажите статический src=\"...\"",
+            ));
+        }
+        if !element.children.is_empty() {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "<image> — листовой элемент и не может содержать дочерние элементы",
+            ));
+        }
+        let src = attr_value(&element.attrs, "src")
+            .map(str::trim)
+            .filter(|src| !src.is_empty())
+            .ok_or_else(|| {
+                syn::Error::new(
+                    Span::call_site(),
+                    "у <image> обязателен атрибут src=\"путь/к/файлу.png\"",
+                )
+            })?;
+        let path = asset_path(src)?;
+        let (width, height) = png_dimensions(&path)?;
+        let path_literal = path_literal(&path);
+        let alt = attr_value(&element.attrs, "alt").unwrap_or_default();
+        let meta = self.node_meta(element)?;
+        let style = style_token(self, element, None, self.visible_token(element)?)?;
+        let key = key.token();
+        self.push_events(element, &key)?;
+        Ok(quote! {{
+            ::light::vdom::VElement::container(
+                #key,
+                ::light::vdom::NodeKind::Image {
+                    src: #src,
+                    data: ::std::include_bytes!(#path_literal),
+                    width: #width,
+                    height: #height,
+                    alt: ::std::string::String::from(#alt),
+                },
+                ::std::vec::Vec::new(),
+            )
+            .with_style(#style)
+            #meta
         }})
     }
 
@@ -2186,6 +2237,7 @@ struct WindowSpec {
     visible: Option<String>,
     id: Option<String>,
     parent: Option<String>,
+    icon: Option<String>,
 }
 
 fn parse_window(element: &Element) -> syn::Result<WindowSpec> {
@@ -2213,7 +2265,57 @@ fn parse_window(element: &Element) -> syn::Result<WindowSpec> {
             .map(|attr| attr.value.clone()),
         id: attr_value(&element.attrs, "id").map(|s| s.to_owned()),
         parent: attr_value(&element.attrs, "parent").map(|s| s.to_owned()),
+        icon: attr_value(&element.attrs, "icon").map(|s| s.to_owned()),
     })
+}
+
+/// Путь к встроенному ресурсу относительно `CARGO_MANIFEST_DIR`.
+fn asset_path(value: &str) -> syn::Result<PathBuf> {
+    let relative =
+        normalize_src(value).map_err(|message| syn::Error::new(Span::call_site(), message))?;
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").map_err(|_| {
+        syn::Error::new(
+            Span::call_site(),
+            "не удалось определить CARGO_MANIFEST_DIR",
+        )
+    })?;
+    Ok(PathBuf::from(manifest).join(relative))
+}
+
+/// Строковый литерал пути для `include_bytes!` (прямые слэши на всех ОС).
+fn path_literal(path: &Path) -> LitStr {
+    LitStr::new(
+        &path.to_string_lossy().replace('\\', "/"),
+        Span::call_site(),
+    )
+}
+
+/// Проверяет сигнатуру PNG и читает размеры из первого блока IHDR.
+fn png_dimensions(path: &Path) -> syn::Result<(u32, u32)> {
+    const SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    let bytes = std::fs::read(path).map_err(|error| {
+        syn::Error::new(
+            Span::call_site(),
+            format!(
+                "не удалось прочитать изображение `{}`: {error}",
+                path.display()
+            ),
+        )
+    })?;
+    if bytes.len() < 24 || &bytes[..8] != SIGNATURE || &bytes[12..16] != b"IHDR" {
+        return Err(syn::Error::new(
+            Span::call_site(),
+            format!(
+                "файл `{}` не является PNG с корректным заголовком IHDR",
+                path.display()
+            ),
+        ));
+    }
+    let mut width = [0_u8; 4];
+    let mut height = [0_u8; 4];
+    width.copy_from_slice(&bytes[16..20]);
+    height.copy_from_slice(&bytes[20..24]);
+    Ok((u32::from_be_bytes(width), u32::from_be_bytes(height)))
 }
 
 /// Разбирает цвет `#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`, `0xRRGGBB` или
@@ -2335,6 +2437,24 @@ fn window_tokens(spec: &WindowSpec) -> syn::Result<TokenStream> {
             builder = quote! {
                 #builder cfg.parent =
                     ::std::option::Option::Some(::std::string::String::from(#parent));
+            };
+        }
+    }
+    if let Some(ref icon) = spec.icon {
+        if !cfg!(feature = "image-support") {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "атрибут icon у <window> недоступен: Cargo-фича `image-support` выключена\n\
+                 help: включите её в зависимости, например \
+                 `light = { features = [\"image-support\"] }`",
+            ));
+        }
+        let icon = icon.trim();
+        if !icon.is_empty() {
+            let path = asset_path(icon)?;
+            let path = path_literal(&path);
+            builder = quote! {
+                #builder cfg.icon = ::std::option::Option::Some(::std::include_bytes!(#path));
             };
         }
     }

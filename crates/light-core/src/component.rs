@@ -61,6 +61,11 @@ pub struct WindowConfig {
     /// Дочернее окно закрывается вместе с родителем, а модальный потомок
     /// блокирует ввод родителю.
     pub parent: Option<String>,
+    /// PNG-содержимое иконки окна из атрибута `<window icon="...">`.
+    ///
+    /// Файл встраивается в бинарник на этапе компиляции. Если иконка не
+    /// задана, используется встроенная иконка Light.
+    pub icon: Option<&'static [u8]>,
 }
 
 impl WindowConfig {
@@ -87,6 +92,7 @@ impl Default for WindowConfig {
             visible: true,
             id: None,
             parent: None,
+            icon: None,
         }
     }
 }
@@ -160,6 +166,13 @@ pub trait Component {
     /// Доступно в шаблонах как обработчик: `@click="toggle_maximize()"`.
     fn toggle_maximize(&self) {
         crate::control::request(crate::control::WindowCommand::ToggleMaximize);
+    }
+
+    /// Открывает модальное окно, описанное [`Component::modal`].
+    ///
+    /// Доступно в шаблонах как обработчик: `@click="open_modal()"`.
+    fn open_modal(&self) {
+        crate::control::request(crate::control::WindowCommand::OpenModal);
     }
 
     /// Описание системного окна компонента.

@@ -10,6 +10,9 @@
 //! запоминается перед обработкой события.
 
 mod font;
+mod icon;
+#[cfg(feature = "image-support")]
+mod image;
 pub(crate) mod paint;
 mod text;
 
@@ -1862,6 +1865,7 @@ impl App {
             .with_decorations(false)
             .with_transparent(config.transparent)
             .with_resizable(config.resizable)
+            .with_window_icon(icon::window_icon(&config))
             .with_visible(false);
         let window = Arc::new(event_loop.create_window(attributes)?);
         if config.min_width.is_some() || config.min_height.is_some() {

@@ -515,6 +515,46 @@ impl Layout {
                 self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
                 (w, h)
             }
+            #[cfg(feature = "image-support")]
+            NodeKind::Image { width, height, .. } => {
+                let intrinsic_w = *width as f32;
+                let intrinsic_h = *height as f32;
+                let explicit_w = flow.forced_w.or_else(|| {
+                    (!matches!(style.width, Size::Auto))
+                        .then(|| style.resolve_width(intrinsic_w, avail_w))
+                });
+                let explicit_h = flow.forced_h.or_else(|| {
+                    (!matches!(style.height, Size::Auto))
+                        .then(|| style.resolve_height(intrinsic_h, avail_h))
+                });
+                let (w, h) = match (explicit_w, explicit_h) {
+                    (Some(w), Some(h)) => (w, h),
+                    (Some(w), None) => {
+                        let inner_w = (w - inset.horizontal()).max(0.0);
+                        let inner_h = if intrinsic_w > 0.0 {
+                            inner_w * intrinsic_h / intrinsic_w
+                        } else {
+                            0.0
+                        };
+                        (w, inner_h + inset.vertical())
+                    }
+                    (None, Some(h)) => {
+                        let inner_h = (h - inset.vertical()).max(0.0);
+                        let inner_w = if intrinsic_h > 0.0 {
+                            inner_h * intrinsic_w / intrinsic_h
+                        } else {
+                            0.0
+                        };
+                        (inner_w + inset.horizontal(), h)
+                    }
+                    (None, None) => (
+                        intrinsic_w + inset.horizontal(),
+                        intrinsic_h + inset.vertical(),
+                    ),
+                };
+                self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
+                (w, h)
+            }
             NodeKind::Button { .. } => {
                 let index = self.push(vnode, Rect::default(), parent);
                 // Внутренняя область кнопки: собственная рамка и `padding`.
