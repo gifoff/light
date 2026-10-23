@@ -4,8 +4,10 @@ use std::path::Path;
 use light::ImageData;
 use light::prelude::*;
 
-const MAX_AVATAR_BYTES: u64 = 2 * 1024 * 1024;
-const MAX_AVATAR_DIMENSION: u32 = 1024;
+const MAX_AVATAR_BYTES: u64 = 100 * 1024;
+const MAX_AVATAR_DIMENSION: u32 = 512;
+const MIN_PROFILE_NAME_CHARS: usize = 3;
+const MAX_PROFILE_NAME_CHARS: usize = 20;
 const DEFAULT_TASKS: [&str; 12] = [
     "Редизайн настроек",
     "Экспорт отчётов",
@@ -32,7 +34,7 @@ struct Dashboard {
     done_tasks: i64,
     #[default(3)]
     active_projects: i64,
-    #[default("Алексей Ковалёв — Product Design Lead".to_owned())]
+    #[default("Алексей Ковалёв".to_owned())]
     profile_name: String,
     custom_avatar: Option<ImageData>,
     #[default(String::new())]
@@ -160,8 +162,12 @@ impl Dashboard {
         self.set_profile_draft(String::new());
     }
 
-    fn is_profile_draft_empty(&self) -> bool {
-        self.profile_draft().trim().is_empty()
+    fn profile_name_invalid(&self) -> bool {
+        !is_valid_name(self.profile_draft().trim())
+    }
+
+    fn is_profile_save_disabled(&self) -> bool {
+        self.profile_name_invalid()
     }
 
     fn has_avatar_error(&self) -> bool {
@@ -170,7 +176,7 @@ impl Dashboard {
 
     fn save_profile(&self) {
         let name = self.profile_draft().trim().to_owned();
-        if name.is_empty() {
+        if !is_valid_name(&name) {
             return;
         }
         self.set_profile_name(name);
@@ -247,13 +253,27 @@ impl Dashboard {
     }
 }
 
+fn is_valid_name(name: &str) -> bool {
+    let len = name.trim().chars().count();
+    (MIN_PROFILE_NAME_CHARS..=MAX_PROFILE_NAME_CHARS).contains(&len)
+}
+
 fn load_avatar(path: &Path) -> Result<ImageData, String> {
     let metadata =
         fs::metadata(path).map_err(|error| format!("Не удалось открыть файл: {error}"))?;
     if metadata.len() > MAX_AVATAR_BYTES {
-        return Err(String::from("Файл больше 2 МБ"));
+        return Err(String::from("Файл слишком большой (макс. 100 КБ)"));
     }
     let bytes = fs::read(path).map_err(|error| format!("Не удалось прочитать файл: {error}"))?;
+    const SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    if bytes.len() < 24 || &bytes[..8] != SIGNATURE || &bytes[12..16] != b"IHDR" {
+        return Err(String::from("Выбранный файл не является PNG"));
+    }
+    let width = u32::from_be_bytes(bytes[16..20].try_into().unwrap_or_default());
+    let height = u32::from_be_bytes(bytes[20..24].try_into().unwrap_or_default());
+    if width == 0 || height == 0 || width > MAX_AVATAR_DIMENSION || height > MAX_AVATAR_DIMENSION {
+        return Err(String::from("Разрешение не должно превышать 512×512"));
+    }
     ImageData::from_png_limited(bytes, MAX_AVATAR_BYTES as usize, MAX_AVATAR_DIMENSION)
         .map_err(|error| format!("Не удалось загрузить PNG: {error}"))
 }
@@ -272,5 +292,42 @@ mod tests {
         let image = load_avatar(&path).expect("встроенный avatar.png");
         assert!(image.width() > 0);
         assert!(image.height() > 0);
+    }
+
+    #[test]
+    fn profile_name_validity_boundaries() {
+        assert!(!is_valid_name("ab"), "короткое имя отбраковывается");
+        assert!(!is_valid_name(" "), "пустое имя отбраковывается");
+        assert!(is_valid_name("Аня"), "минимальная длина 3");
+        assert!(is_valid_name(&"а".repeat(20)), "максимальная длина 20");
+        assert!(
+            !is_valid_name(&"а".repeat(21)),
+            "длинное имя отбраковывается"
+        );
+    }
+
+    #[test]
+    fn avatar_too_large_is_rejected() {
+        let mut path = std::env::temp_dir();
+        path.push("light-avatar-too-large.png");
+        fs::write(&path, vec![0u8; MAX_AVATAR_BYTES as usize + 1]).expect("temp file");
+        let error = load_avatar(&path).expect_err("слишком большой файл");
+        assert!(error.contains("слишком большой"), "{error}");
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn avatar_oversized_dimensions_are_rejected() {
+        let mut path = std::env::temp_dir();
+        path.push("light-avatar-oversized.png");
+        let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+        bytes.extend_from_slice(&25u32.to_be_bytes());
+        bytes.extend_from_slice(b"IHDR");
+        bytes.extend_from_slice(&700u32.to_be_bytes());
+        bytes.extend_from_slice(&700u32.to_be_bytes());
+        fs::write(&path, &bytes).expect("temp file");
+        let error = load_avatar(&path).expect_err("разрешение слишком большое");
+        assert!(error.contains("512×512"), "{error}");
+        let _ = fs::remove_file(&path);
     }
 }

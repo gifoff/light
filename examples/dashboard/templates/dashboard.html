@@ -3,13 +3,13 @@
         <image src="assets/logo.png" width="22" height="22" alt="Light" />
         <div direction="horizontal" align-items="center" font-color="#F8FAFC" font-size="15" margin-left="8">Light Dashboard</div>
         <div direction="horizontal" align-items="center" position-x="right">
-            <button @click="minimize()" type="button" width="32" height="26" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#CBD5E1">_</button>
-            <button @click="toggle_maximize()" type="button" width="32" height="26" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#CBD5E1">[]</button>
-            <button @click="close()" type="button" width="32" height="26" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#CBD5E1">X</button>
+            <button @click="minimize()" type="button" width="36" height="26" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#CBD5E1">_</button>
+            <button @click="toggle_maximize()" type="button" width="36" height="26" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#CBD5E1">[]</button>
+            <button @click="close()" type="button" width="36" height="26" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#CBD5E1">X</button>
         </div>
     </titlebar>
     <div direction="horizontal" flex-grow="1" flex-shrink="1" background="#F1F5F9">
-        <div direction="vertical" width="220" padding="16" background="#111827">
+        <div direction="vertical" width="240" flex-shrink="0" padding="16" background="#111827">
             <div direction="horizontal" align-items="center" margin-bottom="22">
                 <image src="assets/logo.png" width="34" height="34" alt="Light" />
                 <div direction="vertical" margin-left="10">
@@ -29,8 +29,8 @@
                 </button>
                 <div direction="horizontal" align-items="center" flex-grow="1" margin-left="10">
                     <div direction="vertical" flex-grow="1" flex-shrink="1">
-                        <div font-color="#F9FAFB" font-size="13">{{ profile_name }}</div>
-                        <div font-color="#94A3B8" font-size="11">Product design</div>
+                        <div font-color="#F9FAFB" font-size="13" white-space="nowrap">{{ profile_name }}</div>
+                        <div font-color="#94A3B8" font-size="11" white-space="nowrap">Product design</div>
                     </div>
                     <button @click="open_profile_modal" type="button" flex-shrink="0" width="24" height="24" padding="0" background="#1F2937" border-color="#1F2937" font-color="#CBD5E1" font-size="14">✎</button>
                 </div>
@@ -205,14 +205,15 @@
                 <button @click="pick_avatar" type="button" width="84" height="84" padding="0" background="#F1F5F9" border-color="#E2E8F0" border-radius="42">
                     <image src="assets/avatar.png" :src="custom_avatar" width="80" height="80" alt="Аватар профиля" />
                 </button>
-                <div font-color="#64748B" font-size="11" margin-top="8">Нажмите на аватар: PNG до 2 МБ, максимум 1024×1024</div>
+                <div font-color="#64748B" font-size="11" margin-top="8">Нажмите на аватар: PNG до 100 КБ, максимум 512×512</div>
                 <div v-if="has_avatar_error" font-color="#DC2626" font-size="11" margin-top="4">{{ avatar_error }}</div>
             </div>
             <div font-color="#475569" font-size="12" margin-bottom="6">Имя</div>
             <text v-model="profile_draft" width="100%" height="38" font-size="14" placeholder="Как вас зовут?" />
+            <div v-if="profile_name_invalid" font-color="#DC2626" font-size="11" margin-top="4">Имя должно быть от 3 до 20 символов</div>
             <div direction="horizontal" width="100%" justify-content="end" margin-top="20">
                 <button @click="close_profile_modal" type="button" width="104" height="38" margin-right="8" background="#F1F5F9" border-color="#CBD5E1" font-color="#334155">Отмена</button>
-                <button @click="save_profile" :disabled="is_profile_draft_empty" type="button" width="104" height="38" background="#2563EB" border-color="#2563EB" font-color="#FFFFFF">Сохранить</button>
+                <button @click="save_profile" :disabled="is_profile_save_disabled" type="button" width="104" height="38" background="#2563EB" border-color="#2563EB" font-color="#FFFFFF">Сохранить</button>
             </div>
         </div>
     </div>

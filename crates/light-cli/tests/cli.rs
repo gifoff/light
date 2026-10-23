@@ -714,16 +714,16 @@ fn init_with_components_adds_dependencies_and_features() {
     let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
     assert!(
         manifest.contains(
-            "light = { version = \"0.10.1\", features = [\"elements-form\", \"validation\"] }"
+            "light = { version = \"0.10.2\", features = [\"elements-form\", \"validation\"] }"
         ),
         "{manifest}"
     );
     assert!(
-        manifest.contains("light-fw-element-form = \"0.10.1\""),
+        manifest.contains("light-fw-element-form = \"0.10.2\""),
         "{manifest}"
     );
     assert!(
-        manifest.contains("light-fw-behavior-validation = \"0.10.1\""),
+        manifest.contains("light-fw-behavior-validation = \"0.10.2\""),
         "{manifest}"
     );
 
