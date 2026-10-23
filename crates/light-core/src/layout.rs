@@ -1,7 +1,10 @@
 //! Раскладка виртуального дерева в прямоугольники, поиск узлов по точке
 //! и вычисление областей перерисовки.
 
-use std::collections::{BTreeSet, HashMap};
+use std::{
+    cell::RefCell,
+    collections::{BTreeSet, HashMap},
+};
 
 #[cfg(debug_assertions)]
 use std::env;
@@ -203,8 +206,43 @@ struct FlowContext {
 /// строки без `line-gap` (`ascent - descent`), чтобы выравнивание текста
 /// совпадало с видимыми глифами.
 pub trait TextMetrics {
-    /// Размер строки `text` при заданном размере шрифта: (ширина, высота).
+    /// Ширина и высота строки `text` при заданном размере шрифта: (ширина, высота).
     fn measure(&self, text: &str, font_size: f32) -> (f32, f32);
+}
+
+/// Кэш измерений на время одной раскладки.
+///
+/// `flex-grow` раскладывает контейнер дважды, поэтому одни и те же строки
+/// измеряются повторно. Ключ — адрес, длина и размер шрифта: строки принадлежат
+/// неизменяемому дереву, которое живёт дольше раскладки.
+type TextMeasureCache = RefCell<HashMap<(usize, usize, u32), (String, (f32, f32))>>;
+
+struct MeasuredText<'a> {
+    inner: &'a dyn TextMetrics,
+    cache: TextMeasureCache,
+}
+
+impl<'a> MeasuredText<'a> {
+    fn new(inner: &'a dyn TextMetrics) -> Self {
+        Self {
+            inner,
+            cache: RefCell::new(HashMap::new()),
+        }
+    }
+}
+
+impl TextMetrics for MeasuredText<'_> {
+    fn measure(&self, text: &str, font_size: f32) -> (f32, f32) {
+        let key = (text.as_ptr() as usize, text.len(), font_size.to_bits());
+        if let Some((cached, size)) = self.cache.borrow().get(&key)
+            && cached == text
+        {
+            return *size;
+        }
+        let size = self.inner.measure(text, font_size);
+        self.cache.borrow_mut().insert(key, (text.to_owned(), size));
+        size
+    }
 }
 
 /// Узел разложенного дерева.
@@ -301,6 +339,7 @@ impl Layout {
     pub fn build(root: &VElement, viewport: (f32, f32), metrics: &dyn TextMetrics) -> Self {
         let mut layout = Self { nodes: Vec::new() };
         let view = Rect::new(0.0, 0.0, viewport.0, viewport.1);
+        let metrics = MeasuredText::new(metrics);
         layout.place(
             root,
             Point::new(0.0, 0.0),
@@ -318,7 +357,7 @@ impl Layout {
                 forced_h: None,
             },
             None,
-            metrics,
+            &metrics,
             Inherited {
                 size: FONT_SIZE,
                 color: None,
@@ -656,13 +695,11 @@ impl Layout {
                 let limit = (limit - inset.horizontal()).max(1.0);
                 let (content_w, content_h) = match white_space {
                     WhiteSpace::Normal => {
-                        let lines = crate::text_wrap::wrap_words(content, limit, |line| {
-                            metrics.measure(line, font_size).0
-                        });
-                        let width = lines
-                            .iter()
-                            .map(|line| metrics.measure(line, font_size).0)
-                            .fold(0.0, f32::max);
+                        let lines =
+                            crate::text_wrap::wrap_words_with_widths(content, limit, |line| {
+                                metrics.measure(line, font_size).0
+                            });
+                        let width = lines.iter().map(|(_, width)| *width).fold(0.0, f32::max);
                         let row_h = metrics.measure("", font_size).1.max(1.0);
                         (width, lines.len() as f32 * row_h)
                     }
@@ -978,13 +1015,7 @@ impl Layout {
                     .children
                     .iter()
                     .filter(|child| child.style.visible && child.style.position == Position::Flow)
-                    .map(|child| {
-                        if free > 0.0 {
-                            child.style.flex_grow
-                        } else {
-                            child.style.flex_shrink
-                        }
-                    })
+                    .map(|child| flex_weight(child, free > 0.0))
                     .sum();
                 if free != 0.0 && total_flex > 0.0 {
                     let forced: Vec<(Option<f32>, Option<f32>)> = vnode
@@ -995,11 +1026,7 @@ impl Layout {
                         })
                         .zip(child_sizes.iter())
                         .map(|(child, &(child_w, child_h))| {
-                            let weight = if free > 0.0 {
-                                child.style.flex_grow
-                            } else {
-                                child.style.flex_shrink
-                            };
+                            let weight = flex_weight(child, free > 0.0);
                             let extra = free * weight / total_flex;
                             if horizontal {
                                 let step = child.style.margin.left + child.style.margin.right;
@@ -1480,6 +1507,43 @@ pub fn damage_regions(
     regions.into_values().collect()
 }
 
+/// Объединяет пересекающиеся области перерисовки в общие прямоугольники.
+///
+/// Перерисовка каждой области требует отдельного прохода по дереву, поэтому
+/// наложение областей (например, родитель и изменившийся потомок) заметно
+/// замедляет кадр. Объединение уменьшает число проходов, слегка расширяя
+/// повреждённую площадь.
+pub(crate) fn coalesce_regions(regions: Vec<Rect>) -> Vec<Rect> {
+    let mut merged = Vec::<Rect>::with_capacity(regions.len());
+    for rect in regions {
+        if rect.w <= 0.0 || rect.h <= 0.0 {
+            continue;
+        }
+        let mut current = rect;
+        loop {
+            let mut found = false;
+            let mut index = 0;
+            while index < merged.len() {
+                if overlaps(merged[index], current) {
+                    current = merged.swap_remove(index).union(current);
+                    found = true;
+                } else {
+                    index += 1;
+                }
+            }
+            if !found {
+                break;
+            }
+        }
+        merged.push(current);
+    }
+    merged
+}
+
+fn overlaps(a: Rect, b: Rect) -> bool {
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+}
+
 /// Снимок прямоугольников всех узлов раскладки (для сравнения между кадрами).
 pub fn snapshot_rects(layout: &Layout) -> HashMap<&'static str, Rect> {
     layout
@@ -1493,6 +1557,19 @@ pub fn snapshot_rects(layout: &Layout) -> HashMap<&'static str, Rect> {
 ///
 /// `flow` — обычная координата в потоке, `size` — размер узла, `bound_start`/
 /// `bound_size` — контентная область родителя по оси.
+/// Вес flex-ребёнка по main-оси. Titlebar — элемент оформления окна, поэтому
+/// при нехватке места он не сжимается; иначе он может исчезнуть, а соседняя
+/// scroll-область выйдет за пределы окна.
+fn flex_weight(child: &VElement, growing: bool) -> f32 {
+    if growing {
+        child.style.flex_grow
+    } else if matches!(child.kind, NodeKind::TitleBar) {
+        0.0
+    } else {
+        child.style.flex_shrink
+    }
+}
+
 fn aligned(
     flow: f32,
     size: f32,
@@ -1531,4 +1608,38 @@ fn debug_trace(vnode: &VElement, rect: Rect, flow: FlowContext) {
         rect.w,
         rect.h
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Rect, coalesce_regions};
+
+    #[test]
+    fn coalesces_overlapping_regions() {
+        let regions = vec![
+            Rect::new(0.0, 0.0, 10.0, 10.0),
+            Rect::new(5.0, 5.0, 20.0, 20.0),
+            Rect::new(40.0, 40.0, 5.0, 5.0),
+        ];
+        let merged = coalesce_regions(regions);
+        assert_eq!(merged.len(), 2);
+        assert!(merged.contains(&Rect::new(0.0, 0.0, 25.0, 25.0)));
+        assert!(merged.contains(&Rect::new(40.0, 40.0, 5.0, 5.0)));
+    }
+
+    #[test]
+    fn coalesces_union_induced_overlaps() {
+        let regions = vec![
+            Rect::new(0.0, 0.0, 10.0, 10.0),
+            Rect::new(20.0, 0.0, 10.0, 10.0),
+            Rect::new(5.0, 5.0, 20.0, 3.0),
+        ];
+        let merged = coalesce_regions(regions);
+        assert_eq!(merged, vec![Rect::new(0.0, 0.0, 30.0, 10.0)]);
+    }
+
+    #[test]
+    fn drops_empty_regions() {
+        assert!(coalesce_regions(vec![Rect::new(0.0, 0.0, 0.0, 10.0)]).is_empty());
+    }
 }

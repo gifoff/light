@@ -17,6 +17,7 @@ pub(crate) mod paint;
 mod text;
 
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -33,7 +34,7 @@ use crate::Error;
 use crate::component::{Component, WindowConfig};
 use crate::control::{WindowCommand, WindowToken, set_active_window, set_command_sender};
 use crate::layout::{
-    FIELD_MIN_H, Layout, Point, Rect, TextMetrics, damage_regions, snapshot_rects,
+    FIELD_MIN_H, Layout, Point, Rect, TextMetrics, coalesce_regions, damage_regions, snapshot_rects,
 };
 use crate::reactive::set_repaint_requester;
 #[cfg(not(any(feature = "wgpu-backend", feature = "softbuffer-backend")))]
@@ -84,7 +85,7 @@ pub fn run(component: impl Component + 'static) -> crate::Result<()> {
     if component.window_config().is_none() {
         return Ok(());
     }
-    let font = Arc::new(FontMetrics::load()?);
+    let font = Rc::new(FontMetrics::load()?);
     let mut builder = EventLoop::<UserEvent>::with_user_event();
     let event_loop = builder.build()?;
     let proxy = event_loop.create_proxy();
@@ -157,7 +158,7 @@ struct WindowState {
     token: WindowToken,
     parent: Option<WindowToken>,
     component: Box<dyn Component>,
-    font: Arc<FontMetrics>,
+    font: Rc<FontMetrics>,
     window: Arc<Window>,
     surface: Box<dyn RendererBackend>,
     config: WindowConfig,
@@ -168,6 +169,7 @@ struct WindowState {
     tree: Option<Arc<VElement>>,
     layout: Option<Layout>,
     full_redraw: bool,
+    pending_damage: Vec<Rect>,
     focused: Option<String>,
     editing: String,
     caret: usize,
@@ -227,7 +229,8 @@ impl WindowState {
         let mut layout = Layout::build(&tree, (self.width as f32, self.height as f32), &metrics);
         layout.apply_scroll_offsets(&self.scroll);
         let tree = Arc::new(tree);
-        let damage = if self.full_redraw {
+        let full = self.full_redraw;
+        let mut damage = if full {
             vec![Rect::new(0.0, 0.0, self.width as f32, self.height as f32)]
         } else {
             match (self.tree.as_ref(), self.layout.as_ref()) {
@@ -238,6 +241,12 @@ impl WindowState {
                 _ => vec![Rect::new(0.0, 0.0, self.width as f32, self.height as f32)],
             }
         };
+        if full {
+            self.pending_damage.clear();
+        } else {
+            damage.append(&mut self.pending_damage);
+        }
+        let damage = coalesce_regions(damage);
         crate::dom::set_tree(self.token, Arc::clone(&tree));
         self.tree = Some(tree);
         self.layout = Some(layout);
@@ -890,8 +899,9 @@ impl WindowState {
             })
             .map(|node| node.key);
         if hovered != self.hover {
+            let previous = self.hover;
             self.hover = hovered;
-            self.invalidate();
+            self.invalidate_hover(previous, hovered);
         }
         self.update_cursor();
     }
@@ -1444,6 +1454,20 @@ impl WindowState {
         }
     }
 
+    /// Перерисовывает только области старой и новой кнопки под курсором.
+    fn invalidate_hover(&mut self, previous: Option<&'static str>, current: Option<&'static str>) {
+        let Some(layout) = self.layout.as_ref() else {
+            self.invalidate();
+            return;
+        };
+        for key in previous.into_iter().chain(current) {
+            if let Some(node) = layout.node(key) {
+                self.pending_damage.push(node.rect);
+            }
+        }
+        self.window.request_redraw();
+    }
+
     fn invalidate(&mut self) {
         self.full_redraw = true;
         self.window.request_redraw();
@@ -1723,7 +1747,7 @@ struct App {
     /// Фабрики окон по их `id` (собираются из [`Component::windows`] корня).
     registry: HashMap<String, fn() -> Box<dyn Component>>,
     root: Option<Box<dyn Component>>,
-    font: Arc<FontMetrics>,
+    font: Rc<FontMetrics>,
     error: Option<Error>,
     redraw: Arc<Mutex<Vec<Arc<Window>>>>,
     /// Прокси цикла событий для доставки событий AccessKit.
@@ -1732,7 +1756,7 @@ struct App {
 }
 
 impl App {
-    fn new(root: Box<dyn Component>, font: Arc<FontMetrics>) -> Self {
+    fn new(root: Box<dyn Component>, font: Rc<FontMetrics>) -> Self {
         let redraw: Arc<Mutex<Vec<Arc<Window>>>> = Arc::new(Mutex::new(Vec::new()));
         let repaint = Arc::clone(&redraw);
         set_repaint_requester(move || {
@@ -1924,7 +1948,7 @@ impl App {
             token,
             parent,
             component,
-            font: Arc::clone(&self.font),
+            font: Rc::clone(&self.font),
             window,
             surface,
             config,
@@ -1935,6 +1959,7 @@ impl App {
             tree: None,
             layout: None,
             full_redraw: true,
+            pending_damage: Vec::new(),
             focused: None,
             editing: String::new(),
             caret: 0,

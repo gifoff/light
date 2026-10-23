@@ -364,6 +364,51 @@ fn row_stretches_auto_height_children_to_tallest_sibling() {
 }
 
 #[test]
+fn flex_scroll_area_stays_inside_window() {
+    let mut header = VElement::container("header", NodeKind::TitleBar, vec![]);
+    header.style = Style {
+        height: Size::Px(20.0),
+        ..Style::default()
+    };
+    let mut content = column(
+        "content",
+        vec![sized_column("long", Size::Px(100.0), Size::Px(200.0))],
+    );
+    content.style = Style {
+        flex_grow: 1.0,
+        overflow_y: Overflow::Auto,
+        ..Style::default()
+    };
+    let mut row = VElement::container("row", NodeKind::Row, vec![content]);
+    row.style = Style {
+        flex_grow: 1.0,
+        flex_shrink: 1.0,
+        ..Style::default()
+    };
+    let root = VElement::container("", NodeKind::Window, vec![header, row]);
+    let layout = layout_at(&root, 400.0, 100.0);
+
+    assert_eq!(
+        layout.rect_of("header").expect("header"),
+        Rect::new(0.0, 0.0, 400.0, 20.0),
+        "titlebar не должен сжиматься"
+    );
+    assert_eq!(
+        layout.rect_of("row").expect("row"),
+        Rect::new(0.0, 20.0 + SPACING, 400.0, 100.0 - 20.0 - SPACING),
+        "flex-строка должна занять остаток окна"
+    );
+    let content = layout.rect_of("content").expect("content");
+    assert_eq!(
+        content.h,
+        100.0 - 20.0 - SPACING,
+        "скролл-область ограничена"
+    );
+    let node = layout.node("content").expect("content");
+    assert_eq!(node.scroll_height, 200.0, "высота содержимого сохранена");
+}
+
+#[test]
 fn overflow_auto_scrolls_and_clips_children() {
     let mut list = column("list", vec![text("a", "А"), text("b", "Б"), text("c", "В")]);
     list.style = Style {

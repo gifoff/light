@@ -239,9 +239,16 @@ impl<'a> Canvas<'a> {
             (color >> 8) as u8,
             color as u8,
         ];
-        for y in y0..y1 {
-            for x in x0..x1 {
-                self.set(x, y, pixel);
+        let row_start = (y0 as usize * self.width as usize + x0 as usize) * 4;
+        let row_end = (y0 as usize * self.width as usize + x1 as usize) * 4;
+        let stride = self.width as usize * 4;
+        for y in y0 as usize..y1 as usize {
+            let offset = (y - y0 as usize) * stride;
+            for target in self.pixels[row_start + offset..row_end + offset]
+                .as_chunks_mut::<4>()
+                .0
+            {
+                target.copy_from_slice(&pixel);
             }
         }
     }
@@ -254,6 +261,24 @@ impl<'a> Canvas<'a> {
         let x1 = (rect.x + rect.w).ceil().min(cx1 as f32);
         let y1 = (rect.y + rect.h).ceil().min(cy1 as f32);
         if x0 >= x1 || y0 >= y1 {
+            return;
+        }
+        if color & 0xFF == 0xFF {
+            let pixel = [
+                (color >> 24) as u8,
+                (color >> 16) as u8,
+                (color >> 8) as u8,
+                0xFF,
+            ];
+            let row_start = (y0 as u32 * self.width + x0 as u32) as usize * 4;
+            let row_end = (y0 as u32 * self.width + x1 as u32) as usize * 4;
+            for y in y0 as u32..y1 as u32 {
+                let start = row_start + (y - y0 as u32) as usize * self.width as usize * 4;
+                let end = row_end + (y - y0 as u32) as usize * self.width as usize * 4;
+                for target in self.pixels[start..end].as_chunks_mut::<4>().0 {
+                    target.copy_from_slice(&pixel);
+                }
+            }
             return;
         }
         for y in y0 as u32..y1 as u32 {
@@ -375,13 +400,6 @@ impl<'a> Canvas<'a> {
                     | pixel[3] as u32;
                 self.blend(x, y, color, 1.0);
             }
-        }
-    }
-
-    fn set(&mut self, x: u32, y: u32, pixel: [u8; 4]) {
-        let index = (y * self.width + x) as usize * 4;
-        if let Some(target) = self.pixels.get_mut(index..index + 4) {
-            target.copy_from_slice(&pixel);
         }
     }
 

@@ -1,6 +1,6 @@
 //! Загрузка системного шрифта и измерение текста.
 
-use std::path::PathBuf;
+use std::{cell::RefCell, collections::HashMap, path::PathBuf};
 
 use ab_glyph::{Font, FontVec, PxScale, ScaleFont};
 
@@ -51,13 +51,21 @@ pub fn load_system_font() -> Result<FontVec, Error> {
 /// Метрики текста на системном шрифте.
 pub struct FontMetrics {
     font: FontVec,
+    texts: RefCell<HashMap<(u32, String), (f32, f32)>>,
+    advances: RefCell<HashMap<(u32, char), f32>>,
+    heights: RefCell<HashMap<u32, f32>>,
 }
+
+const TEXT_CACHE_LIMIT: usize = 4096;
 
 impl FontMetrics {
     /// Загружает системный шрифт.
     pub fn load() -> Result<Self, Error> {
         Ok(Self {
             font: load_system_font()?,
+            texts: RefCell::new(HashMap::new()),
+            advances: RefCell::new(HashMap::new()),
+            heights: RefCell::new(HashMap::new()),
         })
     }
 
@@ -69,7 +77,38 @@ impl FontMetrics {
 
 impl TextMetrics for FontMetrics {
     fn measure(&self, text: &str, font_size: f32) -> (f32, f32) {
-        measure(&self.font, text, font_size)
+        let size = font_size.to_bits();
+        let key = (size, text.to_owned());
+        if let Some(size) = self.texts.borrow().get(&key) {
+            return *size;
+        }
+        let scaled = self.font.as_scaled(PxScale::from(font_size));
+        let width = text
+            .chars()
+            .map(|ch| {
+                let key = (size, ch);
+                if let Some(advance) = self.advances.borrow().get(&key) {
+                    return *advance;
+                }
+                let advance = scaled.h_advance(self.font.glyph_id(ch));
+                self.advances.borrow_mut().insert(key, advance);
+                advance
+            })
+            .sum();
+        let height = if let Some(height) = self.heights.borrow().get(&size) {
+            *height
+        } else {
+            let height = scaled.ascent() - scaled.descent();
+            self.heights.borrow_mut().insert(size, height);
+            height
+        };
+        let measured = (width, height);
+        let mut texts = self.texts.borrow_mut();
+        if texts.len() >= TEXT_CACHE_LIMIT {
+            texts.clear();
+        }
+        texts.insert(key, measured);
+        measured
     }
 }
 
