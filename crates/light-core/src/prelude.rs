@@ -4,9 +4,11 @@ pub use crate::collection::Collection;
 pub use crate::component::{Component, WindowConfig};
 pub use crate::dom::Dom;
 pub use crate::reactive::{Property, Proxy, ProxyState, Watcher, watch};
+#[cfg(feature = "image-support")]
+pub use crate::vdom::ImageData;
 pub use crate::vdom::{
     Cursor, Edges, Event, KeyInfo, MouseButton, NodeKind, Overflow, Position, SelectOption,
-    VElement, VNode, VWindow,
+    VElement, VNode, VWindow, WhiteSpace,
 };
 pub use crate::{proxy, template};
 

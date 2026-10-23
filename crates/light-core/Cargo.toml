@@ -19,6 +19,7 @@ pixels = { workspace = true, optional = true }
 softbuffer = { workspace = true, optional = true }
 ab_glyph = { workspace = true, optional = true }
 png = { workspace = true, optional = true }
+rfd = { workspace = true, optional = true }
 accesskit = { version = "0.25", optional = true, features = ["serde"] }
 accesskit_winit = { version = "0.34", optional = true }
 
@@ -63,6 +64,8 @@ min-max-size = ["light-fw-macros/min-max-size"]
 # --- Изображения -------------------------------------------------------
 # `<image>` и PNG-иконки окон: декодирование PNG и вывод RGBA.
 image-support = ["light-fw-macros/image-support", "dep:png"]
+# Нативный диалог выбора файла (крейт `rfd`).
+file-dialog = ["dep:rfd"]
 
 # --- Окно --------------------------------------------------------------
 # Базовое окно на winit с программной отрисовкой.

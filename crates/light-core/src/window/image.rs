@@ -17,10 +17,10 @@ pub(crate) struct DecodedImage {
     pub pixels: Vec<u8>,
 }
 
-static CACHE: OnceLock<Mutex<HashMap<&'static str, Arc<DecodedImage>>>> = OnceLock::new();
+static CACHE: OnceLock<Mutex<HashMap<String, Arc<DecodedImage>>>> = OnceLock::new();
 
 /// Возвращает изображение из кэша, декодируя его при первом обращении.
-pub(crate) fn load(src: &'static str, data: &'static [u8]) -> Option<Arc<DecodedImage>> {
+pub(crate) fn load(src: &str, data: &[u8]) -> Option<Arc<DecodedImage>> {
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     if let Ok(cache) = cache.lock()
         && let Some(image) = cache.get(src)
@@ -29,9 +29,14 @@ pub(crate) fn load(src: &'static str, data: &'static [u8]) -> Option<Arc<Decoded
     }
     let image = Arc::new(decode_png(data).ok()?);
     if let Ok(mut cache) = cache.lock() {
-        cache.insert(src, Arc::clone(&image));
+        cache.insert(src.to_owned(), Arc::clone(&image));
     }
     Some(image)
+}
+
+/// Возвращает runtime-изображение из кэша по его уникальному ключу.
+pub(crate) fn load_runtime(image: &crate::vdom::ImageData) -> Option<Arc<DecodedImage>> {
+    load(&image.key, &image.bytes)
 }
 
 /// Декодирует PNG в RGBA8.

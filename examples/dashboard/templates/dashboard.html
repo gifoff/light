@@ -24,16 +24,15 @@
                 <button @click="show_tab('activity')" type="button" width="100%" height="40" margin-bottom="6" padding="10" font-size="14" :background="activity_bg" :border-color="activity_bg" font-color="#E2E8F0">Активность</button>
             </div>
             <div direction="horizontal" align-items="center" padding="10" background="#1F2937" border-radius="8" margin-top="12">
-                <button @click="toggle_avatar" type="button" width="40" height="40" padding="0" background="#1F2937" border-color="#1F2937">
-                    <image v-if="alternate_avatar" src="assets/logo.png" width="36" height="36" alt="Аватар" />
-                    <image v-else src="assets/avatar.png" width="36" height="36" alt="Алексей Ковалёв" />
+                <button @click="open_profile_modal" type="button" flex-shrink="0" width="40" height="40" padding="0" background="#1F2937" border-color="#1F2937">
+                    <image src="assets/avatar.png" :src="custom_avatar" width="36" height="36" alt="Аватар" />
                 </button>
                 <div direction="horizontal" align-items="center" flex-grow="1" margin-left="10">
-                    <div direction="vertical" flex-grow="1">
+                    <div direction="vertical" flex-grow="1" flex-shrink="1">
                         <div font-color="#F9FAFB" font-size="13">{{ profile_name }}</div>
                         <div font-color="#94A3B8" font-size="11">Product design</div>
                     </div>
-                    <button @click="open_profile_modal" type="button" width="24" height="24" padding="0" background="#1F2937" border-color="#1F2937" font-color="#CBD5E1" font-size="14">✎</button>
+                    <button @click="open_profile_modal" type="button" flex-shrink="0" width="24" height="24" padding="0" background="#1F2937" border-color="#1F2937" font-color="#CBD5E1" font-size="14">✎</button>
                 </div>
             </div>
         </div>
@@ -51,9 +50,9 @@
                 <button @click="show_tab('activity')" type="button" height="34" margin-left="8" padding="10" font-size="13" :background="activity_bg" :border-color="activity_bg" font-color="#FFFFFF">Активность</button>
             </div>
 
-            <div v-if="is_overview" direction="vertical" margin-top="18">
+            <div v-if="show_overview_content" direction="vertical" margin-top="18">
                 <div direction="horizontal" height="104">
-                    <div direction="vertical" flex-grow="1" margin-right="14" padding="16" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="10">
+                    <div @click="open_tasks_view" cursor="pointer" direction="vertical" flex-grow="1" margin-right="14" padding="16" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="10">
                         <div font-color="#64748B" font-size="12">Открытые задачи</div>
                         <div font-color="#2563EB" font-size="30" margin-top="4">{{ open_tasks }}</div>
                         <div font-color="#94A3B8" font-size="11" margin-top="2">{{ task_label }}</div>
@@ -103,6 +102,19 @@
                     <div direction="horizontal" align-items="center" height="28">
                         <div width="8" height="8" background="#F59E0B" border-radius="4" margin-right="10" />
                         <div font-color="#334155" font-size="13">Ольга оставила комментарий в проекте Atlas</div>
+                    </div>
+                </div>
+            </div>
+
+            <div v-else-if="tasks_open" direction="vertical" margin-top="18">
+                <div direction="horizontal" align-items="center" margin-bottom="12">
+                    <div font-color="#0F172A" font-size="20">Открытые задачи</div>
+                    <button @click="back_to_overview" type="button" position-x="right" width="104" height="36" background="#F1F5F9" border-color="#CBD5E1" font-color="#334155" font-size="13">Назад</button>
+                </div>
+                <div direction="vertical" padding="16" background="#FFFFFF" border-color="#E2E8F0" border-size="1" border-radius="10">
+                    <div v-for="task in all_tasks" direction="horizontal" align-items="center" height="34">
+                        <div width="8" height="8" background="#2563EB" border-radius="4" margin-right="12" />
+                        <div font-color="#334155" font-size="13">{{ task }}</div>
                     </div>
                 </div>
             </div>
@@ -189,19 +201,15 @@
                 <div font-color="#0F172A" font-size="19">Профиль</div>
                 <button @click="close_profile_modal" type="button" position-x="right" width="32" height="30" padding="0" font-size="17" background="#F1F5F9" border-color="#E2E8F0" font-color="#334155">X</button>
             </div>
+            <div direction="vertical" align-items="center" width="100%" margin-bottom="16">
+                <button @click="pick_avatar" type="button" width="84" height="84" padding="0" background="#F1F5F9" border-color="#E2E8F0" border-radius="42">
+                    <image src="assets/avatar.png" :src="custom_avatar" width="80" height="80" alt="Аватар профиля" />
+                </button>
+                <div font-color="#64748B" font-size="11" margin-top="8">Нажмите на аватар: PNG до 2 МБ, максимум 1024×1024</div>
+                <div v-if="has_avatar_error" font-color="#DC2626" font-size="11" margin-top="4">{{ avatar_error }}</div>
+            </div>
             <div font-color="#475569" font-size="12" margin-bottom="6">Имя</div>
             <text v-model="profile_draft" width="100%" height="38" font-size="14" placeholder="Как вас зовут?" />
-            <div direction="horizontal" align-items="center" margin-top="16">
-                <button @click="toggle_avatar" type="button" width="44" height="44" padding="0" background="#F1F5F9" border-color="#E2E8F0">
-                    <image v-if="alternate_avatar" src="assets/logo.png" width="36" height="36" alt="Текущий аватар" />
-                    <image v-else src="assets/avatar.png" width="36" height="36" alt="Текущий аватар" />
-                </button>
-                <div direction="vertical" margin-left="12" flex-grow="1">
-                    <div font-color="#0F172A" font-size="13">Аватар</div>
-                    <div font-color="#64748B" font-size="11">Нажмите, чтобы сменить</div>
-                </div>
-                <button @click="toggle_avatar" type="button" width="126" height="34" background="#F1F5F9" border-color="#CBD5E1" font-color="#334155" font-size="12">Сменить аватар</button>
-            </div>
             <div direction="horizontal" width="100%" justify-content="end" margin-top="20">
                 <button @click="close_profile_modal" type="button" width="104" height="38" margin-right="8" background="#F1F5F9" border-color="#CBD5E1" font-color="#334155">Отмена</button>
                 <button @click="save_profile" :disabled="is_profile_draft_empty" type="button" width="104" height="38" background="#2563EB" border-color="#2563EB" font-color="#FFFFFF">Сохранить</button>

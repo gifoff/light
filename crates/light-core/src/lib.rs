@@ -79,9 +79,12 @@ pub mod component;
 pub mod control;
 pub mod dom;
 pub mod error;
+#[cfg(feature = "file-dialog")]
+pub mod file_dialog;
 pub mod layout;
 pub mod prelude;
 pub mod reactive;
+mod text_wrap;
 pub mod validation;
 pub mod vdom;
 
@@ -101,9 +104,11 @@ pub use reactive::{Property, Proxy, ProxyState, Watcher, watch};
 pub use render::RendererBackend;
 #[cfg(feature = "wgpu-backend")]
 pub use render::WgpuBackend;
+#[cfg(feature = "image-support")]
+pub use vdom::ImageData;
 pub use vdom::{
     Align, Edges, Event, KeyInfo, MouseButton, NodeKind, Offset, Overflow, Position, Resize,
-    SelectOption, Size, Style, VElement, VNode, VWindow,
+    SelectOption, Size, Style, VElement, VNode, VWindow, WhiteSpace,
 };
 
 /// Открывает окно с интерфейсом компонента и запускает цикл событий.

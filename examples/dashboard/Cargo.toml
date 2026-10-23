@@ -10,6 +10,7 @@ light = { workspace = true, features = [
     "align-content",
     "cursor-theming",
     "dynamic-attrs",
+    "file-dialog",
     "image-support",
     "min-max-size",
     "offset-position",

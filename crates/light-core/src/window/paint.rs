@@ -563,14 +563,45 @@ pub fn render(
                     } else {
                         style.font_color.unwrap_or(COLOR_TEXT)
                     };
-                    canvas.draw_text(
-                        font,
-                        content,
+                    let text_rect = Rect::new(
                         rect.x + inset.left,
                         rect.y + inset.top,
-                        color,
-                        size,
+                        (rect.w - inset.horizontal()).max(0.0),
+                        (rect.h - inset.vertical()).max(0.0),
                     );
+                    canvas.clipped(text_rect, |canvas| {
+                        match style.white_space.unwrap_or_default() {
+                            crate::vdom::WhiteSpace::Normal => {
+                                let lines = crate::text_wrap::wrap_words(
+                                    content,
+                                    text_rect.w.max(1.0),
+                                    |line| measure(font, line, size).0,
+                                );
+                                let row_h = measure(font, "", size).1.max(1.0);
+                                for (index, line) in lines.iter().enumerate() {
+                                    canvas.draw_text(
+                                        font,
+                                        line,
+                                        text_rect.x,
+                                        text_rect.y + index as f32 * row_h,
+                                        color,
+                                        size,
+                                    );
+                                }
+                            }
+                            crate::vdom::WhiteSpace::Nowrap => {
+                                let line = ellipsized(font, content, size, text_rect.w);
+                                canvas.draw_text(
+                                    font,
+                                    &line,
+                                    text_rect.x,
+                                    text_rect.y,
+                                    color,
+                                    size,
+                                );
+                            }
+                        }
+                    });
                 }
                 #[cfg(feature = "image-support")]
                 crate::vdom::NodeKind::Image { src, data, .. } => {
@@ -582,6 +613,23 @@ pub fn render(
                             (rect.h - inset.vertical()).max(0.0),
                         );
                         canvas.draw_image(&image, image_rect);
+                    }
+                    if style.border_size > 0.0
+                        && let Some(color) = style.border_color
+                    {
+                        canvas.stroke_rect(color, rect, thickness);
+                    }
+                }
+                #[cfg(feature = "image-support")]
+                crate::vdom::NodeKind::RuntimeImage { image, .. } => {
+                    if let Some(decoded) = super::image::load_runtime(image) {
+                        let image_rect = Rect::new(
+                            rect.x + inset.left,
+                            rect.y + inset.top,
+                            (rect.w - inset.horizontal()).max(0.0),
+                            (rect.h - inset.vertical()).max(0.0),
+                        );
+                        canvas.draw_image(&decoded, image_rect);
                     }
                     if style.border_size > 0.0
                         && let Some(color) = style.border_color
@@ -1308,6 +1356,30 @@ pub(super) fn draw_context_menu(
     }
 }
 
+/// Обрезает строку по ширине и добавляет `…`, если она не помещается.
+fn ellipsized(font: &FontVec, text: &str, size: f32, max_width: f32) -> String {
+    if measure(font, text, size).0 <= max_width {
+        return text.to_owned();
+    }
+    let ellipsis = "\u{2026}";
+    let ellipsis_width = measure(font, ellipsis, size).0;
+    if ellipsis_width > max_width {
+        return ellipsis.to_owned();
+    }
+    let mut end = 0;
+    let mut width = 0.0;
+    for (index, ch) in text.char_indices() {
+        let advance = super::font::advance(font, ch, size);
+        if width + advance + ellipsis_width > max_width {
+            break;
+        }
+        width += advance;
+        end = index + ch.len_utf8();
+    }
+    let prefix = text[..end].trim_end();
+    format!("{prefix}{ellipsis}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1352,6 +1424,21 @@ mod tests {
             "glyph below line box: {max_y} > {}",
             (top + height).ceil()
         );
+    }
+
+    #[test]
+    fn ellipsized_text_fits_width() {
+        let Ok(metrics) = crate::window::font::FontMetrics::load() else {
+            return;
+        };
+        let font = metrics.font();
+        let size = 16.0;
+        let full = "very long label that must be truncated";
+        let max = 90.0;
+        let line = ellipsized(font, full, size, max);
+
+        assert!(line.ends_with('\u{2026}'), "добавлено многоточие");
+        assert!(measure(font, &line, size).0 <= max, "строка помещается");
     }
 
     #[test]

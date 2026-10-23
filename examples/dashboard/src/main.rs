@@ -1,4 +1,25 @@
+use std::fs;
+use std::path::Path;
+
+use light::ImageData;
 use light::prelude::*;
+
+const MAX_AVATAR_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_AVATAR_DIMENSION: u32 = 1024;
+const DEFAULT_TASKS: [&str; 12] = [
+    "Редизайн настроек",
+    "Экспорт отчётов",
+    "Обновление дизайн-системы",
+    "Подготовка релиза",
+    "Аудит доступности",
+    "Мобильная навигация",
+    "Интеграция платежей",
+    "Оптимизация лендинга",
+    "Миграция базы данных",
+    "Настройка аналитики",
+    "Документация API",
+    "Тестирование сценариев",
+];
 
 #[template("templates/dashboard.html")]
 #[proxy]
@@ -11,14 +32,17 @@ struct Dashboard {
     done_tasks: i64,
     #[default(3)]
     active_projects: i64,
-    #[default("Алексей Ковалёв".to_owned())]
+    #[default("Алексей Ковалёв — Product Design Lead".to_owned())]
     profile_name: String,
-    #[default(false)]
-    alternate_avatar: bool,
+    custom_avatar: Option<ImageData>,
+    #[default(String::new())]
+    avatar_error: String,
     #[default(false)]
     profile_modal_open: bool,
     #[default(String::new())]
     profile_draft: String,
+    #[default(false)]
+    tasks_open: bool,
     #[default(false)]
     modal_open: bool,
     #[default(String::new())]
@@ -31,10 +55,33 @@ struct Dashboard {
 impl Dashboard {
     fn show_tab(&self, tab: &str) {
         self.set_active_tab(tab.to_owned());
+        self.set_tasks_open(false);
+    }
+
+    fn open_tasks_view(&self) {
+        self.set_tasks_open(true);
+    }
+
+    fn back_to_overview(&self) {
+        self.set_tasks_open(false);
+        self.set_active_tab("overview".to_owned());
+    }
+
+    fn all_tasks(&self) -> Vec<String> {
+        let mut tasks: Vec<String> = DEFAULT_TASKS
+            .iter()
+            .map(|task| (*task).to_owned())
+            .collect();
+        tasks.extend(self.tasks());
+        tasks
     }
 
     fn is_overview(&self) -> bool {
         self.active_tab() == "overview"
+    }
+
+    fn show_overview_content(&self) -> bool {
+        self.is_overview() && !self.tasks_open()
     }
 
     fn is_projects(&self) -> bool {
@@ -89,12 +136,22 @@ impl Dashboard {
         self.progress_width(88)
     }
 
-    fn toggle_avatar(&self) {
-        self.set_alternate_avatar(!self.alternate_avatar());
+    fn pick_avatar(&self) {
+        let Some(path) = light::file_dialog::pick_image_file() else {
+            return;
+        };
+        match load_avatar(&path) {
+            Ok(image) => {
+                self.set_custom_avatar(Some(image));
+                self.set_avatar_error(String::new());
+            }
+            Err(error) => self.set_avatar_error(error),
+        }
     }
 
     fn open_profile_modal(&self) {
         self.set_profile_draft(self.profile_name());
+        self.set_avatar_error(String::new());
         self.set_profile_modal_open(true);
     }
 
@@ -105,6 +162,10 @@ impl Dashboard {
 
     fn is_profile_draft_empty(&self) -> bool {
         self.profile_draft().trim().is_empty()
+    }
+
+    fn has_avatar_error(&self) -> bool {
+        !self.avatar_error().is_empty()
     }
 
     fn save_profile(&self) {
@@ -186,6 +247,30 @@ impl Dashboard {
     }
 }
 
+fn load_avatar(path: &Path) -> Result<ImageData, String> {
+    let metadata =
+        fs::metadata(path).map_err(|error| format!("Не удалось открыть файл: {error}"))?;
+    if metadata.len() > MAX_AVATAR_BYTES {
+        return Err(String::from("Файл больше 2 МБ"));
+    }
+    let bytes = fs::read(path).map_err(|error| format!("Не удалось прочитать файл: {error}"))?;
+    ImageData::from_png_limited(bytes, MAX_AVATAR_BYTES as usize, MAX_AVATAR_DIMENSION)
+        .map_err(|error| format!("Не удалось загрузить PNG: {error}"))
+}
+
 fn main() -> light::Result<()> {
     light::run(Dashboard::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundled_avatar_passes_validation() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/avatar.png");
+        let image = load_avatar(&path).expect("встроенный avatar.png");
+        assert!(image.width() > 0);
+        assert!(image.height() > 0);
+    }
 }

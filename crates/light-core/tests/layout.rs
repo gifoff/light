@@ -6,7 +6,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use light::layout::{Layout, Point, Rect, SPACING, TextMetrics, damage_regions, snapshot_rects};
 use light::vdom::{
-    Align, Edges, NodeKind, Offset, Overflow, Position, Size, Style, VElement, diff,
+    Align, Edges, NodeKind, Offset, Overflow, Position, Size, Style, VElement, WhiteSpace, diff,
 };
 
 /// Метрики заглушка: знак шириной 8px, высота строки 16px.
@@ -302,6 +302,45 @@ fn auto_container_hugs_content_in_horizontal_flow() {
         layout.rect_of("inner").expect("рамка"),
         Rect::new(0.0, 0.0, 16.0, 16.0 + SPACING + 16.0),
         "в горизонтальном потоке ширина контейнера — по содержимому"
+    );
+}
+
+#[test]
+fn text_wraps_at_word_boundaries_by_default() {
+    let mut label = text("t", "one two three");
+    label.style = Style {
+        width: Size::Px(70.0),
+        ..Style::default()
+    };
+    let root = column("", vec![label]);
+    let layout = build(&root);
+
+    let rect = layout.rect_of("t").expect("текст");
+    assert_eq!(rect.w, 70.0, "ширина ограничена явно");
+    assert_eq!(rect.h, 16.0 * 2.0, "две строки по словам");
+}
+
+#[test]
+fn nowrap_is_inherited_and_keeps_single_line() {
+    let mut label = text("t", "one two three");
+    label.style = Style {
+        width: Size::Px(70.0),
+        ..Style::default()
+    };
+    let mut frame = column("frame", vec![label]);
+    frame.style = Style {
+        white_space: Some(WhiteSpace::Nowrap),
+        ..Style::default()
+    };
+    let root = column("", vec![frame]);
+    let layout = build(&root);
+
+    let rect = layout.rect_of("t").expect("текст");
+    assert_eq!(rect.h, 16.0, "nowrap не переносит текст");
+    assert_eq!(
+        layout.node("t").expect("текст").style.white_space,
+        Some(WhiteSpace::Nowrap),
+        "режим унаследован"
     );
 }
 

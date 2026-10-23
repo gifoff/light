@@ -7,7 +7,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::env;
 
 use crate::vdom::{
-    Align, Edges, NodeKind, Offset, Overflow, Position, Resize, Size, Style, VElement,
+    Align, Edges, NodeKind, Offset, Overflow, Position, Resize, Size, Style, VElement, WhiteSpace,
 };
 
 /// Шрифт интерфейса по умолчанию (px).
@@ -281,6 +281,8 @@ struct Inherited {
     size: f32,
     /// Разрешённый цвет шрифта.
     color: Option<u32>,
+    /// Разрешённый режим переноса текста.
+    white_space: WhiteSpace,
 }
 
 /// Разложенное дерево: плоский список узлов в порядке отрисовки
@@ -320,6 +322,7 @@ impl Layout {
             Inherited {
                 size: FONT_SIZE,
                 color: None,
+                white_space: WhiteSpace::Normal,
             },
         );
         // Корень занимает всё окно независимо от содержимого.
@@ -565,6 +568,7 @@ impl Layout {
         let flow_y = origin.y + margin.top;
         let font_size = style.font_size.unwrap_or(inherited.size);
         let font_color = style.font_color.or(inherited.color);
+        let white_space = style.white_space.unwrap_or(inherited.white_space);
         // Проценты размера отсчитываются от контентной области родителя.
         let avail_w = flow.content.width;
         let avail_h = flow.content.height;
@@ -632,7 +636,38 @@ impl Layout {
 
         let (w, h) = match &vnode.kind {
             NodeKind::Text { content } => {
-                let (content_w, content_h) = metrics.measure(content, font_size);
+                let explicit_w = flow.forced_w.or_else(|| {
+                    (!matches!(style.width, Size::Auto)).then(|| style.resolve_width(0.0, avail_w))
+                });
+                let limit = if let Some(width) = explicit_w {
+                    width
+                } else if let Some(max) = style.max_width {
+                    max.resolve(0.0, avail_w)
+                } else if flow.width_known {
+                    avail_w
+                } else {
+                    f32::INFINITY
+                };
+                let limit = if let Some(max) = style.max_width {
+                    limit.min(max.resolve(0.0, avail_w))
+                } else {
+                    limit
+                };
+                let limit = (limit - inset.horizontal()).max(1.0);
+                let (content_w, content_h) = match white_space {
+                    WhiteSpace::Normal => {
+                        let lines = crate::text_wrap::wrap_words(content, limit, |line| {
+                            metrics.measure(line, font_size).0
+                        });
+                        let width = lines
+                            .iter()
+                            .map(|line| metrics.measure(line, font_size).0)
+                            .fold(0.0, f32::max);
+                        let row_h = metrics.measure("", font_size).1.max(1.0);
+                        (width, lines.len() as f32 * row_h)
+                    }
+                    WhiteSpace::Nowrap => metrics.measure(content, font_size),
+                };
                 let w = flow.forced_w.unwrap_or_else(|| {
                     style.resolve_width(content_w + inset.horizontal(), avail_w)
                 });
@@ -646,6 +681,46 @@ impl Layout {
             NodeKind::Image { width, height, .. } => {
                 let intrinsic_w = *width as f32;
                 let intrinsic_h = *height as f32;
+                let explicit_w = flow.forced_w.or_else(|| {
+                    (!matches!(style.width, Size::Auto))
+                        .then(|| style.resolve_width(intrinsic_w, avail_w))
+                });
+                let explicit_h = flow.forced_h.or_else(|| {
+                    (!matches!(style.height, Size::Auto))
+                        .then(|| style.resolve_height(intrinsic_h, avail_h))
+                });
+                let (w, h) = match (explicit_w, explicit_h) {
+                    (Some(w), Some(h)) => (w, h),
+                    (Some(w), None) => {
+                        let inner_w = (w - inset.horizontal()).max(0.0);
+                        let inner_h = if intrinsic_w > 0.0 {
+                            inner_w * intrinsic_h / intrinsic_w
+                        } else {
+                            0.0
+                        };
+                        (w, inner_h + inset.vertical())
+                    }
+                    (None, Some(h)) => {
+                        let inner_h = (h - inset.vertical()).max(0.0);
+                        let inner_w = if intrinsic_h > 0.0 {
+                            inner_h * intrinsic_w / intrinsic_h
+                        } else {
+                            0.0
+                        };
+                        (inner_w + inset.horizontal(), h)
+                    }
+                    (None, None) => (
+                        intrinsic_w + inset.horizontal(),
+                        intrinsic_h + inset.vertical(),
+                    ),
+                };
+                self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
+                (w, h)
+            }
+            #[cfg(feature = "image-support")]
+            NodeKind::RuntimeImage { image, .. } => {
+                let intrinsic_w = image.width() as f32;
+                let intrinsic_h = image.height() as f32;
                 let explicit_w = flow.forced_w.or_else(|| {
                     (!matches!(style.width, Size::Auto))
                         .then(|| style.resolve_width(intrinsic_w, avail_w))
@@ -724,6 +799,7 @@ impl Layout {
                         Inherited {
                             size: font_size,
                             color: font_color,
+                            white_space,
                         },
                     );
                     cursor_x += child_w + SPACING;
@@ -852,6 +928,7 @@ impl Layout {
                         Inherited {
                             size: font_size,
                             color: font_color,
+                            white_space,
                         },
                     );
                     child_sizes.push((child_w, child_h));
@@ -878,7 +955,25 @@ impl Layout {
                     child_content.height
                 };
                 let used_main = if horizontal { content_w } else { content_h };
-                let free = main_avail - used_main;
+                let main_known = if horizontal {
+                    width_known
+                } else {
+                    height_known
+                };
+                let scrolls_main = if horizontal {
+                    style.overflow_x.scrollable()
+                } else {
+                    style.overflow_y.scrollable()
+                };
+                let raw_free = main_avail - used_main;
+                // В контейнере с размером по содержимому нет переполнения,
+                // а содержимое scroll-контейнера не сжимаем — иначе пропадёт
+                // прокрутка.
+                let free = if main_known && (raw_free >= 0.0 || !scrolls_main) {
+                    raw_free
+                } else {
+                    0.0
+                };
                 let total_flex: f32 = vnode
                     .children
                     .iter()
@@ -943,6 +1038,7 @@ impl Layout {
                             Inherited {
                                 size: font_size,
                                 color: font_color,
+                                white_space,
                             },
                         );
                         if horizontal {
@@ -982,7 +1078,15 @@ impl Layout {
                 // как она стала известна (аналог `align-items: stretch`).
                 if horizontal && !height_known && style.align_items == Align::Start {
                     (content_w, content_h) = self.stretch_row_children(
-                        vnode, index, content, metrics, font_size, font_color,
+                        vnode,
+                        index,
+                        content,
+                        metrics,
+                        Inherited {
+                            size: font_size,
+                            color: font_color,
+                            white_space,
+                        },
                     );
                 }
                 // Абсолютные дети не участвуют в потоке и раскладываются после
@@ -1007,6 +1111,7 @@ impl Layout {
                         Inherited {
                             size: font_size,
                             color: font_color,
+                            white_space,
                         },
                     );
                 }
@@ -1043,6 +1148,7 @@ impl Layout {
         // Записываем разрешённый размер/цвет шрифта, чтобы отрисовщик и
         // наследование стилей (голый текст в контейнерах) работали корректно.
         self.nodes[start].style.font_size = Some(font_size);
+        self.nodes[start].style.white_space = Some(white_space);
         if let Some(color) = font_color
             && self.nodes[start].style.font_color.is_none()
         {
@@ -1059,9 +1165,13 @@ impl Layout {
         index: usize,
         content: ContentBox,
         metrics: &dyn TextMetrics,
-        font_size: f32,
-        font_color: Option<u32>,
+        inherited: Inherited,
     ) -> (f32, f32) {
+        let Inherited {
+            size: font_size,
+            color: font_color,
+            white_space,
+        } = inherited;
         let needed = self.nodes[index].children.iter().any(|&child| {
             let node = &self.nodes[child];
             let explicit_position = vnode
@@ -1117,6 +1227,7 @@ impl Layout {
                 Inherited {
                     size: font_size,
                     color: font_color,
+                    white_space,
                 },
             );
             cursor_x += child_w + SPACING;

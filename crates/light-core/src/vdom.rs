@@ -10,7 +10,10 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use crate::collection::Collection;
 use crate::component::WindowConfig;
 use crate::control::WindowCommand;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{
+    Arc, Mutex, OnceLock,
+    atomic::{AtomicU64, Ordering},
+};
 
 /// Интернирует динамический ключ узла и возвращает стабильную ссылку.
 ///
@@ -201,6 +204,20 @@ impl Overflow {
     pub const fn scrollable(self) -> bool {
         matches!(self, Overflow::Auto | Overflow::Scroll)
     }
+}
+
+/// Режим переноса текста (`white-space`).
+///
+/// `Normal` переносит текст по словам, если он не помещается в доступную
+/// ширину. `NoWrap` оставляет текст одной строкой; при нехватке места он
+/// обрезается многоточием.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WhiteSpace {
+    /// Переносить текст по словам (значение по умолчанию).
+    #[default]
+    Normal,
+    /// Не переносить текст; переполнение обрезается с `…`.
+    Nowrap,
 }
 
 /// Участие узла в нормальном потоке (`position`).
@@ -506,6 +523,24 @@ pub fn parse_overflow(value: &str) -> Overflow {
     })
 }
 
+fn white_space_impl(value: &str) -> Option<WhiteSpace> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "normal" | "wrap" => Some(WhiteSpace::Normal),
+        "nowrap" | "no-wrap" => Some(WhiteSpace::Nowrap),
+        _ => None,
+    }
+}
+
+/// Разбирает `white-space` (`normal`/`wrap` или `nowrap`). Некорректное
+/// значение в debug-сборке вызывает `debug_assert!`, а в release возвращает
+/// [`WhiteSpace::Normal`].
+pub fn parse_white_space(value: &str) -> WhiteSpace {
+    white_space_impl(value).unwrap_or_else(|| {
+        debug_assert!(false, "invalid white-space value: \"{value}\"");
+        WhiteSpace::Normal
+    })
+}
+
 fn position_impl(value: &str) -> Option<Position> {
     match value.trim().to_ascii_lowercase().as_str() {
         "flow" | "static" | "relative" => Some(Position::Flow),
@@ -677,7 +712,7 @@ pub struct Style {
     /// `0` — не растягиваться, `1` — забрать всё свободное место.
     pub flex_grow: f32,
     /// Доля переполнения по main-оси, которую узел отдаёт при сжатии
-    /// (`flex-shrink`/`flex`). `0` — не сжиматься.
+    /// (`flex-shrink`/`flex`). По умолчанию `1`, как в CSS; `0` — не сжиматься.
     pub flex_shrink: f32,
     /// Участие в нормальном потоке (`position`).
     pub position: Position,
@@ -685,6 +720,9 @@ pub struct Style {
     pub overflow_x: Overflow,
     /// Переполнение по вертикали (`overflow-y`).
     pub overflow_y: Overflow,
+    /// Режим переноса текста (`white-space`). `None` наследует значение
+    /// родителя; у корня действует [`WhiteSpace::Normal`].
+    pub white_space: Option<WhiteSpace>,
     /// Выравнивание по горизонтали (`position-x`).
     pub align_x: Align,
     /// Выравнивание по вертикали (`position-y`).
@@ -738,10 +776,11 @@ impl Default for Style {
             max_width: None,
             max_height: None,
             flex_grow: 0.0,
-            flex_shrink: 0.0,
+            flex_shrink: 1.0,
             position: Position::Flow,
             overflow_x: Overflow::Visible,
             overflow_y: Overflow::Visible,
+            white_space: None,
             align_x: Align::Start,
             align_y: Align::Start,
             offset_x: Offset::Px(0.0),
@@ -805,6 +844,103 @@ pub struct SelectOption {
     pub value: String,
 }
 
+#[cfg(feature = "image-support")]
+static NEXT_IMAGE_ID: AtomicU64 = AtomicU64::new(1);
+
+/// Изображение, загруженное во время выполнения (например, из файла).
+///
+/// Хранит закодированный PNG и его размеры. Внутренние данные используют
+/// [`Arc`], поэтому клонирование значения дешёвое — это важно для состояния
+/// компонентов и повторных отрисовок.
+#[cfg(feature = "image-support")]
+#[derive(Clone, PartialEq)]
+pub struct ImageData {
+    pub(crate) key: Arc<str>,
+    pub(crate) bytes: Arc<[u8]>,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+}
+
+#[cfg(feature = "image-support")]
+impl ImageData {
+    /// Загружает PNG с разумными ограничениями: не более 8 МиБ и 4096 px
+    /// по каждой стороне.
+    pub fn from_png(bytes: Vec<u8>) -> crate::Result<Self> {
+        Self::from_png_limited(bytes, 8 * 1024 * 1024, 4096)
+    }
+
+    /// Загружает PNG с явными ограничениями по размеру файла и стороне.
+    ///
+    /// Файл проверяется по сигнатуре и IHDR до выделения буфера декодера,
+    /// затем полностью декодируется для проверки целостности.
+    pub fn from_png_limited(
+        bytes: Vec<u8>,
+        max_bytes: usize,
+        max_dimension: u32,
+    ) -> crate::Result<Self> {
+        if bytes.len() > max_bytes {
+            return Err(crate::Error::Image(format!(
+                "файл слишком большой: {} байт (максимум {max_bytes})",
+                bytes.len()
+            )));
+        }
+        const SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+        if bytes.len() < 24 || &bytes[..8] != SIGNATURE || &bytes[12..16] != b"IHDR" {
+            return Err(crate::Error::Image(
+                "файл не является PNG с корректным заголовком IHDR".to_owned(),
+            ));
+        }
+        let width = u32::from_be_bytes(bytes[16..20].try_into().unwrap_or_default());
+        let height = u32::from_be_bytes(bytes[20..24].try_into().unwrap_or_default());
+        if width == 0 || height == 0 || width > max_dimension || height > max_dimension {
+            return Err(crate::Error::Image(format!(
+                "недопустимое разрешение {width}x{height} (максимум {max_dimension} px)"
+            )));
+        }
+
+        let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes.as_slice()));
+        decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+        let mut reader = decoder
+            .read_info()
+            .map_err(|error| crate::Error::Image(error.to_string()))?;
+        let mut buffer = vec![0; reader.output_buffer_size()];
+        reader
+            .next_frame(&mut buffer)
+            .map_err(|error| crate::Error::Image(error.to_string()))?;
+
+        let id = NEXT_IMAGE_ID.fetch_add(1, Ordering::Relaxed);
+        Ok(Self {
+            key: Arc::from(format!("runtime-image-{id}")),
+            bytes: Arc::from(bytes),
+            width,
+            height,
+        })
+    }
+
+    /// Ширина изображения в пикселях.
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Высота изображения в пикселях.
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+
+#[cfg(feature = "image-support")]
+impl std::fmt::Debug for ImageData {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ImageData")
+            .field("key", &self.key)
+            .field("bytes", &self.bytes.len())
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .finish()
+    }
+}
+
 /// Тип элемента интерфейса.
 ///
 /// Тип узла статичен: он задаётся позицией в шаблоне и не меняется между
@@ -837,6 +973,14 @@ pub enum NodeKind {
         width: u32,
         /// Высота исходного изображения в пикселях.
         height: u32,
+        /// Альтернативный текст (`alt`) для дерева доступности.
+        alt: String,
+    },
+    /// Изображение, загруженное во время выполнения.
+    #[cfg(feature = "image-support")]
+    RuntimeImage {
+        /// Данные изображения и уникальный ключ кэша.
+        image: ImageData,
         /// Альтернативный текст (`alt`) для дерева доступности.
         alt: String,
     },
@@ -1593,6 +1737,10 @@ fn kind_compatible(a: &NodeKind, b: &NodeKind) -> bool {
         | (NodeKind::TextField { .. }, NodeKind::TextField { .. }) => true,
         #[cfg(feature = "image-support")]
         (NodeKind::Image { src: src_a, .. }, NodeKind::Image { src: src_b, .. }) => src_a == src_b,
+        #[cfg(feature = "image-support")]
+        (NodeKind::RuntimeImage { image: a, .. }, NodeKind::RuntimeImage { image: b, .. }) => {
+            a.key == b.key
+        }
         #[cfg(feature = "elements-checkbox")]
         (NodeKind::Checkbox { .. }, NodeKind::Checkbox { .. }) => true,
         #[cfg(feature = "elements-radio")]
@@ -1628,6 +1776,21 @@ fn diff_kind(old: &NodeKind, new: &NodeKind, key: &'static str, patch: &mut Patc
             },
         ) => {
             if data_a != data_b || alt_a != alt_b {
+                patch.changed.insert(key);
+            }
+        }
+        #[cfg(feature = "image-support")]
+        (
+            NodeKind::RuntimeImage {
+                image: image_a,
+                alt: alt_a,
+            },
+            NodeKind::RuntimeImage {
+                image: image_b,
+                alt: alt_b,
+            },
+        ) => {
+            if image_a != image_b || alt_a != alt_b {
                 patch.changed.insert(key);
             }
         }

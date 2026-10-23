@@ -277,6 +277,8 @@ fn intrinsic_name(element: &VElement) -> Option<String> {
         NodeKind::Text { content } if !content.is_empty() => Some(content.clone()),
         #[cfg(feature = "image-support")]
         NodeKind::Image { alt, .. } if !alt.is_empty() => Some(alt.clone()),
+        #[cfg(feature = "image-support")]
+        NodeKind::RuntimeImage { alt, .. } if !alt.is_empty() => Some(alt.clone()),
         NodeKind::Window => element.titlebar_text(),
         NodeKind::TextField { placeholder, .. } if !placeholder.is_empty() => {
             Some(placeholder.clone())

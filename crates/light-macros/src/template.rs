@@ -978,6 +978,7 @@ impl Generator {
             if name.starts_with('@')
                 || name.starts_with("v-")
                 || name == ":validator"
+                || name == ":src"
                 || name == "required-indicator"
             {
                 continue;
@@ -1061,14 +1062,10 @@ impl Generator {
         }})
     }
 
-    /// Строит `<image>`: встраивает PNG в бинарник и берёт размеры из IHDR.
+    /// Строит `<image>`: статический `src` встраивается в бинарник, а
+    /// динамический `:src` (значение `Option<ImageData>`) заменяет его во время
+    /// выполнения.
     fn gen_image(&mut self, element: &Element, key: &KeyExpr) -> syn::Result<TokenStream> {
-        if attr_value(&element.attrs, ":src").is_some() {
-            return Err(syn::Error::new(
-                Span::call_site(),
-                "динамический :src у <image> не поддерживается; укажите статический src=\"...\"",
-            ));
-        }
         if !element.children.is_empty() {
             return Err(syn::Error::new(
                 Span::call_site(),
@@ -1084,6 +1081,7 @@ impl Generator {
                     "у <image> обязателен атрибут src=\"путь/к/файлу.png\"",
                 )
             })?;
+        let dynamic_src = attr_value(&element.attrs, ":src");
         let path = asset_path(src)?;
         let (width, height) = png_dimensions(&path)?;
         let path_literal = path_literal(&path);
@@ -1092,7 +1090,7 @@ impl Generator {
         let style = style_token(self, element, None, self.visible_token(element)?)?;
         let key = key.token();
         self.push_events(element, &key)?;
-        Ok(quote! {{
+        let fallback = quote! {
             ::light::vdom::VElement::container(
                 #key,
                 ::light::vdom::NodeKind::Image {
@@ -1104,8 +1102,31 @@ impl Generator {
                 },
                 ::std::vec::Vec::new(),
             )
-            .with_style(#style)
-            #meta
+        };
+        let node = if let Some(dynamic) = dynamic_src {
+            let expr = self.path_expr(dynamic)?;
+            quote! {
+                match #expr {
+                    ::std::option::Option::Some(__image) => {
+                        ::light::vdom::VElement::container(
+                            #key,
+                            ::light::vdom::NodeKind::RuntimeImage {
+                                image: __image,
+                                alt: ::std::string::String::from(#alt),
+                            },
+                            ::std::vec::Vec::new(),
+                        )
+                    }
+                    ::std::option::Option::None => #fallback,
+                }
+            }
+        } else {
+            fallback
+        };
+        Ok(quote! {{
+            (#node)
+                .with_style(#style)
+                #meta
         }})
     }
 
@@ -1558,7 +1579,8 @@ fn parse_size_attr(element: &Element, name: &str) -> syn::Result<Option<TokenStr
 /// `border-size` (px), `background`, `font-color`, `border-color` (цвет),
 /// `flex-grow`/`flex-shrink` или сокращение `flex` (`1`, `1 0`),
 /// `position` (`flow`/`absolute`), `overflow`/`overflow-x`/`overflow-y`
-/// (`visible`/`hidden`/`auto`/`scroll`), `visible` (видимость).
+/// (`visible`/`hidden`/`auto`/`scroll`), `white-space` (`normal`/`nowrap`),
+/// `visible` (видимость).
 fn style_token(
     generator: &Generator,
     element: &Element,
@@ -1585,6 +1607,7 @@ fn style_token(
     let flex_shrink = flex_attr(generator, element, "flex-shrink", 1)?;
     let position = position_attr(generator, element)?;
     let (overflow_x, overflow_y) = overflow_attr(generator, element)?;
+    let white_space = white_space_attr(generator, element)?;
     let align_x = align_attr(
         generator,
         element,
@@ -1651,6 +1674,7 @@ fn style_token(
         position: #position,
         overflow_x: #overflow_x,
         overflow_y: #overflow_y,
+        white_space: #white_space,
         align_x: #align_x,
         align_y: #align_y,
         offset_x: #offset_x,
@@ -1689,7 +1713,11 @@ fn flex_attr(
         return Ok(quote!(#number));
     }
     let Some(shorthand) = attr_value(&element.attrs, "flex") else {
-        return Ok(quote!(0.0));
+        return Ok(if shorthand_part == 0 {
+            quote!(0.0)
+        } else {
+            quote!(1.0)
+        });
     };
     let value = shorthand
         .split_whitespace()
@@ -1895,6 +1923,21 @@ fn overflow_attr(
         })
     };
     Ok((axis("overflow-x")?, axis("overflow-y")?))
+}
+
+/// Перенос текста (`white-space`): `normal`/`wrap` или `nowrap`.
+fn white_space_attr(generator: &Generator, element: &Element) -> syn::Result<TokenStream> {
+    if let Some(value) = dynamic_value(generator, element, "white-space")? {
+        return Ok(quote!(
+            ::std::option::Option::Some(::light::vdom::parse_white_space(&#value))
+        ));
+    }
+    Ok(match attr_value(&element.attrs, "white-space") {
+        Some(value) => quote!(
+            ::std::option::Option::Some(::light::vdom::parse_white_space(#value))
+        ),
+        None => quote!(::std::option::Option::None),
+    })
 }
 
 /// Отступы (`padding`/`margin`): динамический `:name="путь"` задаёт базовое

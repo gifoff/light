@@ -160,6 +160,7 @@ light = { path = "crates/light" } # default = ["elements-basic", "window", "soft
 | `required-fields` | `required` / `required-indicator` и стандартная проверка  |
 | `validation`      | пользовательская валидация (`:validator` / `@validate`)   |
 | `min-max-size`    | `min-width` / `max-width` / `min-height` / `max-height`   |
+| `file-dialog`     | нативный выбор PNG (`light::file_dialog::pick_image_file`) |
 
 ### Изображения
 
@@ -512,7 +513,7 @@ $ light add light-fw-datepicker --features calendar,timezone --yes
 Для `<image>` включите фичу `image-support`:
 
 ```toml
-light = { version = "0.9.1", features = ["image-support"] }
+light = { version = "0.10.0", features = ["image-support"] }
 ```
 
 ```html
@@ -522,8 +523,38 @@ light = { version = "0.9.1", features = ["image-support"] }
 `src` — путь к PNG относительно каталога `Cargo.toml` проекта. Файл читается
 на этапе компиляции и встраивается в бинарник через `include_bytes!`; размеры
 берутся из заголовка PNG, поэтому во время работы декодирование нужно только
-для пикселей. Поддерживается статический `src`; динамический `:src` и дочерние
-элементы у `<image>` запрещены.
+для пикселей.
+
+Для изображения, выбранного во время работы, используйте динамический `:src` с
+`Option<ImageData>` и статический `src` как резерв:
+
+```html
+<image src="assets/avatar.png" :src="custom_avatar" width="80" height="80" />
+```
+
+```rust
+use std::path::Path;
+use light::ImageData;
+
+fn load_avatar(path: &Path) -> light::Result<ImageData> {
+    let bytes = std::fs::read(path)?;
+    ImageData::from_png_limited(bytes, 2 * 1024 * 1024, 1024)
+}
+```
+
+`None` в `:src` показывает статический `src`, `Some(ImageData)` — загруженные
+пиксели. `from_png_limited` ограничивает размер файла и сторону PNG. Нативный
+диалог доступен с фичей `file-dialog`:
+
+```toml
+light = { version = "0.10.0", features = ["image-support", "file-dialog"] }
+```
+
+```rust
+if let Some(path) = light::file_dialog::pick_image_file() {
+    // прочитать файл и вызвать ImageData::from_png_limited
+}
+```
 
 Если задана только одна сторона (`width` или `height`), вторая вычисляется с
 сохранением пропорций. Без размеров используется натуральный размер PNG.
@@ -554,6 +585,14 @@ light = { version = "0.9.1", features = ["image-support"] }
 
 Если узел не задаёт `font-size`/`font-color` явно, он берёт значение родителя, а при отсутствии — размер по умолчанию (см. `<h1>`/`<h5>` выше). Такая модель похожа на CSS-наследование, но реализована в самом движке: значение пробрасывается при построении виртуального дерева.
 
+Текст по умолчанию переносится по словам и ограничивается шириной контейнера.
+Атрибут `white-space="nowrap"` (наследуется) оставляет текст одной строкой и
+обрезает его через `…`, если он не помещается:
+
+```html
+<div width="120" white-space="nowrap">Очень длинная строка</div>
+```
+
 ## Стили элементов
 
 Каждый элемент поддерживает атрибуты стиля. Размеры задаются числом (логические пиксели) или в процентах от контентной области родителя:
@@ -571,8 +610,9 @@ light = { version = "0.9.1", features = ["image-support"] }
 | `justify-content`   | `start` / `center` / `end` | Выравнивание **содержимого** по main-оси контейнера (`Column` — вертикаль, `Row` — горизонталь). По умолчанию `start`. |
 | `align-items`       | `start` / `center` / `end` | Выравнивание **содержимого** по cross-оси контейнера (`Column` — горизонталь, `Row` — вертикаль). По умолчанию `start`. |
 | `flex-grow`         | число                     | Доля свободного места по main-оси контейнера. `0` — не растягиваться (по умолчанию). |
-| `flex-shrink`       | число                     | Доля переполнения по main-оси, которую элемент отдаёт при сжатии. `0` — не сжиматься (по умолчанию). |
+| `flex-shrink`       | число                     | Доля переполнения по main-оси, которую элемент отдаёт при сжатии. `1` — сжиматься (по умолчанию). |
 | `flex`              | `1`, `1 0`                | Сокращение: `flex-grow` и `flex-shrink` (как в CSS). |
+| `white-space`       | `normal` / `nowrap`       | Перенос текста по словам (по умолчанию) или одна строка с `…`. Наследуется. |
 | `position`          | `flow` / `absolute`       | `absolute` выводит элемент из потока; координаты и выравнивание считаются от content box родителя. |
 | `overflow` / `overflow-x` / `overflow-y` | `visible` / `hidden` / `auto` / `scroll` | Обрезка и прокрутка содержимого. `auto` показывает полосу прокрутки только при переполнении. |
 | `padding`           | число (px)                | Внутренний отступ со всех сторон.         |

@@ -4,6 +4,7 @@
 
 extern crate light_fw_core as light;
 
+use light::ImageData;
 use light::prelude::*;
 use light::vdom::{NodeKind, VElement, diff};
 
@@ -82,4 +83,24 @@ fn image_diff_replaces_when_src_changes() {
     let old = image_node("a.png", b"one", "A");
     let new = image_node("b.png", b"one", "A");
     assert!(!diff(&old, &new).is_empty());
+}
+
+fn checker_bytes() -> Vec<u8> {
+    std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/templates/checker.png"
+    ))
+    .expect("checker.png")
+}
+
+#[test]
+fn runtime_image_data_reads_dimensions() {
+    let image = ImageData::from_png(checker_bytes()).expect("PNG загружен");
+    assert_eq!((image.width(), image.height()), (4, 2));
+}
+
+#[test]
+fn runtime_image_rejects_oversized_file_or_dimension() {
+    assert!(ImageData::from_png_limited(checker_bytes(), 1, 1024).is_err());
+    assert!(ImageData::from_png_limited(checker_bytes(), 1024 * 1024, 1).is_err());
 }

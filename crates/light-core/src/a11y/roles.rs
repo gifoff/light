@@ -106,6 +106,8 @@ pub fn default_role(kind: &NodeKind) -> Role {
         NodeKind::TextField { .. } => Role::TextInput,
         #[cfg(feature = "image-support")]
         NodeKind::Image { .. } => Role::Image,
+        #[cfg(feature = "image-support")]
+        NodeKind::RuntimeImage { .. } => Role::Image,
         #[cfg(feature = "elements-checkbox")]
         NodeKind::Checkbox { .. } => Role::CheckBox,
         #[cfg(feature = "elements-radio")]
