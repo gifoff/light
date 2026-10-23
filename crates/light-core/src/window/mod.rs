@@ -247,6 +247,10 @@ impl WindowState {
         };
         let mut layout = Layout::build(&tree, (self.width as f32, self.height as f32), &metrics);
         layout.apply_scroll_offsets(&self.scroll);
+        // Контейнеры, у которых больше нет прокрутки, сбрасываем: иначе при
+        // следующем появлении большого контента он откроется уже прокрученным
+        // в пустоту.
+        prune_scroll_offsets(&mut self.scroll, &layout);
         let tree = Arc::new(tree);
         let full = self.full_redraw;
         let mut damage = if full {
@@ -255,7 +259,13 @@ impl WindowState {
             match (self.tree.as_ref(), self.layout.as_ref()) {
                 (Some(old_tree), Some(old_layout)) => {
                     let patch = diff(old_tree, &tree);
-                    damage_regions(&snapshot_rects(old_layout), &layout, &patch.changed)
+                    let mut damaged =
+                        damage_regions(&snapshot_rects(old_layout), &layout, &patch.changed);
+                    // Старые/новые полосы прокрутки: закрашиваем область, где
+                    // раньше была полоса, чтобы не осталась «фантомная» после
+                    // исчезновения прокрутки.
+                    damaged.extend(scrollbar_strip_damage(old_layout, &layout, self.scale));
+                    damaged
                 }
                 _ => vec![Rect::new(0.0, 0.0, self.width as f32, self.height as f32)],
             }
@@ -2484,6 +2494,52 @@ impl WindowState {
     }
 }
 
+/// Удаляет сохранённые смещения прокрутки для контейнеров, у которых больше
+/// нет прокрутки (контент влезает). Возвращённые в карте «лишние» смещения
+/// иначе откроют следующий большой контент уже прокрученным в пустоту.
+fn prune_scroll_offsets(scroll: &mut HashMap<&'static str, Point>, layout: &Layout) {
+    scroll.retain(|key, _| {
+        layout
+            .node(key)
+            .is_some_and(|node| node.max_scroll_x() > 0.5 || node.max_scroll_y() > 0.5)
+    });
+}
+
+/// Полосы скроллбаров всех прокручиваемых контейнеров в старой и новой
+/// раскладке.
+///
+/// Используется для перерисовки области, где раньше была полоса прокрутки:
+/// после того как контент стал короче и полоса исчезла, её пиксели иначе
+/// остались бы на экране («фантомный» скроллбар).
+fn scrollbar_strip_damage(old: &Layout, new: &Layout, scale: f32) -> Vec<Rect> {
+    let bar = paint::SCROLLBAR_SIZE * scale;
+    let mut rects = Vec::new();
+    let mut collect = |node: &PlacedNode| {
+        if !(node.overflow_x.scrollable() || node.overflow_y.scrollable()) {
+            return;
+        }
+        let rect = node.rect;
+        if node.overflow_y.scrollable() {
+            rects.push(Rect::new(rect.x + rect.w - bar, rect.y, bar, rect.h));
+        }
+        if node.overflow_x.scrollable() {
+            let width = if node.overflow_y.scrollable() {
+                (rect.w - bar).max(0.0)
+            } else {
+                rect.w
+            };
+            rects.push(Rect::new(rect.x, rect.y + rect.h - bar, width, bar));
+        }
+    };
+    for node in old.nodes() {
+        collect(node);
+    }
+    for node in new.nodes() {
+        collect(node);
+    }
+    rects
+}
+
 /// Возвращает геометрию скроллбара узла по выбранной оси: дорожку и бегунок.
 /// Возвращает `None`, если по этой оси нет прокрутки или узел не прокручивается.
 fn scrollbar_geometry(node: &PlacedNode, scale: f32, horizontal: bool) -> Option<(Rect, Rect)> {
@@ -2680,7 +2736,9 @@ pub fn resolve_cursor(layout: &Layout, tree: &VElement, point: Point) -> Cursor 
 
 #[cfg(test)]
 mod tests {
-    use super::{keycode_letter, word_range};
+    use super::{
+        Point, Rect, keycode_letter, prune_scroll_offsets, scrollbar_strip_damage, word_range,
+    };
     use winit::keyboard::KeyCode;
 
     #[test]
@@ -2706,5 +2764,115 @@ mod tests {
         assert_eq!(word_range("", 0), (0, 0));
         assert_eq!(word_range("word", 4), (0, 4));
         assert_eq!(word_range("_x_9", 1), (0, 4));
+    }
+
+    #[test]
+    fn scrollbar_strip_damage_covers_old_bar_when_content_shrinks() {
+        use crate::layout::TextMetrics;
+        use crate::vdom::{NodeKind, Overflow, Size, Style, VElement};
+        use crate::window::paint as wp;
+
+        struct M;
+        impl TextMetrics for M {
+            fn measure(&self, _text: &str, _size: f32) -> (f32, f32) {
+                (0.0, 0.0)
+            }
+        }
+
+        // Контейнер с overflow-y=auto и padding, внутри — «контент»-колонка
+        // полной ширины, но только внутри content box (не захватывает полосу
+        // прокрутки, которая лежит в правом padding-крае). Обёрнут в общий
+        // корень, чтобы сам контейнер не растянулся на весь viewport.
+        fn container(content_height: f32) -> VElement {
+            let mut content = VElement::container("c", NodeKind::Column, Vec::new());
+            content.style = Style {
+                height: Size::Px(content_height),
+                ..Style::default()
+            };
+            let mut scroller = VElement::container("s", NodeKind::Column, vec![content]);
+            scroller.style = Style {
+                overflow_y: Overflow::Auto,
+                height: Size::Px(100.0),
+                padding: crate::vdom::Edges::all(16.0),
+                ..Style::default()
+            };
+            VElement::container("r", NodeKind::Column, vec![scroller])
+        }
+
+        let old = crate::layout::Layout::build(&container(240.0), (400.0, 300.0), &M);
+        let new = crate::layout::Layout::build(&container(60.0), (400.0, 300.0), &M);
+
+        let base = crate::layout::damage_regions(
+            &crate::layout::snapshot_rects(&old),
+            &new,
+            &std::collections::BTreeSet::new(),
+        );
+        // Полоса прокрутки лежит за пределами контента и не попадает в
+        // обычные области перерисовки (удалённый/сдвинутый контент её не
+        // накрывает).
+        let bar = wp::SCROLLBAR_SIZE;
+        let old_container = old.rect_of("s").expect("контейнер");
+        let right_strip = Rect::new(
+            old_container.x + old_container.w - bar,
+            old_container.y,
+            bar,
+            old_container.h,
+        );
+        assert!(
+            base.iter()
+                .all(|rect| rect.x + rect.w <= old_container.x + old_container.w - bar + 0.5),
+            "обычный damage не покрывает правую полосу прокрутки"
+        );
+
+        let strips = scrollbar_strip_damage(&old, &new, 1.0);
+        assert!(
+            strips.contains(&right_strip),
+            "область старой полосы прокрутки попадает в damage: {strips:?}"
+        );
+    }
+
+    #[test]
+    fn prune_scroll_offsets_drops_offsets_for_containers_without_scroll() {
+        use crate::layout::{Layout, TextMetrics};
+        use crate::vdom::{NodeKind, Overflow, Size, Style, VElement};
+
+        struct M;
+        impl TextMetrics for M {
+            fn measure(&self, _text: &str, _size: f32) -> (f32, f32) {
+                (0.0, 0.0)
+            }
+        }
+
+        fn container(content_height: f32) -> VElement {
+            let mut content = VElement::container("c", NodeKind::Column, Vec::new());
+            content.style = Style {
+                height: Size::Px(content_height),
+                ..Style::default()
+            };
+            let mut scroller = VElement::container("s", NodeKind::Column, vec![content]);
+            scroller.style = Style {
+                overflow_y: Overflow::Auto,
+                height: Size::Px(100.0),
+                ..Style::default()
+            };
+            VElement::container("r", NodeKind::Column, vec![scroller])
+        }
+
+        let tall = Layout::build(&container(240.0), (400.0, 300.0), &M);
+        let mut offsets = std::collections::HashMap::new();
+        offsets.insert("s", Point::new(0.0, 50.0));
+        prune_scroll_offsets(&mut offsets, &tall);
+        assert_eq!(
+            offsets.get("s"),
+            Some(&Point::new(0.0, 50.0)),
+            "пока контейнер прокручивается, смещение сохраняется"
+        );
+
+        let short = Layout::build(&container(60.0), (400.0, 300.0), &M);
+        prune_scroll_offsets(&mut offsets, &short);
+        assert!(
+            offsets.is_empty(),
+            "смещение сброшено, когда контент больше не прокручивается"
+        );
     }
 }

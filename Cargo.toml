@@ -17,7 +17,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.10.2"
+version = "0.10.3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/gifoff/light"
@@ -31,11 +31,11 @@ ab_glyph = "0.2"
 png = "0.17"
 rfd = "0.14"
 
-light = { path = "crates/light", version = "0.10.2" }
-light-fw-core = { path = "crates/light-core", version = "0.10.2" }
-light-fw-element-form = { path = "crates/light-element-form", version = "0.10.2" }
-light-fw-behavior-validation = { path = "crates/light-behavior-validation", version = "0.10.2" }
-light-fw-macros = { path = "crates/light-macros", version = "0.10.2" }
+light = { path = "crates/light", version = "0.10.3" }
+light-fw-core = { path = "crates/light-core", version = "0.10.3" }
+light-fw-element-form = { path = "crates/light-element-form", version = "0.10.3" }
+light-fw-behavior-validation = { path = "crates/light-behavior-validation", version = "0.10.3" }
+light-fw-macros = { path = "crates/light-macros", version = "0.10.3" }
 
 syn = { version = "2", features = ["full"] }
 quote = "1"

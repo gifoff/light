@@ -819,6 +819,34 @@ pub fn render(
         let vertical = node.overflow_y.scrollable() && node.max_scroll_y() > 0.5;
         let horizontal = node.overflow_x.scrollable() && node.max_scroll_x() > 0.5;
         if !vertical && !horizontal {
+            // Прокрутки больше нет: закрашиваем бывшую полосу фоном
+            // контейнера, чтобы на экране не осталась «фантомная» полоса.
+            if let Some(color) = node.style.background {
+                let rect = node.rect;
+                let bar = SCROLLBAR_SIZE * scale;
+                let draw = |canvas: &mut Canvas| {
+                    if node.overflow_y.scrollable() {
+                        canvas.fill_rect(
+                            color,
+                            Rect::new(rect.x + rect.w - bar, rect.y, bar, rect.h),
+                        );
+                    }
+                    if node.overflow_x.scrollable() {
+                        let width = if node.overflow_y.scrollable() {
+                            (rect.w - bar).max(0.0)
+                        } else {
+                            rect.w
+                        };
+                        canvas
+                            .fill_rect(color, Rect::new(rect.x, rect.y + rect.h - bar, width, bar));
+                    }
+                };
+                if let Some(clip) = node.clip_rect {
+                    canvas.clipped(clip, draw);
+                } else {
+                    draw(canvas);
+                }
+            }
             continue;
         }
         let rect = node.rect;

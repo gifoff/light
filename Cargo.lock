@@ -2062,7 +2062,7 @@ dependencies = [
 
 [[package]]
 name = "light"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "light-fw-behavior-validation",
  "light-fw-core",
@@ -2072,7 +2072,7 @@ dependencies = [
 
 [[package]]
 name = "light-demo"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "light",
  "light-fw-behavior-validation",
@@ -2082,14 +2082,14 @@ dependencies = [
 
 [[package]]
 name = "light-fw-behavior-validation"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "light-fw-core",
 ]
 
 [[package]]
 name = "light-fw-cli"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2105,7 +2105,7 @@ dependencies = [
 
 [[package]]
 name = "light-fw-cli-core"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "dirs",
  "glob",
@@ -2124,7 +2124,7 @@ dependencies = [
 
 [[package]]
 name = "light-fw-core"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "ab_glyph",
  "accesskit",
@@ -2143,18 +2143,18 @@ dependencies = [
 
 [[package]]
 name = "light-fw-element-form"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "light-fw-core",
 ]
 
 [[package]]
 name = "light-fw-html"
-version = "0.10.2"
+version = "0.10.3"
 
 [[package]]
 name = "light-fw-macros"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "light-fw-html",
  "proc-macro2",

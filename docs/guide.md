@@ -513,7 +513,7 @@ $ light add light-fw-datepicker --features calendar,timezone --yes
 Для `<image>` включите фичу `image-support`:
 
 ```toml
-light = { version = "0.10.2", features = ["image-support"] }
+light = { version = "0.10.3", features = ["image-support"] }
 ```
 
 ```html
@@ -547,7 +547,7 @@ fn load_avatar(path: &Path) -> light::Result<ImageData> {
 диалог доступен с фичей `file-dialog`:
 
 ```toml
-light = { version = "0.10.2", features = ["image-support", "file-dialog"] }
+light = { version = "0.10.3", features = ["image-support", "file-dialog"] }
 ```
 
 ```rust
