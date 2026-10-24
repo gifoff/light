@@ -10,8 +10,11 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use crate::collection::Collection;
 use crate::component::WindowConfig;
 use crate::control::WindowCommand;
+use std::sync::{Mutex, OnceLock};
+
+#[cfg(feature = "image-support")]
 use std::sync::{
-    Arc, Mutex, OnceLock,
+    Arc,
     atomic::{AtomicU64, Ordering},
 };
 
