@@ -72,6 +72,7 @@ where
     lines
 }
 
+#[cfg(feature = "window")]
 /// Переносит `text` по словам и возвращает только строки.
 pub(crate) fn wrap_words<F>(text: &str, max_width: f32, measure: F) -> Vec<String>
 where
@@ -83,7 +84,7 @@ where
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "window"))]
 mod tests {
     use super::wrap_words;
 
