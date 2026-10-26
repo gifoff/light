@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
-#[cfg(feature = "a11y-winit")]
+#[cfg(any(feature = "a11y-winit", feature = "async-runtime"))]
 use winit::event_loop::EventLoopProxy;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
@@ -60,7 +60,7 @@ const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 
 /// Пользовательское событие цикла: команда окна с адресатом-токеном либо
 /// событие AccessKit (запрос дерева, действие диктора, деактивация).
-enum UserEvent {
+pub(crate) enum UserEvent {
     /// Команда управления окном с адресатом-токеном.
     Command {
         token: WindowToken,
@@ -69,6 +69,9 @@ enum UserEvent {
     /// Событие от адаптера AccessKit.
     #[cfg(feature = "a11y-winit")]
     Access(accesskit_winit::Event),
+    /// Замыкание, поставленное в очередь через [`crate::async_runtime::post_to_ui`].
+    #[cfg(feature = "async-runtime")]
+    User(Box<dyn FnOnce() + Send>),
 }
 
 #[cfg(feature = "a11y-winit")]
@@ -95,11 +98,22 @@ pub fn run(component: impl Component + 'static) -> crate::Result<()> {
         let _ = sender.send_event(UserEvent::Command { token, command });
     });
     let mut app = App::new(Box::new(component), font);
+    #[cfg(all(feature = "a11y-winit", feature = "async-runtime"))]
+    let async_proxy = proxy.clone();
     #[cfg(feature = "a11y-winit")]
     {
         app.proxy = Some(proxy);
     }
-    event_loop.run_app(&mut app)?;
+    #[cfg(feature = "async-runtime")]
+    {
+        #[cfg(all(feature = "a11y-winit", feature = "async-runtime"))]
+        let proxy = async_proxy;
+        crate::async_runtime::set_event_loop_proxy(proxy);
+    }
+    let result = event_loop.run_app(&mut app);
+    #[cfg(feature = "async-runtime")]
+    crate::async_runtime::clear_event_loop_proxy();
+    result?;
     match app.error {
         Some(error) => Err(error),
         None => Ok(()),
@@ -2177,6 +2191,14 @@ impl ApplicationHandler<UserEvent> for App {
             #[cfg(feature = "a11y-winit")]
             UserEvent::Access(event) => {
                 self.on_access_event(event);
+                return;
+            }
+            #[cfg(feature = "async-runtime")]
+            UserEvent::User(f) => {
+                f();
+                for window in self.windows.values_mut() {
+                    window.window.request_redraw();
+                }
                 return;
             }
         };

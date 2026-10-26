@@ -75,6 +75,8 @@ window-multi = ["light-fw-core/window-multi"]
 window-by-id = ["light-fw-core/window-by-id"]
 # Изменение размера окна (`resizable`).
 window-resize = ["light-fw-core/window-resize"]
+# Фоновые задачи и доставка сообщений в UI-поток (`spawn`/`post_to_ui`).
+async-runtime = ["light-fw-core/async-runtime"]
 
 # --- Доступность -------------------------------------------------------
 # Построение дерева доступности AccessKit.

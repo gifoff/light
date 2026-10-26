@@ -88,11 +88,15 @@ mod text_wrap;
 pub mod validation;
 pub mod vdom;
 
+#[cfg(feature = "async-runtime")]
+pub mod async_runtime;
 #[cfg(feature = "window")]
 pub mod render;
 #[cfg(feature = "window")]
 pub mod window;
 
+#[cfg(feature = "async-runtime")]
+pub use async_runtime::{post_to_ui, spawn};
 pub use collection::Collection;
 pub use component::{Component, WindowConfig};
 pub use control::{FocusCommand, WindowCommand, blur, focus, focused_key};

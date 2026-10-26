@@ -85,6 +85,8 @@ window-multi = ["window"]
 window-by-id = ["window"]
 # Изменение размера окна (`resizable`).
 window-resize = ["window"]
+# Фоновые задачи и доставка сообщений в UI-поток (`spawn`/`post_to_ui`).
+async-runtime = ["window"]
 
 # --- Доступность -------------------------------------------------------
 # Построение дерева доступности AccessKit.
