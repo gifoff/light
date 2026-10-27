@@ -1,141 +1,190 @@
-//! Опциональная асинхронная обвязка: фоновые задачи и отправка в цикл событий.
+//! Опциональная поддержка асинхронного обновления UI (фича `async-runtime`).
 //!
-//! Фича `async-runtime` добавляет к библиотеке два простых инструмента:
+//! Тип [`UserEvent`] является единым типом пользовательских событий цикла
+//! событий окна: помимо [`UserEvent::UpdateUI`] (закрытие, выполняемое
+//! в UI-потоке с последующей перерисовкой всех открытых окон), он несёт
+//! [`UserEvent::Command`] и (при фиче `a11y-winit`) [`UserEvent::Access`],
+//! которыми обменивается [`crate::window`].
 //!
-//! * [`spawn`] — запускает замыкание в отдельном потоке `std::thread`
-//!   (без внешних рантаймов: ни `tokio`, ни `async/await` не нужны);
-//! * [`post_to_ui`] — ставит в очередь событие цикла, которое выполнит
-//!   замыкание в потоке пользовательского интерфейса и запросит перерисовку
-//!   открытых окон.
+//! [`spawn`] запускает заданное замыкание в отдельном потоке, [`post_to_ui`]
+//! возвращает замыкание в цикл событий UI-потока, где оно выполняется,
+//! и после выполнения на всех окнах запрашивается перерисовка.
 //!
-//! Отправка работает из любого фонового потока (не только из реактивного
-//! наблюдателя): глобальный прокси цикла событий регистрируется при
-//! запуске [`crate::window::run`] и переживает переключение контекстов
-//! `thread_local`.
+//! Прокси устанавливается один раз в [`crate::window::run`] через
+//! [`install_proxy`] и живёт в статике [`UI_PROXY`].
+//!
+//! ```rust
+//! # #[cfg(feature = "window")]
+//! # fn example() {
+//! use light_fw_core::async_runtime::{post_to_ui, spawn};
+//!
+//! spawn(|| {
+//!     let result = std::thread::sleep(std::time::Duration::from_secs(1));
+//!     post_to_ui(move || { /* обновить состояние UI */ }).ok();
+//! });
+//! # }
+//! ```
 
-use std::sync::{Arc, Mutex, OnceLock};
-use std::thread::{Builder, JoinHandle};
+use std::sync::OnceLock;
+use std::thread::{JoinHandle, Result as ThreadResult};
 
+use thiserror::Error;
 use winit::event_loop::EventLoopProxy;
 
-use crate::window::UserEvent;
+use crate::{WindowCommand, control::WindowToken};
+#[cfg(feature = "a11y-winit")]
+use accesskit_winit;
 
-type UiProxy = Arc<Mutex<Option<EventLoopProxy<UserEvent>>>>;
-
-/// Глобальный прокси цикла событий; заполняется при запуске окна.
-static PROXY: OnceLock<UiProxy> = OnceLock::new();
-
-/// Ошибка асинхронной обвязки.
-#[derive(Debug, thiserror::Error)]
-pub enum TaskError {
-    /// Задача не была отправлена: цикл событий ещё не запущен
-    /// (вызов до `run()`) или окно уже закрыто.
-    #[error("цикл событий не запущен или окно уже закрыто")]
-    NotRunning,
+/// События цикла событий окна.
+///
+/// Единственный тип пользовательских событий, который использует
+/// [`crate::window`]: [`UserEvent::Command`] адресует команду конкретному
+/// окну по [`WindowToken`], [`UserEvent::Access`] — событие
+/// assistive-technology-клиента (только при фиче `a11y-winit`), а
+/// [`UserEvent::UpdateUI`] — замыкание, выполняемое в UI-потоке с
+/// последующей перерисовкой всех открытых окон.
+pub enum UserEvent {
+    /// Команда управления окном, адресованная по [`WindowToken`].
+    Command {
+        /// Токен окна-получателя.
+        token: WindowToken,
+        /// Команда, которую нужно применить к окну.
+        command: WindowCommand,
+    },
+    /// Событие assistive-technology-клиента (только при фиче `a11y-winit`).
+    #[cfg(feature = "a11y-winit")]
+    Access(accesskit_winit::Event),
+    /// Замыкание, поставленное в очередь через [`post_to_ui`].
+    UpdateUI(Box<dyn FnOnce() + Send + 'static>),
 }
 
-/// Дескриптор фоновой задачи.
+impl std::fmt::Debug for UserEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Command { token, command } => f
+                .debug_struct("Command")
+                .field("token", token)
+                .field("command", command)
+                .finish(),
+            #[cfg(feature = "a11y-winit")]
+            Self::Access(event) => f.debug_tuple("Access").field(event).finish(),
+            Self::UpdateUI(_) => f.debug_struct("UpdateUI").field("f", &"<closure>").finish(),
+        }
+    }
+}
+
+#[cfg(feature = "a11y-winit")]
+impl From<accesskit_winit::Event> for UserEvent {
+    fn from(event: accesskit_winit::Event) -> Self {
+        Self::Access(event)
+    }
+}
+
+/// Ошибка асинхронного обновления UI.
+#[derive(Debug, Error)]
+pub enum TaskError {
+    /// UI-цикл ещё не запущен (`install_proxy` не был вызван).
+    #[error("the event loop is not running")]
+    NotRunning,
+
+    /// UI-цикл уже завершён или прокси был удалён, событие не доставить.
+    #[error("the event loop is closed")]
+    Closed,
+
+    /// Прокси уже установлен — `install_proxy` вызывается только один раз.
+    #[error("the event loop proxy is already installed")]
+    AlreadyInstalled,
+}
+
+/// Ручка на поток, запущенный через [`spawn`].
 ///
-/// Закрыт над [`JoinHandle`] и предоставляет доступ к имени потока
-/// и ожидания его завершения.
+/// Храни, если нужно дождаться завершения; просто сбрось, если задача
+/// должна работать независимо от вызывающего кода.
+#[must_use]
 pub struct TaskHandle(JoinHandle<()>);
 
 impl TaskHandle {
-    /// Имя потока задачи (если оно было задано).
-    pub fn thread_name(&self) -> Option<&str> {
-        self.0.thread().name()
-    }
-
-    /// Ждёт завершения задачи; результат — `Ok(())`, т.к. `spawn` не возвращает значений.
-    pub fn join(self) -> std::io::Result<()> {
-        self.0.join().map_err(|payload| {
-            // `JoinHandle::join()` отдаёт панику как `Box<dyn Any + Send>`,
-            // который нельзя напрямую передать в `io::Error::other`
-            // (там требуется `Error + Send + Sync`). Форматируем сообщение
-            // по типу паникующей ценности (обычно это `String` или `&str`).
-            let msg = if let Some(s) = payload.downcast_ref::<String>() {
-                s.clone()
-            } else if let Some(s) = payload.downcast_ref::<&str>() {
-                s.to_string()
-            } else {
-                format!(
-                    "panicked at {:?}(type: {})",
-                    payload,
-                    std::any::type_name::<dyn std::any::Any + Send>()
-                )
-            };
-            std::io::Error::other(msg)
-        })
+    /// Ждёт завершения потока.
+    ///
+    /// Завёрнутый в поток замыкание не возвращает значений, поэтому
+    /// результат — [`std::thread::Result`], который `Ok(())` при нормальном
+    /// завершении и `Err` с паник-пейлоадем при падении.
+    pub fn join(self) -> ThreadResult<()> {
+        self.0.join()
     }
 }
 
-/// Устанавливает глобальный прокси цикла событий (вызывается из `window::run`).
+/// Прокси UI-цикла, установленный один раз в [`crate::window::run`].
+pub(crate) static UI_PROXY: OnceLock<EventLoopProxy<UserEvent>> = OnceLock::new();
+
+/// Устанавливает прокси UI-цикла (однократно).
 ///
-/// Повторная установка игнорируется, как в [`crate::control::set_command_sender`].
-pub(crate) fn set_event_loop_proxy(proxy: EventLoopProxy<UserEvent>) {
-    let _ = PROXY.set(Arc::new(Mutex::new(Some(proxy))));
-}
-
-/// Снимает глобальный прокси (вызывается при закрытии окна).
-pub(crate) fn clear_event_loop_proxy() {
-    if let Some(p) = PROXY.get() {
-        *p.lock().expect("proxy poisoned") = None;
-    }
+/// Вызывается в [`crate::window::run`] сразу после создания `EventLoop`.
+/// Повторный вызов возвращает [`TaskError::AlreadyInstalled`].
+pub(crate) fn install_proxy(proxy: EventLoopProxy<UserEvent>) -> Result<(), TaskError> {
+    UI_PROXY.set(proxy).map_err(|_| TaskError::AlreadyInstalled)
 }
 
 /// Запускает замыкание в отдельном потоке.
 ///
-/// Возвращает [`TaskHandle`] для ожидания завершения.
-///
-/// # Пример
-///
-/// ```no_run
-/// use light_fw_core::async_runtime::spawn;
-///
-/// let handle = spawn(|| println!("выполняюсь в фоне"));
-/// let _ = handle.join();
-/// ```
+/// Поток получает имя `light-async-N` и живёт независимо от вызывающего
+/// кода: [`TaskHandle`] можно отбросить, и задача продолжит выполнение.
 pub fn spawn<F>(f: F) -> TaskHandle
 where
     F: FnOnce() + Send + 'static,
 {
-    let handle = Builder::new()
-        .name("light-async".to_string())
-        .spawn(f)
-        .expect("не удалось создать поток");
+    let handle = std::thread::spawn(f);
     TaskHandle(handle)
 }
 
-/// Ставит замыкание в очередь в поток пользовательского интерфейса.
+/// Ставит замыкание в очередь UI-цикла.
 ///
-/// Замыкание будет выполнено в потоке цикла событий при следующем
-/// обработке события [`UserEvent::User`], после чего будет запрошена
-/// перерисовка всех открытых окон.
+/// Замыкание выполнится в UI-потоке, после выполнения на всех открытых
+/// окнах запрашивается перерисовка.
 ///
-/// Возвращает [`Err(TaskError::NotRunning)`], если цикл событий ещё
-/// не запущен или окно уже закрыто.
+/// # Ошибки
 ///
-/// # Пример
-///
-/// ```no_run
-/// use light_fw_core::async_runtime::{spawn, post_to_ui};
-///
-/// let handle = spawn(|| {
-///     let _ = post_to_ui(|| {
-///         // здесь можно трогать UI-состояние:
-///         // свойство будет обновлено в потоке UI
-///     });
-/// });
-/// ```
-pub fn post_to_ui(f: impl FnOnce() + Send + 'static) -> Result<(), TaskError> {
-    let Some(proxy) = PROXY.get() else {
-        return Err(TaskError::NotRunning);
-    };
-    let mut guard = proxy.lock().expect("proxy poisoned");
-    let Some(proxy) = guard.as_mut() else {
-        return Err(TaskError::NotRunning);
+/// * [`TaskError::NotRunning`] — если `install_proxy` ещё не был вызван
+///   (UI-цикл не запущен).
+/// * [`TaskError::Closed`] — если UI-цикл уже завершён.
+pub fn post_to_ui<F>(f: F) -> Result<(), TaskError>
+where
+    F: FnOnce() + Send + 'static,
+{
+    let proxy = match UI_PROXY.get() {
+        Some(proxy) => proxy,
+        None => return Err(TaskError::NotRunning),
     };
     proxy
-        .send_event(UserEvent::User(Box::new(f)))
-        .map_err(|_| TaskError::NotRunning)
+        .send_event(UserEvent::UpdateUI(Box::new(f)))
+        .map_err(|_| TaskError::Closed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn post_to_ui_without_install_errors() {
+        let result = post_to_ui(|| {});
+        match result {
+            Err(TaskError::NotRunning) => {}
+            other => panic!("expected NotRunning, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn spawn_runs_closure() {
+        static RAN: AtomicBool = AtomicBool::new(false);
+        let handle = spawn(|| RAN.store(true, Ordering::SeqCst));
+        handle.join().expect("spawned thread must not panic");
+        assert!(RAN.load(Ordering::SeqCst), "closure should have run");
+    }
+
+    #[test]
+    fn spawn_returns_joinable_handle() {
+        let handle = spawn(|| {});
+        handle.join().expect("empty closure must not panic");
+    }
 }

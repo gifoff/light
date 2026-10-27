@@ -58,26 +58,27 @@ const RESIZE_BORDER: f32 = 6.0;
 /// Промежуток, в течение которого два нажатия считаются двойным кликом.
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 
-/// Пользовательское событие цикла: команда окна с адресатом-токеном либо
-/// событие AccessKit (запрос дерева, действие диктора, деактивация).
+/// Тип пользовательских событий цикла.
+///
+/// При включённом `async-runtime` — [`crate::async_runtime::UserEvent`],
+/// единый тип для команд в окна, событий AccessKit и UI-задач.
+/// Без `async-runtime` — только команды в окна (и события AccessKit).
+#[cfg(feature = "async-runtime")]
+pub(crate) type UserEvent = crate::async_runtime::UserEvent;
+#[cfg(not(feature = "async-runtime"))]
 pub(crate) enum UserEvent {
-    /// Команда управления окном с адресатом-токеном.
     Command {
         token: WindowToken,
         command: WindowCommand,
     },
-    /// Событие от адаптера AccessKit.
     #[cfg(feature = "a11y-winit")]
     Access(accesskit_winit::Event),
-    /// Замыкание, поставленное в очередь через [`crate::async_runtime::post_to_ui`].
-    #[cfg(feature = "async-runtime")]
-    User(Box<dyn FnOnce() + Send>),
 }
 
-#[cfg(feature = "a11y-winit")]
+#[cfg(all(not(feature = "async-runtime"), feature = "a11y-winit"))]
 impl From<accesskit_winit::Event> for UserEvent {
     fn from(event: accesskit_winit::Event) -> Self {
-        UserEvent::Access(event)
+        Self::Access(event)
     }
 }
 
@@ -98,21 +99,16 @@ pub fn run(component: impl Component + 'static) -> crate::Result<()> {
         let _ = sender.send_event(UserEvent::Command { token, command });
     });
     let mut app = App::new(Box::new(component), font);
-    #[cfg(all(feature = "a11y-winit", feature = "async-runtime"))]
-    let async_proxy = proxy.clone();
     #[cfg(feature = "a11y-winit")]
     {
         app.proxy = Some(proxy);
     }
     #[cfg(feature = "async-runtime")]
     {
-        #[cfg(all(feature = "a11y-winit", feature = "async-runtime"))]
-        let proxy = async_proxy;
-        crate::async_runtime::set_event_loop_proxy(proxy);
+        crate::async_runtime::install_proxy(event_loop.create_proxy())
+            .expect("winit: прокси UI-цикла устанавливается один раз");
     }
     let result = event_loop.run_app(&mut app);
-    #[cfg(feature = "async-runtime")]
-    crate::async_runtime::clear_event_loop_proxy();
     result?;
     match app.error {
         Some(error) => Err(error),
@@ -2194,7 +2190,7 @@ impl ApplicationHandler<UserEvent> for App {
                 return;
             }
             #[cfg(feature = "async-runtime")]
-            UserEvent::User(f) => {
+            UserEvent::UpdateUI(f) => {
                 f();
                 for window in self.windows.values_mut() {
                     window.window.request_redraw();
