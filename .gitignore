@@ -15,3 +15,6 @@ bloat-*.txt
 test-app-*/
 tmp-*/
 light-fw-cli-*/
+
+# Local verification artifacts
+verify/
