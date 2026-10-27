@@ -67,9 +67,14 @@ pub enum UserEvent {
     ///
     /// `f` — замыкание, которое выполняется в UI-потоке над
     /// `&mut dyn Any` и делает downcast к целевому типу `C` сам.
+    ///
+    /// Поле `target` хранит `TypeId` компонента, на который выполняется
+    /// downcast в UI-потоке. Устанавливается в [`post_update`].
     Action {
         /// Замыкание для обновления состояния компонента.
         f: UpdateFn,
+        /// `TypeId` целевого типа компонента (задаётся в [`post_update`]).
+        target: std::any::TypeId,
     },
 }
 
@@ -84,7 +89,11 @@ impl std::fmt::Debug for UserEvent {
             #[cfg(feature = "a11y-winit")]
             Self::Access(event) => f.debug_tuple("Access").field(event).finish(),
             Self::UpdateUI(_) => f.debug_struct("UpdateUI").field("f", &"<closure>").finish(),
-            Self::Action { f: _ } => f.debug_struct("Action").field("f", &"<closure>").finish(),
+            Self::Action { f: _, target } => f
+                .debug_struct("Action")
+                .field("f", &"<closure>")
+                .field("target", target)
+                .finish(),
         }
     }
 }
@@ -203,6 +212,7 @@ pub fn post_update<C: Component + 'static>(
                 f(component);
             }
         }),
+        target: std::any::TypeId::of::<C>(),
     };
     proxy.send_event(action).map_err(|_| TaskError::Closed)
 }
@@ -256,6 +266,26 @@ mod tests {
             Err(TaskError::NotRunning) => {}
             other => panic!("expected NotRunning, got {other:?}"),
         }
+    }
+
+    /// Тест 4.2: Debug-представление `Action` содержит `"Action"`
+    /// и `"target"` (TypeId не паникует при форматировании).
+    #[test]
+    fn action_debug_contains_action_and_target() {
+        let action = UserEvent::Action {
+            f: Box::new(|_any: &mut dyn Any| {}),
+            target: std::any::TypeId::of::<u8>(),
+        };
+        let s = format!("{action:?}");
+        assert!(s.contains("Action"), "Debug must name the variant: {s}");
+        assert!(
+            s.contains("target"),
+            "Debug must include the `target` field: {s}"
+        );
+        assert!(
+            s.contains("<closure>"),
+            "Debug must render the closure placeholder: {s}"
+        );
     }
 
     #[test]

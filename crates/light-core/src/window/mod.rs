@@ -2198,12 +2198,13 @@ impl ApplicationHandler<UserEvent> for App {
                 return;
             }
             #[cfg(feature = "async-runtime")]
-            UserEvent::Action { f } => {
-                if let Some(window) = self.windows.values_mut().next() {
-                    f(window.component.as_any_mut());
-                }
+            UserEvent::Action { f, target } => {
                 for window in self.windows.values_mut() {
-                    window.window.request_redraw();
+                    if window.component.as_any_mut().type_id() == target {
+                        f(window.component.as_any_mut());
+                        window.window.request_redraw();
+                        break;
+                    }
                 }
                 return;
             }

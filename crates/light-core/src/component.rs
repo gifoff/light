@@ -122,10 +122,12 @@ pub trait Component: Any {
 
     /// Доступ к конкретному типу компонента через `Any`.
     ///
-    /// Используется `post_update` для downcast-а к конкретному типу в
-    /// UI-потоке. Прямое приведение `&mut dyn Component` → `&mut dyn Any`
-    /// невозможно: `dyn Component` не `Sized`, а `Any: Sized`. Реализация
-    /// генерируется макросом `#[template]`.
+    /// Используется `post_update` для downcast-а к целевому типу компонента
+    /// в UI-потоке: `UserEvent::Action` хранит `TypeId` цели, а обработчик
+    /// находит первое совпадение по `type_id()` среди всех окон. Прямое
+    /// приведение `&mut dyn Component` → `&mut dyn Any` невозможно:
+    /// `dyn Component` не `Sized`, а `Any: Sized`. Реализация генерируется
+    /// макросом `#[template]`.
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
     /// Проверяет отдельное поле (директива `:validator`).
