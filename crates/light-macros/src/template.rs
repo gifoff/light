@@ -257,6 +257,10 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         #id_symbol
 
         impl ::light::Component for #ident {
+            fn as_any_mut(&mut self) -> &mut dyn ::std::any::Any {
+                self
+            }
+
             fn render(&self) -> ::light::vdom::VElement {
                 let mut __children = ::std::vec::Vec::new();
                 #(#pushes)*

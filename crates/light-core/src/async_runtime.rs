@@ -25,15 +25,22 @@
 //! # }
 //! ```
 
+use std::any::Any;
 use std::sync::OnceLock;
 use std::thread::{JoinHandle, Result as ThreadResult};
 
 use thiserror::Error;
 use winit::event_loop::EventLoopProxy;
 
-use crate::{WindowCommand, control::WindowToken};
+use crate::{WindowCommand, component::Component, control::WindowToken};
 #[cfg(feature = "a11y-winit")]
 use accesskit_winit;
+
+/// Типизированное действие над состоянием компонента в UI-потоке.
+///
+/// Принимает `&mut dyn Any` и делает downcast к целевому типу сам;
+/// тип проверяется внутри [`post_update`], а не в [`UserEvent::Action`].
+pub type UpdateFn = Box<dyn FnOnce(&mut dyn Any) + Send + 'static>;
 
 /// События цикла событий окна.
 ///
@@ -56,6 +63,14 @@ pub enum UserEvent {
     Access(accesskit_winit::Event),
     /// Замыкание, поставленное в очередь через [`post_to_ui`].
     UpdateUI(Box<dyn FnOnce() + Send + 'static>),
+    /// Типизированное обновление компонента через [`post_update`].
+    ///
+    /// `f` — замыкание, которое выполняется в UI-потоке над
+    /// `&mut dyn Any` и делает downcast к целевому типу `C` сам.
+    Action {
+        /// Замыкание для обновления состояния компонента.
+        f: UpdateFn,
+    },
 }
 
 impl std::fmt::Debug for UserEvent {
@@ -69,6 +84,7 @@ impl std::fmt::Debug for UserEvent {
             #[cfg(feature = "a11y-winit")]
             Self::Access(event) => f.debug_tuple("Access").field(event).finish(),
             Self::UpdateUI(_) => f.debug_struct("UpdateUI").field("f", &"<closure>").finish(),
+            Self::Action { f: _ } => f.debug_struct("Action").field("f", &"<closure>").finish(),
         }
     }
 }
@@ -160,6 +176,37 @@ where
         .map_err(|_| TaskError::Closed)
 }
 
+/// Ставит типизированное обновление компонента в очередь UI-цикла.
+///
+/// Замыкание выполнится в UI-потоке, где компонент будет обновлён,
+/// и на всех открытых окнах запрашивается перерисовка.
+///
+/// В отличие от [`post_to_ui`], замыкание получает ссылку на конкретный
+/// тип компонента, что позволяет обновлять `!Send`-состояние компонента,
+/// не нарушая границы `Send` при пересылке в UI-поток.
+///
+/// # Ошибки
+///
+/// * [`TaskError::NotRunning`] — если `install_proxy` ещё не был вызван
+///   (UI-цикл не запущен).
+/// * [`TaskError::Closed`] — если UI-цикл уже завершён.
+pub fn post_update<C: Component + 'static>(
+    f: impl FnOnce(&mut C) + Send + 'static,
+) -> Result<(), TaskError> {
+    let proxy = match UI_PROXY.get() {
+        Some(proxy) => proxy,
+        None => return Err(TaskError::NotRunning),
+    };
+    let action = UserEvent::Action {
+        f: Box::new(move |any: &mut dyn Any| {
+            if let Some(component) = any.downcast_mut::<C>() {
+                f(component);
+            }
+        }),
+    };
+    proxy.send_event(action).map_err(|_| TaskError::Closed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,5 +233,44 @@ mod tests {
     fn spawn_returns_joinable_handle() {
         let handle = spawn(|| {});
         handle.join().expect("empty closure must not panic");
+    }
+
+    #[test]
+    fn post_update_without_install_errors() {
+        struct S;
+        impl crate::Component for S {
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+            fn render(&self) -> crate::VElement {
+                crate::VElement::leaf(
+                    "",
+                    crate::NodeKind::Text {
+                        content: "noop".into(),
+                    },
+                )
+            }
+        }
+        let result = post_update::<S>(|_| {});
+        match result {
+            Err(TaskError::NotRunning) => {}
+            other => panic!("expected NotRunning, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn task_error_enum_unchanged() {
+        // TaskError должен сохранять исходный набор вариантов:
+        // NotRunning, Closed, AlreadyInstalled.
+        let not_running = TaskError::NotRunning;
+        let closed = TaskError::Closed;
+        let already = TaskError::AlreadyInstalled;
+
+        assert_eq!(not_running.to_string(), "the event loop is not running");
+        assert_eq!(closed.to_string(), "the event loop is closed");
+        assert_eq!(
+            already.to_string(),
+            "the event loop proxy is already installed"
+        );
     }
 }

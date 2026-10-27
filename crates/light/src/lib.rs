@@ -85,7 +85,9 @@ extern crate self as light;
 pub use light_fw_core::*;
 
 #[cfg(feature = "async-runtime")]
-pub use light_fw_core::{TaskError, TaskHandle, UserEvent, post_to_ui, spawn};
+pub use light_fw_core::{TaskError, TaskHandle, UserEvent, post_to_ui, post_update, spawn};
+#[cfg(feature = "async-runtime")]
+pub use std::any::Any;
 
 #[cfg(feature = "validation")]
 pub use light_fw_behavior_validation;

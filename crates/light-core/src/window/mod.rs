@@ -2197,6 +2197,16 @@ impl ApplicationHandler<UserEvent> for App {
                 }
                 return;
             }
+            #[cfg(feature = "async-runtime")]
+            UserEvent::Action { f } => {
+                if let Some(window) = self.windows.values_mut().next() {
+                    f(window.component.as_any_mut());
+                }
+                for window in self.windows.values_mut() {
+                    window.window.request_redraw();
+                }
+                return;
+            }
         };
         match command {
             WindowCommand::OpenModal => self.open_modal(event_loop, token),

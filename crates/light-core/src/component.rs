@@ -1,6 +1,8 @@
 //! Компонент: виртуальное дерево интерфейса, обработка событий и описание
 //! системного окна.
 
+use std::any::Any;
+
 use crate::vdom::{Event, VElement};
 
 /// Фон окна по умолчанию (`#F7F8FA`, полностью непрозрачный).
@@ -103,7 +105,7 @@ impl Default for WindowConfig {
 /// `#[template("...")]` из HTML-шаблона — шаблон полностью замещает
 /// форму компонента: [`Component::render`] возвращает именно дерево из
 /// шаблона, без какого-либо стандартного оформления сверх него.
-pub trait Component {
+pub trait Component: Any {
     /// Строит виртуальное дерево интерфейса компонента.
     fn render(&self) -> VElement;
 
@@ -117,6 +119,14 @@ pub trait Component {
         let _ = (key, event);
         false
     }
+
+    /// Доступ к конкретному типу компонента через `Any`.
+    ///
+    /// Используется `post_update` для downcast-а к конкретному типу в
+    /// UI-потоке. Прямое приведение `&mut dyn Component` → `&mut dyn Any`
+    /// невозможно: `dyn Component` не `Sized`, а `Any: Sized`. Реализация
+    /// генерируется макросом `#[template]`.
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 
     /// Проверяет отдельное поле (директива `:validator`).
     ///

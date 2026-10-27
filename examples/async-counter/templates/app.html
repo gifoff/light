@@ -1,0 +1,25 @@
+<window title="Light Async Counter" width="400" height="340" resizable="false">
+    <titlebar background="#0F172A" height="34" padding-left="12" padding-right="8" align-items="center">
+        <div direction="horizontal" align-items="center" font-color="#F8FAFC" font-size="16">Light Async Counter</div>
+        <div direction="horizontal" align-items="center" position-x="right">
+            <button @click="minimize()" type="button" width="30" height="24" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#F8FAFC">-</button>
+            <button @click="close()" type="button" width="30" height="24" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#F8FAFC">x</button>
+        </div>
+    </titlebar>
+    <div direction="vertical" padding="18" background="#F8FAFC">
+        <div font-size="13" font-color="#64748B">
+            Асинхронное обновление состояния компонента
+        </div>
+        <div v-if="loading">
+            <div font-size="20" font-color="#0F172A">Загрузка…</div>
+            <div font-color="#64748B">Текущее значение: {{ count }}</div>
+        </div>
+        <div v-else direction="vertical">
+            <div font-size="20" font-color="#0F172A">Значение: {{ count }}</div>
+            <div font-color="#64748B">
+                Нажмите кнопку — обновит состояние через 2 секунды
+            </div>
+            <button @click="start_async" type="button">Начать асинхронное обновление</button>
+        </div>
+    </div>
+</window>
