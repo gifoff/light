@@ -1267,6 +1267,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "example-multi-window"
+version = "0.10.3"
+dependencies = [
+ "light",
+]
+
+[[package]]
 name = "example-todo"
 version = "0.1.0"
 dependencies = [

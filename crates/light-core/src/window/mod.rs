@@ -32,7 +32,9 @@ use winit::window::{CursorIcon, ResizeDirection, Window, WindowId};
 
 use crate::Error;
 use crate::component::{Component, WindowConfig};
-use crate::control::{WindowCommand, WindowToken, set_active_window, set_command_sender};
+use crate::control::{
+    WindowCommand, WindowToken, set_active_window, set_command_sender, set_current_window_token,
+};
 use crate::layout::{
     FIELD_MIN_H, Layout, PlacedNode, Point, Rect, TextMetrics, coalesce_regions, damage_regions,
     snapshot_rects,
@@ -468,6 +470,7 @@ impl WindowState {
     /// Отправляет событие компоненту окна, запоминая окно как активное.
     fn dispatch(&self, key: &str, event: DomEvent) -> bool {
         set_active_window(self.token);
+        set_current_window_token(self.token);
         self.component.dispatch(key, event)
     }
 
@@ -2198,13 +2201,36 @@ impl ApplicationHandler<UserEvent> for App {
                 return;
             }
             #[cfg(feature = "async-runtime")]
-            UserEvent::Action { f, target } => {
-                for window in self.windows.values_mut() {
-                    if window.component.as_any_mut().type_id() == target {
+            UserEvent::Action { f, target, token } => {
+                let applied = match token {
+                    Some(token) => {
+                        let Some(id) = self.tokens.get(&token).copied() else {
+                            eprintln!("async-runtime: target window closed");
+                            return;
+                        };
+                        let Some(window) = self.windows.get_mut(&id) else {
+                            eprintln!("async-runtime: target window closed");
+                            return;
+                        };
                         f(window.component.as_any_mut());
                         window.window.request_redraw();
-                        break;
+                        true
                     }
+                    None => {
+                        let mut applied = false;
+                        for window in self.windows.values_mut() {
+                            if window.component.as_any_mut().type_id() == target {
+                                f(window.component.as_any_mut());
+                                window.window.request_redraw();
+                                applied = true;
+                                break;
+                            }
+                        }
+                        applied
+                    }
+                };
+                if !applied {
+                    eprintln!("async-runtime: target window closed");
                 }
                 return;
             }
@@ -2254,6 +2280,7 @@ impl ApplicationHandler<UserEvent> for App {
             return;
         };
         set_active_window(token);
+        set_current_window_token(token);
         match event {
             WindowEvent::Resized(_) => window.invalidate(),
             WindowEvent::Focused(false) => window.on_unfocus(),

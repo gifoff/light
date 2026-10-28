@@ -6,7 +6,7 @@
 //! Оконный бэкенд регистрирует получателя команд ([`set_command_sender`]).
 
 use std::cell::{Cell, RefCell};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 /// Непрозрачный идентификатор окна, присваиваемый оконным бэкендом.
@@ -35,6 +35,35 @@ pub fn set_active_window(token: WindowToken) {
 /// `0` — первое созданное).
 pub fn active_window() -> WindowToken {
     ACTIVE.with(Cell::get)
+}
+
+/// Кросспоточный токен «текущего» окна.
+///
+/// Значение `0` означает «окно не задано» (см. [`WindowToken`]: токен `0`
+/// зарезервирован под «окно по умолчанию», а `current_window_token()`
+/// возвращает `None`, пока ни одно окно не установило токен).
+static CURRENT_WINDOW: AtomicU64 = AtomicU64::new(0);
+
+/// Запоминает токен «текущего» окна для кросспоточного доступа.
+///
+/// Вызывается оконным бэкендом в [`crate::window::Window::dispatch`] — в
+/// UI-потоке, перед обработкой события окна. Позволяет задачам, запущенным
+/// из обработчика (`post_update_to`), узнать, из какого окна они пришли,
+/// даже из другого потока.
+pub fn set_current_window_token(token: WindowToken) {
+    CURRENT_WINDOW.store(token, Ordering::Relaxed);
+}
+
+/// Токен «текущего» окна для кросспоточного доступа.
+///
+/// В отличие от [`active_window`], этот токен доступен из любого потока
+/// (включая задачи, запущенные из обработчика события), и возвращает
+/// `None`, пока ни одно окно не установило токен. Используется
+/// [`crate::async_runtime::post_update_to`] для адресации обновления к
+/// конкретному окну.
+pub fn current_window_token() -> Option<WindowToken> {
+    let token = CURRENT_WINDOW.load(Ordering::Relaxed);
+    (token != 0).then_some(token)
 }
 
 /// Развёрнуто ли окно в данный момент (обновляет оконный бэкенд).

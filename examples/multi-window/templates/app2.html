@@ -1,0 +1,23 @@
+<window title="Light Second Window" width="380" height="360" resizable="false">
+    <titlebar background="#0F172A" height="34" padding-left="12" padding-right="8" align-items="center">
+        <div direction="horizontal" align-items="center" font-color="#F8FAFC" font-size="16">{{ title }}</div>
+        <div direction="horizontal" align-items="center" position-x="right">
+            <button @click="minimize()" type="button" width="30" height="24" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#F8FAFC">-</button>
+            <button @click="close()" type="button" width="30" height="24" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#F8FAFC">x</button>
+        </div>
+    </titlebar>
+    <div direction="vertical" padding="18" background="#F8FAFC">
+        <div font-size="13" font-color="#64748B">
+            Асинхронное обновление конкретного окна. Запуск здесь
+            не влияет на первое окно.
+        </div>
+        <div direction="horizontal" gap="16" align-items="center">
+            <button @click="increment()" type="button" width="44" height="44" font-size="20" background="#3B82F6" border-color="#3B82F6" font-color="#FFFFFF">+1</button>
+            <div font-size="18" font-color="#0F172A">Счётчик: {{ count }}</div>
+        </div>
+        <div direction="vertical" gap="10" align-items="center">
+            <button @click="start_async()" type="button" width="160" height="42" font-size="15" background="#10B981" border-color="#10B981" font-color="#FFFFFF">Start Async 3s</button>
+            <button @click="cancel_async()" type="button" width="160" height="32" font-size="13" background="#94A3B8" border-color="#94A3B8" font-color="#FFFFFF">Cancel</button>
+        </div>
+    </div>
+</window>

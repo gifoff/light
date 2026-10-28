@@ -19,7 +19,7 @@ pub use accesskit::{NodeId, Role as AriaRole};
 pub use crate::a11y;
 
 #[cfg(feature = "async-runtime")]
-pub use crate::async_runtime::post_update;
+pub use crate::async_runtime::{post_update, post_update_to};
 /// Асинхронное обновление UI: `post_update` и `Any` для downcast-а в UI-потоке.
 #[cfg(feature = "async-runtime")]
 pub use std::any::Any;

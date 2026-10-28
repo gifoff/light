@@ -96,10 +96,15 @@ pub mod render;
 pub mod window;
 
 #[cfg(feature = "async-runtime")]
-pub use async_runtime::{TaskError, TaskHandle, UserEvent, post_to_ui, post_update, spawn};
+pub use async_runtime::{
+    TaskContext, TaskError, TaskHandle, UserEvent, post_to_ui, post_update, post_update_to, spawn,
+};
 pub use collection::Collection;
 pub use component::{Component, WindowConfig};
-pub use control::{FocusCommand, WindowCommand, blur, focus, focused_key};
+pub use control::{
+    FocusCommand, WindowCommand, blur, current_window_token, focus, focused_key,
+    set_current_window_token,
+};
 pub use dom::Dom;
 pub use error::{Error, Result};
 pub use light_fw_macros::{proxy, template};

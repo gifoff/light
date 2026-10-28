@@ -1,0 +1,9 @@
+[package]
+name = "example-multi-window"
+version = "0.10.3"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+light = { path = "../../crates/light", features = ["async-runtime"] }

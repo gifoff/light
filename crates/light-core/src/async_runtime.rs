@@ -66,18 +66,24 @@ pub enum UserEvent {
     Access(accesskit_winit::Event),
     /// Замыкание, поставленное в очередь через [`post_to_ui`].
     UpdateUI(Box<dyn FnOnce() + Send + 'static>),
-    /// Типизированное обновление компонента через [`post_update`].
+    /// Типизированное обновление компонента через [`post_update`]
+    /// или [`post_update_to`].
     ///
     /// `f` — замыкание, которое выполняется в UI-потоке над
     /// `&mut dyn Any` и делает downcast к целевому типу `C` сам.
     ///
     /// Поле `target` хранит `TypeId` компонента, на который выполняется
-    /// downcast в UI-потоке. Устанавливается в [`post_update`].
+    /// downcast в UI-потоке. Поле `token` задаёт точную адресацию окна:
+    /// `None` — первое совпадение по `TypeId` (поведение [`post_update`]),
+    /// `Some(t)` — только окно с этим токеном (поведение [`post_update_to`]);
+    /// если целевое окно закрыто, действие отбрасывается с лог-сообщением.
     Action {
         /// Замыкание для обновления состояния компонента.
         f: UpdateFn,
         /// `TypeId` целевого типа компонента (задаётся в [`post_update`]).
         target: std::any::TypeId,
+        /// Токен окна-цели для точной адресации (см. описание выше).
+        token: Option<WindowToken>,
     },
 }
 
@@ -92,10 +98,15 @@ impl std::fmt::Debug for UserEvent {
             #[cfg(feature = "a11y-winit")]
             Self::Access(event) => f.debug_tuple("Access").field(event).finish(),
             Self::UpdateUI(_) => f.debug_struct("UpdateUI").field("f", &"<closure>").finish(),
-            Self::Action { f: _, target } => f
+            Self::Action {
+                f: _,
+                target,
+                token,
+            } => f
                 .debug_struct("Action")
                 .field("f", &"<closure>")
                 .field("target", target)
+                .field("token", token)
                 .finish(),
         }
     }
@@ -249,6 +260,18 @@ where
 pub fn post_update<C: Component + 'static>(
     f: impl FnOnce(&mut C) + Send + 'static,
 ) -> Result<(), TaskError> {
+    post_update_impl(None, f)
+}
+
+/// Общий путь для [`post_update`] и [`post_update_to`]: упаковывает
+/// замыкание в [`UserEvent::Action`] и отправляет его в очередь UI-цикла.
+///
+/// * `token == None` — адресация по `TypeId` (первое окно с компонентом `C`);
+/// * `token == Some(t)` — адресация к окну с токеном `t`.
+fn post_update_impl<C: Component + 'static>(
+    token: Option<WindowToken>,
+    f: impl FnOnce(&mut C) + Send + 'static,
+) -> Result<(), TaskError> {
     let proxy = match UI_PROXY.get() {
         Some(proxy) => proxy,
         None => return Err(TaskError::NotRunning),
@@ -260,8 +283,33 @@ pub fn post_update<C: Component + 'static>(
             }
         }),
         target: std::any::TypeId::of::<C>(),
+        token,
     };
     proxy.send_event(action).map_err(|_| TaskError::Closed)
+}
+
+/// Ставит типизированное обновление компонента в очередь UI-цикла
+/// с адресацией к конкретному окну по его [`WindowToken`].
+///
+/// Замыкание выполнится в UI-потоке и применится **только** к окну,
+/// чей токен совпадает с `token`. Если окно с этим токеном уже закрыто,
+/// обновление тихо отбрасывается (в UI-потоке логируется
+/// `async-runtime: target window closed`).
+///
+/// Токен окна получается через [`crate::control::current_window_token`]
+/// (из UI-потока, например из `on_click`) или хранится в состоянии
+/// компонента (поле типа `WindowToken` в `#[proxy]`-структуре).
+///
+/// # Ошибки
+///
+/// * [`TaskError::NotRunning`] — если `install_proxy` ещё не был вызван
+///   (UI-цикл не запущен).
+/// * [`TaskError::Closed`] — если UI-цикл уже завершён.
+pub fn post_update_to<C: Component + 'static>(
+    token: WindowToken,
+    f: impl FnOnce(&mut C) + Send + 'static,
+) -> Result<(), TaskError> {
+    post_update_impl(Some(token), f)
 }
 
 #[cfg(test)]
@@ -340,6 +388,7 @@ mod tests {
         let action = UserEvent::Action {
             f: Box::new(|_any: &mut dyn Any| {}),
             target: std::any::TypeId::of::<u8>(),
+            token: None,
         };
         let s = format!("{action:?}");
         assert!(s.contains("Action"), "Debug must name the variant: {s}");
