@@ -18,15 +18,18 @@
 //! # fn example() {
 //! use light_fw_core::async_runtime::{post_to_ui, spawn};
 //!
-//! spawn(|| {
-//!     let result = std::thread::sleep(std::time::Duration::from_secs(1));
-//!     post_to_ui(move || { /* обновить состояние UI */ }).ok();
+//! spawn(|ctx| {
+//!     std::thread::sleep(std::time::Duration::from_secs(1));
+//!     if !ctx.is_cancelled() {
+//!         post_to_ui(|| { /* обновить состояние UI */ }).ok();
+//!     }
 //! });
 //! # }
 //! ```
 
 use std::any::Any;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::thread::{JoinHandle, Result as ThreadResult};
 
 use thiserror::Error;
@@ -121,21 +124,56 @@ pub enum TaskError {
     AlreadyInstalled,
 }
 
+/// Контекст, переданный замыканию [`spawn`] при запуске.
+///
+/// Позволяет задаче видеть запрос отмены: поток сам решает, где прерваться.
+#[derive(Debug, Clone)]
+pub struct TaskContext {
+    cancel_flag: Arc<AtomicBool>,
+}
+
+impl TaskContext {
+    /// Возвращает `true`, если на ручку [`TaskHandle::abort`] было вызвано
+    /// (или планируется) отмена.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel_flag.load(Ordering::SeqCst)
+    }
+}
+
 /// Ручка на поток, запущенный через [`spawn`].
 ///
 /// Храни, если нужно дождаться завершения; просто сбрось, если задача
 /// должна работать независимо от вызывающего кода.
 #[must_use]
-pub struct TaskHandle(JoinHandle<()>);
+pub struct TaskHandle {
+    inner: JoinHandle<()>,
+    cancel_flag: Arc<AtomicBool>,
+}
 
 impl TaskHandle {
+    /// Просит задачу остановиться: выставляет флаг, который задача читает
+    /// через [`TaskContext::is_cancelled`]. Отмена кооперативная — поток
+    /// сам решает, где прерваться.
+    pub fn abort(&self) {
+        self.cancel_flag.store(true, Ordering::SeqCst);
+    }
+
     /// Ждёт завершения потока.
     ///
     /// Завёрнутый в поток замыкание не возвращает значений, поэтому
     /// результат — [`std::thread::Result`], который `Ok(())` при нормальном
     /// завершении и `Err` с паник-пейлоадем при падении.
     pub fn join(self) -> ThreadResult<()> {
-        self.0.join()
+        self.inner.join()
+    }
+
+    /// Возвращает флаг отмены, которым делится запущенный поток.
+    ///
+    /// Позволяет хранить сигнал отмены отдельно от ручки (например, в
+    /// состоянии UI, где сама ручка с её [`JoinHandle`] не помещается),
+    /// сохраняя возможность запросить отмену в любой момент.
+    pub fn cancel_flag(&self) -> Arc<AtomicBool> {
+        self.cancel_flag.clone()
     }
 }
 
@@ -152,14 +190,23 @@ pub(crate) fn install_proxy(proxy: EventLoopProxy<UserEvent>) -> Result<(), Task
 
 /// Запускает замыкание в отдельном потоке.
 ///
-/// Поток получает имя `light-async-N` и живёт независимо от вызывающего
-/// кода: [`TaskHandle`] можно отбросить, и задача продолжит выполнение.
+/// Замыкание получает [`TaskContext`], через который замечает запрос отмены
+/// (кооперативно — поток сам решает, где прерваться). Поток живёт
+/// независимо от вызывающего кода: [`TaskHandle`] можно отбросить, и задача
+/// продолжит выполнение.
 pub fn spawn<F>(f: F) -> TaskHandle
 where
-    F: FnOnce() + Send + 'static,
+    F: FnOnce(TaskContext) + Send + 'static,
 {
-    let handle = std::thread::spawn(f);
-    TaskHandle(handle)
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let ctx = TaskContext {
+        cancel_flag: cancel_flag.clone(),
+    };
+    let inner = std::thread::Builder::new()
+        .name("light-async".into())
+        .spawn(move || f(ctx))
+        .expect("thread spawn should not fail");
+    TaskHandle { inner, cancel_flag }
 }
 
 /// Ставит замыкание в очередь UI-цикла.
@@ -221,6 +268,7 @@ pub fn post_update<C: Component + 'static>(
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
 
     #[test]
     fn post_to_ui_without_install_errors() {
@@ -234,15 +282,32 @@ mod tests {
     #[test]
     fn spawn_runs_closure() {
         static RAN: AtomicBool = AtomicBool::new(false);
-        let handle = spawn(|| RAN.store(true, Ordering::SeqCst));
+        let handle = spawn(|_ctx| RAN.store(true, Ordering::SeqCst));
         handle.join().expect("spawned thread must not panic");
         assert!(RAN.load(Ordering::SeqCst), "closure should have run");
     }
 
     #[test]
     fn spawn_returns_joinable_handle() {
-        let handle = spawn(|| {});
+        let handle = spawn(|_ctx| {});
         handle.join().expect("empty closure must not panic");
+    }
+
+    #[test]
+    fn abort_stops_task() {
+        static CANCELLED: AtomicBool = AtomicBool::new(false);
+        let handle = spawn(|ctx| {
+            while !ctx.is_cancelled() {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            CANCELLED.store(true, Ordering::SeqCst);
+        });
+        handle.abort();
+        handle.join().expect("aborted thread must finish");
+        assert!(
+            CANCELLED.load(Ordering::SeqCst),
+            "task should observe cancellation"
+        );
     }
 
     #[test]

@@ -1288,7 +1288,7 @@ fn start_async(&self) {
     self.set_loading(true);
 
     let next = self.count() + 1;
-    let _ = light::spawn(move || {
+    let _ = light::spawn(move |_ctx: TaskContext| {
         std::thread::sleep(Duration::from_secs(2));
         let _ = light::post_update::<App>(move |app: &mut App| {
             app.set_count(next);
@@ -1303,6 +1303,45 @@ fn start_async(&self) {
 `post_update` принимает только замыкание и типизируется дженериком `<C: Component>`: `light::post_update::<App>(|app: &mut App| { … })`. Прокси передавать не нужно. В UI-цикле компонент, которому адресовано действие, находится по `TypeId`, замыкание применяется к нему, и на всех открытых окнах запрашивается перерисовка.
 
 Действие применяется к **первому совпадению**: в 0.11.0 нет адресации к конкретному окну, если открыто несколько окон одного типа — точная адресация к окну — задача на будущее.
+
+### Отмена фоновой задачи
+
+Задача получает `TaskContext` с кооперативным флагом отмены. Внутри closure достаточно периодически проверять `ctx.is_cancelled()` и выйти досрочно, если задача уже не нужна:
+
+```rust
+let _ = light::spawn(move |ctx: TaskContext| {
+    for _ in 0..200 {
+        if ctx.is_cancelled() {
+            // Задача отменена — результат не применяем.
+            return;
+        }
+        // ... шаг фоновой работы
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let _ = light::post_update::<App>(move |app: &mut App| { /* ... */ });
+});
+```
+
+Запуск задачи возвращает `TaskHandle`, у которого:
+
+- `abort()` — кооперативный запрос отмены (ставит общий флаг; задача проверяет его сама);
+- `join()` — дождаться завершения потока;
+- `cancel_flag()` — общий флаг `Arc<AtomicBool>`; его можно сохранить в компоненте и ставить из обработчика кнопки «Отмена»:
+
+```rust
+fn start_async(&self) {
+    let handle = light::spawn(move |ctx: TaskContext| { /* ... */ });
+    self.cancel_flag.set(Some(CancelFlag::new(handle.cancel_flag())));
+}
+
+fn cancel_async(&self) {
+    if let Some(flag) = self.cancel_flag.get().as_ref() {
+        flag.0.store(true, Ordering::SeqCst);
+    }
+}
+```
+
+Флаг отмены кооперативный: задача не убивается принудительно, а сама решает, на каком шаге выйти, — это исключает повреждённое состояние. Рабочий пример — `examples/async-counter` (кнопки «Начать» / «Отмена»).
 
 ## Полный пример
 

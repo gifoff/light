@@ -10,14 +10,16 @@
         <div font-size="13" font-color="#64748B">
             Асинхронное обновление состояния компонента
         </div>
-        <div v-if="loading">
+        <div v-if="loading" direction="vertical">
             <div font-size="20" font-color="#0F172A">Загрузка…</div>
             <div font-color="#64748B">Текущее значение: {{ count }}</div>
+            <button @click="cancel_async" type="button">Отмена</button>
         </div>
         <div v-else direction="vertical">
             <div font-size="20" font-color="#0F172A">Значение: {{ count }}</div>
             <div font-color="#64748B">
-                Нажмите кнопку — обновит состояние через 2 секунды
+                Нажмите кнопку — обновление занимает ~1 секунду,
+                его можно отменить
             </div>
             <button @click="start_async" type="button">Начать асинхронное обновление</button>
         </div>
