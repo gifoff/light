@@ -1,6 +1,6 @@
-<window title="Light Second Window" width="380" height="360" resizable="false">
+<window title="Окно 2" width="380" height="360" resizable="false">
     <titlebar background="#0F172A" height="34" padding-left="12" padding-right="8" align-items="center">
-        <div direction="horizontal" align-items="center" font-color="#F8FAFC" font-size="16">{{ title }}</div>
+        <div direction="horizontal" align-items="center" font-color="#F8FAFC" font-size="16">Окно 2</div>
         <div direction="horizontal" align-items="center" position-x="right">
             <button @click="minimize()" type="button" width="30" height="24" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#F8FAFC">-</button>
             <button @click="close()" type="button" width="30" height="24" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#F8FAFC">x</button>
@@ -8,16 +8,25 @@
     </titlebar>
     <div direction="vertical" padding="18" background="#F8FAFC">
         <div font-size="13" font-color="#64748B">
-            Асинхронное обновление конкретного окна. Запуск здесь
-            не влияет на первое окно.
+            Асинхронные обновления адресуются только к этому окну.
         </div>
         <div direction="horizontal" gap="16" align-items="center">
-            <button @click="increment()" type="button" width="44" height="44" font-size="20" background="#3B82F6" border-color="#3B82F6" font-color="#FFFFFF">+1</button>
-            <div font-size="18" font-color="#0F172A">Счётчик: {{ count }}</div>
+            <div font-size="32" font-color="#0F172A">
+                Счёт: {{ count }}
+            </div>
         </div>
-        <div direction="vertical" gap="10" align-items="center">
-            <button @click="start_async()" type="button" width="160" height="42" font-size="15" background="#10B981" border-color="#10B981" font-color="#FFFFFF">Start Async 3s</button>
-            <button @click="cancel_async()" type="button" width="160" height="32" font-size="13" background="#94A3B8" border-color="#94A3B8" font-color="#FFFFFF">Cancel</button>
+        <button @click="start_async" type="button" width="100%" height="36" font-size="14" v-if="!loading" background="#2563EB" font-color="#F8FAFC">
+            Start Async 3s
+        </button>
+        <div v-else direction="vertical" align-items="center" gap="6">
+            <div font-size="14" font-color="#B45309">Асинхронный цикл выполняется…</div>
+            <button @click="cancel_async" type="button" width="100%" height="30" font-size="13" background="#DC2626" font-color="#F8FAFC">
+                Отменить
+            </button>
+        </div>
+        <div font-size="12" font-color="#94A3B8" v-if="!loading">
+            post_update_to(token, f): асинхронный вызов применяется только
+            к окну, чей token передан.
         </div>
     </div>
 </window>

@@ -6,13 +6,15 @@
 //! каждая итерация цикла отправляется только в целевое окно, идентифицированное
 //! его [`WindowToken`] (полученным через [`light::current_window_token`]).
 //!
-//! Агрегирующий компонент [`App`] объединяет оба окна через
-//! `#[template("templates/app_main.html", windows = [Main, Second])]` —
-//! без `#[proxy]`, без полей, без ручного `new()`.
+//! Агрегирующий компонент [`App`] (обычная структура) при первом рендере
+//! открывает оба дочерних окна через `WindowCommand::Open("Main")` и
+//! `WindowCommand::Open("Second")`. Его собственное окно невидимо
+//! (`visible="false"` в шаблоне): оно только держит event-loop, пока
+//! открыты дочерние окна.
 //!
 //! Запуск:
 //! ```bash
-//! cargo run --example multi-window
+//! cargo run -p example-multi-window
 //! ```
 
 use std::sync::Arc;
@@ -20,6 +22,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use light::async_runtime::post_update_to;
+use light::control::{WindowCommand, request};
 use light::prelude::*;
 use light::{TaskContext, current_window_token, spawn};
 
@@ -84,8 +87,8 @@ impl Main {
         self.set_count(self.count.get() + 1);
     }
 
-    /// Запуск асинхронной задачи: 10 итераций × 300 мс, каждая
-    /// увеличивает счётчик на 5. Все обновления идут только в это окно
+    /// Запуск асинхронной задачи: 30 итераций × 100 мс, каждая
+    /// увеличивает счётчик на 1. Все обновления идут только в это окно
     /// через `post_update_to` с токеном текущего окна.
     #[allow(dead_code)]
     pub fn start_async(&self) {
@@ -114,16 +117,16 @@ impl Main {
 
         // Запускаем задачу в runtime.
         let _ = spawn(move |ctx: TaskContext| {
-            for i in 0..10u32 {
+            for i in 0..30u32 {
                 if flag_for_task.is_cancelled() || ctx.is_cancelled() {
                     break;
                 }
 
-                std::thread::sleep(Duration::from_millis(300));
+                std::thread::sleep(Duration::from_millis(100));
 
                 // Асинхронное обновление: только в это окно (по токену).
                 let _ = post_update_to::<Main>(token, move |m: &mut Main| {
-                    m.set_count(m.count.get() + 5);
+                    m.set_count(m.count.get() + 1);
                 });
 
                 // Прогресс (опциональный вывод в консоль).
@@ -202,8 +205,8 @@ impl Second {
         self.set_count(self.count.get() + 1);
     }
 
-    /// Запуск асинхронной задачи: 10 итераций × 300 мс, каждая
-    /// увеличивает счётчик на 5. Все обновления идут только в это окно
+    /// Запуск асинхронной задачи: 30 итераций × 100 мс, каждая
+    /// увеличивает счётчик на 1. Все обновления идут только в это окно
     /// через `post_update_to` с токеном текущего окна.
     #[allow(dead_code)]
     pub fn start_async(&self) {
@@ -232,16 +235,16 @@ impl Second {
 
         // Запускаем задачу в runtime.
         let _ = spawn(move |ctx: TaskContext| {
-            for i in 0..10u32 {
+            for i in 0..30u32 {
                 if flag_for_task.is_cancelled() || ctx.is_cancelled() {
                     break;
                 }
 
-                std::thread::sleep(Duration::from_millis(300));
+                std::thread::sleep(Duration::from_millis(100));
 
                 // Асинхронное обновление: только в это окно (по токену).
                 let _ = post_update_to::<Second>(token, move |m: &mut Second| {
-                    m.set_count(m.count.get() + 5);
+                    m.set_count(m.count.get() + 1);
                 });
 
                 // Прогресс (опциональный вывод в консоль).
@@ -289,19 +292,42 @@ impl Second {
     }
 }
 
-/// Корневой компонент: агрегирует два окна.
+/// Корневой компонент.
 ///
-/// Не имеет полей — `#[template]` без `#[proxy]` (макрос `#[proxy]`
-/// поддерживает только структуры с именованными полями). `App` просто
-/// связывает `Main` и `Second` через `windows = [...]`.
-#[template("templates/app_main.html", windows = [Main, Second])]
-struct App;
+/// Является обычным `struct` без макроса `#[template]`, чтобы иметь
+/// собственный `fn render` без конфликта с автогенерацией. При первом
+/// рендере один раз открывает оба дочерних окна (`Main` и `Second`)
+/// через `WindowCommand::Open`.
+struct App {
+    /// Флаг: окна уже открыты (открывать только один раз).
+    opened: AtomicBool,
+}
 
 impl App {
-    /// Конструктор (макрос `#[proxy]` не генерирует `new()` для
-    /// структур без полей, поэтому пишем вручную).
-    const fn new() -> Self {
-        Self
+    /// Конструктор.
+    fn new() -> Self {
+        Self {
+            opened: AtomicBool::new(false),
+        }
+    }
+}
+
+impl Component for App {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    /// Рендерит невидимое корневое окно (держатель event-loop) и при
+    /// первом обращении открывает оба дочерних окна.
+    fn render(&self) -> VElement {
+        if !self.opened.swap(true, Ordering::SeqCst) {
+            request(WindowCommand::Open("Main".into()));
+            request(WindowCommand::Open("Second".into()));
+        }
+        VElement::container("", NodeKind::Window, Vec::new()).with_window(WindowConfig {
+            visible: false,
+            ..Default::default()
+        })
     }
 }
 

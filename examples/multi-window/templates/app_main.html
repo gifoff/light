@@ -1,5 +1,14 @@
-<div direction="vertical" padding="12" background="#F8FAFC">
-    <div font-size="13" font-color="#64748B">
-        Приложением открыло два независимых окна.
+<!-- Корневое окно невидимо: хостит event-loop и открывает Main/Second через WindowCommand::Open -->
+<window title="Multi-window" visible="false" width="340" height="260" resizable="false">
+    <titlebar background="#0F172A" height="34" padding-left="12" padding-right="8" align-items="center">
+        <div direction="horizontal" align-items="center" font-color="#F8FAFC" font-size="16">Запуск окон</div>
+        <div direction="horizontal" align-items="center" position-x="right">
+            <button @click="minimize()" type="button" width="30" height="24" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#F8FAFC">-</button>
+            <button @click="close()" type="button" width="30" height="24" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#F8FAFC">x</button>
+        </div>
+    </titlebar>
+    <div direction="vertical" padding="18" background="#F8FAFC" gap="8" align-items="center">
+        <div font-size="14" font-color="#0F172A">Окна 1 и 2 открыты.</div>
+        <div font-size="12" font-color="#64748B">Каждое окно ведёт свой счётчик независимо.</div>
     </div>
-</div>
+</window>
