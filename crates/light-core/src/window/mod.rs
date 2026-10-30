@@ -1816,10 +1816,13 @@ impl App {
                 }
             }
         });
+        // Токен `0` зарезервирован под «окно по умолчанию» (см.
+        // [`crate::control::current_window_token`]: возвращается `None`).
+        // Поэтому нумерация реальных окон начинается с `1`.
         Self {
             windows: HashMap::new(),
             tokens: HashMap::new(),
-            next_token: 0,
+            next_token: 1,
             registry: HashMap::new(),
             root: Some(root),
             font,
