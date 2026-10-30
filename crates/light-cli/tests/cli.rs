@@ -4,6 +4,13 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use tempfile::TempDir;
 
+/// Версия световой зависимости, которую генерирует `light init`.
+///
+/// Идентична константе [`light_fw_cli_core::init::LIGHT_DEPENDENCY_VERSION`]
+/// (обе — `env!("CARGO_PKG_VERSION")` на уровне воркспейса). Используется,
+/// чтобы тесты не падали при bump версии крейтов.
+const LIGHT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -688,7 +695,10 @@ fn init_creates_full_project() {
     let project = scratch.path().join("cool-app");
     let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
     assert!(manifest.contains("name = \"cool-app\""), "{manifest}");
-    assert!(manifest.contains("light = \"0.10."), "{manifest}");
+    assert!(
+        manifest.contains(&format!("light = \"{LIGHT_VERSION}\"")),
+        "{manifest}"
+    );
     let main_rs = std::fs::read_to_string(project.join("src").join("main.rs")).expect("main.rs");
     assert!(main_rs.contains("Hello, Light!"), "{main_rs}");
     let gitignore = std::fs::read_to_string(project.join(".gitignore")).expect(".gitignore");
@@ -713,17 +723,19 @@ fn init_with_components_adds_dependencies_and_features() {
     let project = scratch.path().join("form-app");
     let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
     assert!(
-        manifest.contains(
-            "light = { version = \"0.10.3\", features = [\"elements-form\", \"validation\"] }"
-        ),
+        manifest.contains(&format!(
+            "light = {{ version = \"{LIGHT_VERSION}\", features = [\"elements-form\", \"validation\"] }}"
+        )),
         "{manifest}"
     );
     assert!(
-        manifest.contains("light-fw-element-form = \"0.10.3\""),
+        manifest.contains(&format!("light-fw-element-form = \"{LIGHT_VERSION}\"")),
         "{manifest}"
     );
     assert!(
-        manifest.contains("light-fw-behavior-validation = \"0.10.3\""),
+        manifest.contains(&format!(
+            "light-fw-behavior-validation = \"{LIGHT_VERSION}\""
+        )),
         "{manifest}"
     );
 

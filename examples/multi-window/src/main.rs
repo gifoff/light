@@ -1,16 +1,16 @@
 //! Пример: два независимых окна с асинхронными обновлениями, адресованными
 //! к конкретному окну через [`light::post_update_to`].
 //!
+//! Корневым окном является [`Main`] (видимое окно «Окно 1»); кнопка
+//! «Открыть Окно 2» отправляет `WindowCommand::OpenWindow`, и бэкенд
+//! открывает второе главное окно — компонент [`Second`], возвращаемый
+//! `Component::window_factory`. Второе окно не имеет родителя: приложение
+//! завершается только когда закрыты оба главных окна.
+//!
 //! Каждое окно — самостоятельный компонент со своим счётчиком и своей
 //! асинхронной задачей. Обновления в одном окне не влияют на второе:
 //! каждая итерация цикла отправляется только в целевое окно, идентифицированное
 //! его [`WindowToken`] (полученным через [`light::current_window_token`]).
-//!
-//! Агрегирующий компонент [`App`] (обычная структура) при первом рендере
-//! открывает оба дочерних окна через `WindowCommand::Open("Main")` и
-//! `WindowCommand::Open("Second")`. Его собственное окно невидимо
-//! (`visible="false"` в шаблоне): оно только держит event-loop, пока
-//! открыты дочерние окна.
 //!
 //! Запуск:
 //! ```bash
@@ -56,11 +56,16 @@ impl CancelFlag {
     }
 }
 
-/// Окно 1: заголовок, счётчик, асинхронная кнопка.
+/// Окно 1 (корневое): заголовок, счётчик, асинхронная кнопка и кнопка
+/// «Открыть Окно 2».
 ///
 /// Все асинхронные обновления адресованы к этому окну через
 /// [`post_update_to`] с токеном, полученным в момент нажатия кнопки.
-#[template("templates/app.html")]
+///
+/// Аргумент `window = Second` макроса `#[template]` генерирует
+/// `Component::window_factory`, которая открывает второе главное окно
+/// ([`Second`]) по `WindowCommand::OpenWindow`.
+#[template("templates/app.html", window = Second)]
 #[proxy]
 struct Main {
     /// Название окна.
@@ -81,16 +86,21 @@ struct Main {
 }
 
 impl Main {
-    /// Увеличение счётчика по кнопке.
+    /// Увеличение счётчика (вызывается из асинхронной задачи).
     #[allow(dead_code)]
     pub fn increment(&self) {
         self.set_count(self.count.get() + 1);
     }
 
+    /// Открывает второе главное окно ([`Second`]) через
+    /// `WindowCommand::OpenWindow` (использует `Component::window_factory`).
+    pub fn open_second(&self) {
+        request(WindowCommand::OpenWindow);
+    }
+
     /// Запуск асинхронной задачи: 30 итераций × 100 мс, каждая
     /// увеличивает счётчик на 1. Все обновления идут только в это окно
     /// через `post_update_to` с токеном текущего окна.
-    #[allow(dead_code)]
     pub fn start_async(&self) {
         // Если уже есть активная задача — отменяем её и не запускаем новую.
         if let Some(existing) = self.cancel_flag.get().clone() {
@@ -292,45 +302,6 @@ impl Second {
     }
 }
 
-/// Корневой компонент.
-///
-/// Является обычным `struct` без макроса `#[template]`, чтобы иметь
-/// собственный `fn render` без конфликта с автогенерацией. При первом
-/// рендере один раз открывает оба дочерних окна (`Main` и `Second`)
-/// через `WindowCommand::Open`.
-struct App {
-    /// Флаг: окна уже открыты (открывать только один раз).
-    opened: AtomicBool,
-}
-
-impl App {
-    /// Конструктор.
-    fn new() -> Self {
-        Self {
-            opened: AtomicBool::new(false),
-        }
-    }
-}
-
-impl Component for App {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    /// Рендерит невидимое корневое окно (держатель event-loop) и при
-    /// первом обращении открывает оба дочерних окна.
-    fn render(&self) -> VElement {
-        if !self.opened.swap(true, Ordering::SeqCst) {
-            request(WindowCommand::Open("Main".into()));
-            request(WindowCommand::Open("Second".into()));
-        }
-        VElement::container("", NodeKind::Window, Vec::new()).with_window(WindowConfig {
-            visible: false,
-            ..Default::default()
-        })
-    }
-}
-
 fn main() {
-    let _ = light::run(App::new());
+    let _ = light::run(Main::default());
 }
