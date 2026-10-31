@@ -98,9 +98,10 @@ impl Main {
         request(WindowCommand::OpenWindow);
     }
 
-    /// Запуск асинхронной задачи: 30 итераций × 100 мс, каждая
-    /// увеличивает счётчик на 1. Все обновления идут только в это окно
-    /// через `post_update_to` с токеном текущего окна.
+    /// Запуск асинхронной задачи: 30 итераций × 100 мс (≈ 3 с).
+    /// Счётчик увеличивается ровно на 1 после завершения цикла.
+    /// Все обновления идут только в это окно через `post_update_to`
+    /// с токеном текущего окна.
     pub fn start_async(&self) {
         // Если уже есть активная задача — отменяем её и не запускаем новую.
         if let Some(existing) = self.cancel_flag.get().clone() {
@@ -127,24 +128,22 @@ impl Main {
 
         // Запускаем задачу в runtime.
         let _ = spawn(move |ctx: TaskContext| {
-            for i in 0..30u32 {
+            // Ждём 3 секунды (30 раз по 100 мс).
+            for _ in 0..30 {
                 if flag_for_task.is_cancelled() || ctx.is_cancelled() {
-                    break;
+                    let _ = post_update_to::<Main>(token, move |m: &mut Main| {
+                        m.set_async_button(false);
+                        m.set_cancel_flag(None);
+                    });
+                    return;
                 }
 
                 std::thread::sleep(Duration::from_millis(100));
-
-                // Асинхронное обновление: только в это окно (по токену).
-                let _ = post_update_to::<Main>(token, move |m: &mut Main| {
-                    m.set_count(m.count.get() + 1);
-                });
-
-                // Прогресс (опциональный вывод в консоль).
-                let _ = i;
             }
 
-            // Финальная очистка: сбрасываем флаг и кнопку.
+            // Счётчик увеличивается ровно на 1 — один раз после цикла.
             let _ = post_update_to::<Main>(token, move |m: &mut Main| {
+                m.set_count(m.count.get() + 1);
                 m.set_async_button(false);
                 m.set_cancel_flag(None);
             });
@@ -215,9 +214,10 @@ impl Second {
         self.set_count(self.count.get() + 1);
     }
 
-    /// Запуск асинхронной задачи: 30 итераций × 100 мс, каждая
-    /// увеличивает счётчик на 1. Все обновления идут только в это окно
-    /// через `post_update_to` с токеном текущего окна.
+    /// Запуск асинхронной задачи: 30 итераций × 100 мс (≈ 3 с).
+    /// Счётчик увеличивается ровно на 1 после завершения цикла.
+    /// Все обновления идут только в это окно через `post_update_to`
+    /// с токеном текущего окна.
     #[allow(dead_code)]
     pub fn start_async(&self) {
         // Если уже есть активная задача — отменяем её и не запускаем новую.
@@ -245,24 +245,22 @@ impl Second {
 
         // Запускаем задачу в runtime.
         let _ = spawn(move |ctx: TaskContext| {
-            for i in 0..30u32 {
+            // Ждём 3 секунды (30 раз по 100 мс).
+            for _ in 0..30 {
                 if flag_for_task.is_cancelled() || ctx.is_cancelled() {
-                    break;
+                    let _ = post_update_to::<Second>(token, move |m: &mut Second| {
+                        m.set_async_button(false);
+                        m.set_cancel_flag(None);
+                    });
+                    return;
                 }
 
                 std::thread::sleep(Duration::from_millis(100));
-
-                // Асинхронное обновление: только в это окно (по токену).
-                let _ = post_update_to::<Second>(token, move |m: &mut Second| {
-                    m.set_count(m.count.get() + 1);
-                });
-
-                // Прогресс (опциональный вывод в консоль).
-                let _ = i;
             }
 
-            // Финальная очистка: сбрасываем флаг и кнопку.
+            // Счётчик увеличивается ровно на 1 — один раз после цикла.
             let _ = post_update_to::<Second>(token, move |m: &mut Second| {
+                m.set_count(m.count.get() + 1);
                 m.set_async_button(false);
                 m.set_cancel_flag(None);
             });
