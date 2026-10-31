@@ -27,7 +27,7 @@
 //! # }
 //! ```
 
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::thread::{JoinHandle, Result as ThreadResult};
@@ -286,6 +286,51 @@ fn post_update_impl<C: Component + 'static>(
         token,
     };
     proxy.send_event(action).map_err(|_| TaskError::Closed)
+}
+
+/// Применяет действие [`UserEvent::Action`] к одному из открытых окон.
+///
+/// Логика доставки, вынесенная из обработчика событий окна
+/// ([`crate::window::App::user_event`]) в отдельную функцию, чтобы её можно
+/// было проверить без запуска цикла событий winit. Окна передаются
+/// итератором пар `(токен, компонент)` — именно эти два поля использует
+/// доставка; остальное состояние окна (поверхность, раскладка) тут не
+/// трогается.
+///
+/// * `token = Some(t)` — точная адресация: действие применяется только к
+///   окну с токеном `t`; если такого окна нет (в том числе уже закрыто),
+///   возвращается `None`, и действие отбрасывается;
+/// * `token = None` — действие применяется к первому окну, чей компонент
+///   имеет `TypeId` `target`; если таких окон нет, возвращается `None`.
+///
+/// Возвращает `Some(токен)` того окна, к которому действие было применено —
+/// обработчик использует его для `request_redraw()` целевого окна. Перерисовка
+/// не запрашивается внутри функции, что устраняет конфликт заёмов между
+/// итератором компонентов и доступом к `Arc<Window>`.
+/// Публичный API для тестирования логики доставки [`UserEvent::Action`]
+/// без запуска цикла событий winit. См. внутреннюю документацию выше.
+#[cfg(feature = "async-runtime")]
+pub fn apply_action<'a>(
+    windows: impl Iterator<Item = (WindowToken, TypeId, &'a mut dyn Component)>,
+    token: Option<WindowToken>,
+    target: TypeId,
+    f: UpdateFn,
+) -> Option<WindowToken> {
+    // Для точной адресации (Some(token)) ищем по токену — TypeId не нужен.
+    // Для broadcast (None) ищем по TypeId; он передаётся вместе с парой,
+    // чтобы не вызывать as_any_mut() дважды (одна mutable borrow не может
+    // служить и для type_id(), и для f).
+    for (window_token, type_id, component) in windows {
+        let matched = match token {
+            Some(t) => window_token == t,
+            None => type_id == target,
+        };
+        if matched {
+            f(component.as_any_mut());
+            return Some(window_token);
+        }
+    }
+    None
 }
 
 /// Ставит типизированное обновление компонента в очередь UI-цикла

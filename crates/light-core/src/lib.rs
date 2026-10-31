@@ -97,12 +97,13 @@ pub mod window;
 
 #[cfg(feature = "async-runtime")]
 pub use async_runtime::{
-    TaskContext, TaskError, TaskHandle, UserEvent, post_to_ui, post_update, post_update_to, spawn,
+    TaskContext, TaskError, TaskHandle, UserEvent, apply_action, post_to_ui, post_update,
+    post_update_to, spawn,
 };
 pub use collection::Collection;
 pub use component::{Component, WindowConfig};
 pub use control::{
-    FocusCommand, WindowCommand, blur, current_window_token, focus, focused_key,
+    FocusCommand, WindowCommand, WindowToken, blur, current_window_token, focus, focused_key,
     set_current_window_token,
 };
 pub use dom::Dom;

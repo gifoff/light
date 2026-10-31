@@ -2205,35 +2205,33 @@ impl ApplicationHandler<UserEvent> for App {
             }
             #[cfg(feature = "async-runtime")]
             UserEvent::Action { f, target, token } => {
-                let applied = match token {
-                    Some(token) => {
-                        let Some(id) = self.tokens.get(&token).copied() else {
-                            eprintln!("async-runtime: target window closed");
-                            return;
-                        };
-                        let Some(window) = self.windows.get_mut(&id) else {
-                            eprintln!("async-runtime: target window closed");
-                            return;
-                        };
-                        f(window.component.as_any_mut());
-                        window.window.request_redraw();
-                        true
-                    }
-                    None => {
-                        let mut applied = false;
-                        for window in self.windows.values_mut() {
-                            if window.component.as_any_mut().type_id() == target {
-                                f(window.component.as_any_mut());
-                                window.window.request_redraw();
-                                applied = true;
-                                break;
-                            }
+                // Окно находится по токену (или по TypeId, если токен не
+                // задан) внутри apply_action. Функция возвращает токен окна,
+                // к которому действие было применено; после возврата из неё
+                // borrow на self.windows снят, поэтому безопасно разыскиваем
+                // окно по токену и запрашиваем его перерисовку — ровно как в
+                // прежнем обработчике.
+                let matched = crate::async_runtime::apply_action(
+                    self.windows.iter_mut().map(|(_id, state)| {
+                        (
+                            state.token,
+                            state.component.as_any_mut().type_id(),
+                            state.component.as_mut(),
+                        )
+                    }),
+                    token,
+                    target,
+                    f,
+                );
+                match matched {
+                    Some(m) => {
+                        if let Some(id) = self.tokens.get(&m).copied()
+                            && let Some(state) = self.windows.get(&id)
+                        {
+                            state.window.request_redraw();
                         }
-                        applied
                     }
-                };
-                if !applied {
-                    eprintln!("async-runtime: target window closed");
+                    None => eprintln!("async-runtime: target window closed"),
                 }
                 return;
             }
@@ -2268,6 +2266,13 @@ impl ApplicationHandler<UserEvent> for App {
             self.close_window(event_loop, id);
             return;
         }
+        // Любое событие окна фиксирует его токен как активный/текущий. До
+        // этого обновления происходили только на вводе (после проверки
+        // блокировки), из-за чего между событиями другого окна (например,
+        // RedrawRequested) глобальные токены оставались на предыдущем окне, и
+        // post_update_to адресовал не тот компонент.
+        set_active_window(token);
+        set_current_window_token(token);
         let is_input = matches!(
             &event,
             WindowEvent::CursorMoved { .. }
@@ -2282,8 +2287,6 @@ impl ApplicationHandler<UserEvent> for App {
         let Some(window) = self.windows.get_mut(&id) else {
             return;
         };
-        set_active_window(token);
-        set_current_window_token(token);
         match event {
             WindowEvent::Resized(_) => window.invalidate(),
             WindowEvent::Focused(false) => window.on_unfocus(),
