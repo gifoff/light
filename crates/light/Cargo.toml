@@ -77,6 +77,8 @@ window-by-id = ["light-fw-core/window-by-id"]
 window-resize = ["light-fw-core/window-resize"]
 # Фоновые задачи и доставка сообщений в UI-поток (`spawn`/`post_to_ui`).
 async-runtime = ["light-fw-core/async-runtime"]
+# Асинхронные замыкания (фьючи) через `futures::executor::block_on`.
+async-await = ["light-fw-core/async-await"]
 
 # --- Доступность -------------------------------------------------------
 # Построение дерева доступности AccessKit.

@@ -28,6 +28,8 @@
 //! ```
 
 use std::any::{Any, TypeId};
+#[cfg(feature = "async-await")]
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::thread::{JoinHandle, Result as ThreadResult};
@@ -216,6 +218,54 @@ where
     let inner = std::thread::Builder::new()
         .name("light-async".into())
         .spawn(move || f(ctx))
+        .expect("thread spawn should not fail");
+    TaskHandle { inner, cancel_flag }
+}
+
+/// Запускает `Future` в отдельном потоке ОС, блокируя его до завершения.
+///
+/// Использует [`futures::executor::block_on`] для выполнения фьючи в
+/// отдельном потоке — без привязки к внешнему рантайму (tokio/async-std).
+///
+/// Возвращает [`TaskHandle`] с кооперативным флагом отмены. Важно:
+/// [`futures::executor::block_on`] не поддерживает принудительную отмену
+/// извне — если фьюча висит на I/O, [`TaskHandle::abort`] её не прервёт.
+/// Это ожидаемое поведение для 0.12.0.
+///
+/// # Пример
+///
+/// ```rust
+/// # #[cfg(feature = "async-await")]
+/// # fn example() {
+/// use light_fw_core::async_runtime::spawn_async;
+///
+/// spawn_async(async {
+///     // асинхронная работа
+///     # std::future::ready(()).await;
+/// });
+/// # }
+/// ```
+#[cfg(feature = "async-await")]
+pub fn spawn_async<F>(future: F) -> TaskHandle
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let ctx = TaskContext {
+        cancel_flag: cancel_flag.clone(),
+    };
+
+    let inner = std::thread::Builder::new()
+        .name("light-async-await".into())
+        .spawn(move || {
+            futures::executor::block_on(async move {
+                // Пользователь не получает TaskContext внутри фьючи,
+                // так как Future не принимает аргументов. Отмена должна
+                // проверяться вручную (через свои флаги).
+                let _ = &ctx;
+                future.await;
+            });
+        })
         .expect("thread spawn should not fail");
     TaskHandle { inner, cancel_flag }
 }

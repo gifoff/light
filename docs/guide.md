@@ -1300,6 +1300,35 @@ fn start_async(&self) {
 
 `light::spawn` запускает замыкание в отдельном `std::thread` (а не в async-рантайме): поток живёт независимо и блокируется обычным `std::thread::sleep`. Возвращённый `TaskHandle` можно отбросить — задача продолжит выполнение.
 
+### Асинхронные фьючи (async/await)
+
+Для сложных задач с асинхронным кодом доступна фича `async-await` и функция `light::spawn_async(async { … })`. Она работает без привязки к конкретному рантайму (блокирует поток через `futures::executor::block_on`), но позволяет использовать `await` внутри:
+
+```rust
+use std::time::Duration;
+use light::prelude::*;
+
+fn start_async(&self) {
+    let next = self.count() + 1;
+    let _ = light::spawn_async(async move {
+        // асинхронная задержка без внешнего рантайма
+        let start = std::time::Instant::now();
+        futures::future::poll_fn(|_cx| {
+            if start.elapsed() >= Duration::from_secs(2) {
+                std::task::Poll::Ready(())
+            } else {
+                std::task::Poll::Pending
+            }
+        }).await;
+        let _ = light::post_update::<App>(move |app: &mut App| {
+            app.set_count(next);
+        });
+    });
+}
+```
+
+Важно: `futures::executor::block_on` не поддерживает принудительную отмену извне — если фьюча висит на I/O, `TaskHandle::abort()` её не прервёт. Это ожидаемое поведение для 0.12.0.
+
 `post_update` принимает только замыкание и типизируется дженериком `<C: Component>`: `light::post_update::<App>(|app: &mut App| { … })`. Прокси передавать не нужно. В UI-цикле компонент, которому адресовано действие, находится по `TypeId`, замыкание применяется к нему, и на всех открытых окнах запрашивается перерисовка.
 
 ### Адресация к конкретному окну

@@ -12,6 +12,7 @@ description = "Ядро Light: виртуальный DOM, реактивнос�
 name = "light_fw_core"
 
 [dependencies]
+futures = { version = "0.3", optional = true }
 light-fw-macros.workspace = true
 thiserror = "2"
 winit = { workspace = true, optional = true }
@@ -87,6 +88,8 @@ window-by-id = ["window"]
 window-resize = ["window"]
 # Фоновые задачи и доставка сообщений в UI-поток (`spawn`/`post_to_ui`).
 async-runtime = ["window"]
+# Асинхронные замыкания (фьючи) через `futures::executor::block_on`.
+async-await = ["dep:futures", "async-runtime"]
 
 # --- Доступность -------------------------------------------------------
 # Построение дерева доступности AccessKit.

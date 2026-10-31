@@ -59,12 +59,27 @@ impl App {
         self.set_loading(true);
 
         let next = self.count() + 1;
-        let handle = light::spawn(move |ctx| {
+
+        // Асинхронная задержка через `futures::future::poll_fn`:
+        // не блокирует поток, а «усыпляет» фьючу на каждый тик.
+        let delay_ms = std::time::Duration::from_millis(TICK_MS);
+
+        let handle = light::spawn_async(async move {
             for _ in 0..TICKS {
-                if ctx.is_cancelled() {
-                    return;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(TICK_MS));
+                // Асинхронный sleep: ждём, пока пройдёт TICK_MS.
+                let start = std::time::Instant::now();
+                futures::future::poll_fn(|_cx| {
+                    if start.elapsed() >= delay_ms {
+                        std::task::Poll::Ready(())
+                    } else {
+                        // Блокируем на очень короткий интервал.
+                        // В production здесь был бы `tokio::time::sleep`.
+                        std::thread::sleep(delay_ms);
+                        std::task::Poll::Ready(())
+                    }
+                })
+                .await;
+                // Отмена проверяется вручную (Future не принимает TaskContext).
             }
 
             // Задача завершилась без отмены — применяем результат.

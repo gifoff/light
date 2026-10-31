@@ -84,6 +84,8 @@ extern crate self as light;
 
 pub use light_fw_core::*;
 
+#[cfg(feature = "async-await")]
+pub use light_fw_core::spawn_async;
 #[cfg(feature = "async-runtime")]
 pub use light_fw_core::{
     TaskContext, TaskError, TaskHandle, UserEvent, post_to_ui, post_update, post_update_to, spawn,

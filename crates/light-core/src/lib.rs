@@ -95,6 +95,8 @@ pub mod render;
 #[cfg(feature = "window")]
 pub mod window;
 
+#[cfg(feature = "async-await")]
+pub use async_runtime::spawn_async;
 #[cfg(feature = "async-runtime")]
 pub use async_runtime::{
     TaskContext, TaskError, TaskHandle, UserEvent, apply_action, post_to_ui, post_update,
