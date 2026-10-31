@@ -95,6 +95,8 @@ a11y-keyboard = ["light-fw-core/a11y-keyboard"]
 # --- Прочее ------------------------------------------------------------
 # Включение шаблонов `<include src="...">`.
 include = ["light-fw-core/include"]
+# Инспекция состояния: JSON-снимок VDOM и реактивных свойств (DevTools).
+devtools = ["light-fw-core/devtools"]
 
 [dev-dependencies]
 serde_json = "1"

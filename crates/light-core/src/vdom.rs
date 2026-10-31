@@ -1146,6 +1146,22 @@ impl VElement {
             .map(|(_, value)| value.as_str())
     }
 
+    /// JSON-представление узла для инструментов разработки (DevTools).
+    ///
+    /// Минимальная форма: имя HTML-тега (`tag`), атрибуты (`attrs`, пары
+    /// `[имя, значение]`) и рекурсивно собранные дети (`children`). Тип узла
+    /// (`kind`) и стиль намеренно не сериализуются — их полный разбор требует
+    /// перебора вариантов с условной компиляцией и вынесен в отдельную задачу.
+    #[cfg(feature = "devtools")]
+    pub fn to_json(&self) -> serde_json::Value {
+        let children: Vec<_> = self.children.iter().map(VElement::to_json).collect();
+        serde_json::json!({
+            "tag": self.tag,
+            "attrs": &self.attrs,
+            "children": children,
+        })
+    }
+
     /// Ищет узел по ключу (обход в глубину).
     pub fn get(&self, key: &str) -> Option<&VElement> {
         if self.key == key {

@@ -100,6 +100,51 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     })?;
     let ident = struct_item.ident.clone();
 
+    // Имена полей структуры — для генерации снимка состояния (фича `devtools`).
+    let field_idents = match &struct_item.fields {
+        syn::Fields::Named(fields) => fields
+            .named
+            .iter()
+            .map(|field| {
+                field
+                    .ident
+                    .clone()
+                    .expect("поля именованные, ident обязан быть")
+            })
+            .collect::<Vec<_>>(),
+        _ => Vec::new(),
+    };
+    let inspect_state_method = if field_idents.is_empty() {
+        quote!()
+    } else {
+        let map_ident = Ident::new("__light_inspect_map", Span::call_site());
+        let self_token = Ident::new("self", Span::call_site());
+        let inserts = field_idents.iter().map(|name| {
+            let name_str = syn::LitStr::new(&name.to_string(), name.span());
+            let getter = quote!(#self_token.#name());
+            quote! {
+                let __light_inspect_val = #getter;
+                #map_ident.insert(
+                    ::std::string::String::from(#name_str),
+                    ::light::serde_json::to_value(__light_inspect_val)
+                        .unwrap_or(::light::serde_json::Value::Null),
+                );
+            }
+        });
+        quote! {
+            #[cfg(feature = "devtools")]
+            fn inspect_state(&self) -> ::light::serde_json::Value {
+                let mut #map_ident: ::std::collections::HashMap<
+                    ::std::string::String,
+                    ::light::serde_json::Value,
+                > = ::std::collections::HashMap::new();
+                #(#inserts)*
+                ::light::serde_json::to_value(#map_ident)
+                    .unwrap_or(::light::serde_json::Value::Null)
+            }
+        }
+    };
+
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").map_err(|_| {
         syn::Error::new(
             Span::call_site(),
@@ -281,6 +326,7 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             #windows_method
             #validate_field_method
             #validate_form_method
+            #inspect_state_method
         }
     })
 }

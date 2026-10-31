@@ -66,6 +66,13 @@
 //!     <button @click="reset">Сброс</button>
 //! </div>
 //! ```
+//!
+//! ## Инструменты разработки
+//!
+//! Фича `devtools` добавляет модуль [`devtools`] с JSON-снимком состояния
+//! приложения: виртуальное дерево, реактивные свойства компонента и (в
+//! перспективе) раскладка. Снимок строится функцией
+//! [`capture_snapshot`](devtools::capture_snapshot).
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -73,10 +80,17 @@
 // Позволяет генерируемому коду обращаться к `::light::…` изнутри самой библиотеки.
 extern crate self as light;
 
+// Публичные зависимости, доступные под именем `::light::…` в сгенерированном
+// коде (макрос `#[template]`).
+#[cfg(feature = "devtools")]
+pub use serde_json;
+
 pub mod a11y;
 pub mod collection;
 pub mod component;
 pub mod control;
+#[cfg(feature = "devtools")]
+pub mod devtools;
 pub mod dom;
 pub mod error;
 #[cfg(feature = "file-dialog")]
@@ -108,6 +122,8 @@ pub use control::{
     FocusCommand, WindowCommand, WindowToken, blur, current_window_token, focus, focused_key,
     set_current_window_token,
 };
+#[cfg(feature = "devtools")]
+pub use devtools::{DevToolsInspect, DevToolsSnapshot, capture_snapshot};
 pub use dom::Dom;
 pub use error::{Error, Result};
 pub use light_fw_macros::{proxy, template};

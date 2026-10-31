@@ -15,6 +15,8 @@ name = "light_fw_core"
 futures = { version = "0.3", optional = true }
 futures-timer = { version = "3.0", optional = true }
 light-fw-macros.workspace = true
+serde = { version = "1.0", optional = true, features = ["derive"] }
+serde_json = { version = "1.0", optional = true }
 thiserror = "2"
 winit = { workspace = true, optional = true }
 pixels = { workspace = true, optional = true }
@@ -107,6 +109,8 @@ a11y-keyboard = ["a11y"]
 # --- Прочее ------------------------------------------------------------
 # Включение шаблонов `<include src="...">`.
 include = ["light-fw-macros/include"]
+# Инспекция состояния: JSON-снимок VDOM и реактивных свойств (DevTools).
+devtools = ["dep:serde", "dep:serde_json"]
 
 [dev-dependencies]
 criterion = "0.5"
