@@ -1302,32 +1302,30 @@ fn start_async(&self) {
 
 ### Асинхронные фьючи (async/await)
 
-Для сложных задач с асинхронным кодом доступна фича `async-await` и функция `light::spawn_async(async { … })`. Она работает без привязки к конкретному рантайму (блокирует поток через `futures::executor::block_on`), но позволяет использовать `await` внутри:
+Для сложных задач с асинхронным кодом доступна фича `async-await` и функция `light::spawn_async(|ctx| async move { … })`. Она работает без привязки к конкретному рантайму (блокирует поток через `futures::executor::block_on`), но позволяет использовать `await` внутри. Замыкание принимает [`TaskContext`] — так, как и в `spawn`, — и возвращает фьючу, поэтому отмена проверяется через `ctx.is_cancelled()`:
 
 ```rust
 use std::time::Duration;
+use futures_timer::Delay;
 use light::prelude::*;
 
 fn start_async(&self) {
-    let next = self.count() + 1;
-    let _ = light::spawn_async(async move {
-        // асинхронная задержка без внешнего рантайма
-        let start = std::time::Instant::now();
-        futures::future::poll_fn(|_cx| {
-            if start.elapsed() >= Duration::from_secs(2) {
-                std::task::Poll::Ready(())
-            } else {
-                std::task::Poll::Pending
-            }
-        }).await;
+    self.set_loading(true);
+    let _ = light::spawn_async(move |ctx| async move {
+        // асинхронная задержка 2 с (20 тиков по 100 мс)
+        for _ in 0..20 {
+            Delay::new(Duration::from_millis(100)).await;
+            if ctx.is_cancelled() { return; }
+        }
         let _ = light::post_update::<App>(move |app: &mut App| {
-            app.set_count(next);
+            app.set_count(app.count() + 1);
+            app.set_loading(false);
         });
     });
 }
 ```
 
-Важно: `futures::executor::block_on` не поддерживает принудительную отмену извне — если фьюча висит на I/O, `TaskHandle::abort()` её не прервёт. Это ожидаемое поведение для 0.12.0.
+Важно: `futures::executor::block_on` не поддерживает принудительную отмену извне — если фьюча висит на I/O, `TaskHandle::abort()` её не прервёт. Отмена кооперативная: задача сама проверяет `ctx.is_cancelled()` между шагами. Это ожидаемое поведение для 0.12.0.
 
 `post_update` принимает только замыкание и типизируется дженериком `<C: Component>`: `light::post_update::<App>(|app: &mut App| { … })`. Прокси передавать не нужно. В UI-цикле компонент, которому адресовано действие, находится по `TypeId`, замыкание применяется к нему, и на всех открытых окнах запрашивается перерисовка.
 

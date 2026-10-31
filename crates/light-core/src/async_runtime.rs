@@ -222,14 +222,16 @@ where
     TaskHandle { inner, cancel_flag }
 }
 
-/// Запускает `Future` в отдельном потоке ОС, блокируя его до завершения.
+/// Запускает асинхронный замыкание в отдельном потоке ОС, блокируя его
+/// до завершения через [`futures::executor::block_on`].
 ///
-/// Использует [`futures::executor::block_on`] для выполнения фьючи в
-/// отдельном потоке — без привязки к внешнему рантайму (tokio/async-std).
+/// Замыкание принимает [`TaskContext`] и возвращает `Future`, что даёт
+/// доступ к кооперативному флагу отмены внутри асинхронного кода — ровно
+/// как в [`spawn`], но для `async`-фьюч. Возвращает [`TaskHandle`].
 ///
-/// Возвращает [`TaskHandle`] с кооперативным флагом отмены. Важно:
-/// [`futures::executor::block_on`] не поддерживает принудительную отмену
-/// извне — если фьюча висит на I/O, [`TaskHandle::abort`] её не прервёт.
+/// Важно: [`futures::executor::block_on`] не поддерживает принудительную
+/// отмену извне — если фьюча висит на I/O, [`TaskHandle::abort`] её не
+/// прервёт. Отмена проверяется вручную через `ctx.is_cancelled()`.
 /// Это ожидаемое поведение для 0.12.0.
 ///
 /// # Пример
@@ -239,16 +241,18 @@ where
 /// # fn example() {
 /// use light_fw_core::async_runtime::spawn_async;
 ///
-/// spawn_async(async {
-///     // асинхронная работа
+/// spawn_async(|ctx| async move {
+///     // асинхронная работа с доступом к флагу отмены
+///     if ctx.is_cancelled() { return; }
 ///     # std::future::ready(()).await;
 /// });
 /// # }
 /// ```
 #[cfg(feature = "async-await")]
-pub fn spawn_async<F>(future: F) -> TaskHandle
+pub fn spawn_async<F, Fut>(f: F) -> TaskHandle
 where
-    F: Future<Output = ()> + Send + 'static,
+    F: FnOnce(TaskContext) -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
 {
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let ctx = TaskContext {
@@ -258,13 +262,7 @@ where
     let inner = std::thread::Builder::new()
         .name("light-async-await".into())
         .spawn(move || {
-            futures::executor::block_on(async move {
-                // Пользователь не получает TaskContext внутри фьючи,
-                // так как Future не принимает аргументов. Отмена должна
-                // проверяться вручную (через свои флаги).
-                let _ = &ctx;
-                future.await;
-            });
+            futures::executor::block_on(f(ctx));
         })
         .expect("thread spawn should not fail");
     TaskHandle { inner, cancel_flag }

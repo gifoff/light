@@ -7,4 +7,4 @@ publish = false
 
 [dependencies]
 light = { path = "../../crates/light", features = ["async-runtime", "async-await"] }
-futures = "0.3"
+futures-timer = "3.0"

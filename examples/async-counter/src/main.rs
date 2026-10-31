@@ -1,17 +1,26 @@
 //! Асинхронное обновление состояния с возможностью отмены.
 //!
-//! Кнопка «Начать» запускает фоновую задачу, которая имитирует долгую
-//! работу (200 шагов по 5 мс). Пока задача выполняется, можно нажать
-//! «Отмена» — фоновая задача увидит флаг отмены и завершится раньше,
-//! не обновляя состояние.
+//! Кнопка «Начать» запускает фоновую асинхронную задачу (через
+//! `light::spawn_async` + `futures-timer`), которая имитирует долгую работу.
+//! Пока задача выполняется, можно нажать «Отмена» — фоновая задача увидит
+//! флаг отмены через `TaskContext` и завершится раньше, не обновляя состояние.
+//!
+//! Отмена кооперативная: `futures::executor::block_on` не поддерживает
+//! принудительное прерывание, поэтому задача сама проверяет
+//! `ctx.is_cancelled()` между шагами (здесь — после каждого асинхронного
+//! `Delay`). Это устраняет busy-wait и зависание UI: поток блокируется на
+//! таймере, а не в цикле `poll_fn`.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
+use futures_timer::Delay;
 
 use light::prelude::*;
 
-const TICKS: u32 = 200;
-const TICK_MS: u64 = 5;
+const TICKS: u32 = 20;
+const TICK_MS: u64 = 100;
 
 /// Обёртка над `Arc<AtomicBool>`.
 ///
@@ -58,36 +67,25 @@ impl App {
 
         self.set_loading(true);
 
-        let next = self.count() + 1;
-
-        // Асинхронная задержка через `futures::future::poll_fn`:
-        // не блокирует поток, а «усыпляет» фьючу на каждый тик.
-        let delay_ms = std::time::Duration::from_millis(TICK_MS);
-
-        let handle = light::spawn_async(async move {
+        let delay = Duration::from_millis(TICK_MS);
+        let handle = light::spawn_async(move |ctx| async move {
+            // Асинхронная задержка: `Delay` блокирует поток на таймере
+            // (без busy-wait), а после каждого тика проверяем флаг отмены.
             for _ in 0..TICKS {
-                // Асинхронный sleep: ждём, пока пройдёт TICK_MS.
-                let start = std::time::Instant::now();
-                futures::future::poll_fn(|_cx| {
-                    if start.elapsed() >= delay_ms {
-                        std::task::Poll::Ready(())
-                    } else {
-                        // Блокируем на очень короткий интервал.
-                        // В production здесь был бы `tokio::time::sleep`.
-                        std::thread::sleep(delay_ms);
-                        std::task::Poll::Ready(())
-                    }
-                })
-                .await;
-                // Отмена проверяется вручную (Future не принимает TaskContext).
+                Delay::new(delay).await;
+                if ctx.is_cancelled() {
+                    return;
+                }
             }
 
             // Задача завершилась без отмены — применяем результат.
-            let _ = light::post_update::<App>(move |app| {
-                app.set_count(next);
-                app.set_loading(false);
-                app.set_cancel_flag(None);
-            });
+            if !ctx.is_cancelled() {
+                let _ = light::post_update::<App>(move |app| {
+                    app.set_count(app.count() + 1);
+                    app.set_loading(false);
+                    app.set_cancel_flag(None);
+                });
+            }
         });
 
         // Флаг отмены, полученный от задачи, доживёт до отмены.
