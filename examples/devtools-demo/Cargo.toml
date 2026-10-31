@@ -1,0 +1,9 @@
+[package]
+name = "example-devtools-demo"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "DevTools TCP server demo for Light"
+
+[dependencies]
+light = { workspace = true, features = ["devtools"] }

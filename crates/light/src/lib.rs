@@ -95,5 +95,7 @@ pub use std::any::Any;
 
 #[cfg(feature = "validation")]
 pub use light_fw_behavior_validation;
+#[cfg(feature = "devtools")]
+pub use light_fw_core::enable_devtools;
 #[cfg(feature = "elements-form")]
 pub use light_fw_element_form;

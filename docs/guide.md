@@ -24,6 +24,7 @@ Light — декларативный реактивный GUI-фреймворк
 - [Доступ к виртуальному DOM](#доступ-к-виртуальному-dom)
 - [Компиляция шаблонов](#компиляция-шаблонов)
 - [Полный пример](#полный-пример)
+- [DevTools](#devtools)
 
 ## Философия и обзор
 
@@ -1534,6 +1535,44 @@ if let Some(window) = a11y::active_window() {
 ```
 
 Готовые примеры — `cargo run --example a11y_form` и `cargo run --example a11y_dialog`.
+
+## DevTools
+
+Фича `devtools` добавляет TCP-сервер, который передаёт JSON-снимок состояния UI (виртуальное дерево, реактивные свойства) внешним инструментам разработки (IDE / standalone inspector).
+
+### Включение
+
+1. Включите фичу `devtools` в манифесте:
+
+   ```toml
+   [dependencies]
+   light = { path = "crates/light", features = ["devtools"] }
+   ```
+
+2. В `main()` вызовите `light::enable_devtools(9229)` перед `light::run(app)`:
+
+   ```rust
+   fn main() -> light::Result<()> {
+       let port = light::enable_devtools(9229)?;
+       eprintln!("DevTools listening on 127.0.0.1:{}", port);
+       light::run(App::new())
+   }
+   ```
+
+3. Подключитесь через TCP к `127.0.0.1:9229` и отправьте строку `SNAPSHOT\n` — в ответ придёт одна строка JSON с полями `window_token`, `vdom`, `state`, `layout`. Команда `QUIT\n` закрывает соединение.
+
+### Пример снимка
+
+```json
+{
+  "window_token": 0,
+  "vdom": { "tag": "window", "attrs": [...], "children": [...] },
+  "state": { "count": 42, "title": "My App" },
+  "layout": null
+}
+```
+
+Пример приложения: `examples/devtools-demo` (`cargo run --package example-devtools-demo`).
 
 ---
 

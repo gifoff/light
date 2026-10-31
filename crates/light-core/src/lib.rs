@@ -123,7 +123,7 @@ pub use control::{
     set_current_window_token,
 };
 #[cfg(feature = "devtools")]
-pub use devtools::{DevToolsInspect, DevToolsSnapshot, capture_snapshot};
+pub use devtools::{DevToolsInspect, DevToolsSnapshot, capture_snapshot, update_latest_snapshot};
 pub use dom::Dom;
 pub use error::{Error, Result};
 pub use light_fw_macros::{proxy, template};
@@ -145,4 +145,22 @@ pub use vdom::{
 #[cfg(feature = "window")]
 pub fn run(component: impl Component + 'static) -> Result<()> {
     window::run(component)
+}
+
+/// Запускает TCP-сервер DevTools на `127.0.0.1:port`.
+///
+/// Возвращает фактический порт (полезно при `port = 0`). Сервер работает в
+/// отдельном потоке и не блокирует UI. Подключитесь через TCP и отправьте
+/// строку `SNAPSHOT\n` — в ответ придёт JSON с полями `window_token`,
+/// `vdom`, `state`, `layout`. Команда `QUIT\n` закрывает соединение.
+///
+/// Пример:
+/// ```no_run
+/// # extern crate light_fw_core as light;
+/// let port = light::enable_devtools(9229).expect("devtools server started");
+/// eprintln!("DevTools listening on 127.0.0.1:{}", port);
+/// ```
+#[cfg(feature = "devtools")]
+pub fn enable_devtools(port: u16) -> std::io::Result<u16> {
+    devtools::server::start(port)
 }

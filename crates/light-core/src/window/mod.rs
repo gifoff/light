@@ -250,6 +250,14 @@ impl WindowState {
         }
 
         let mut tree = self.component.render();
+        #[cfg(feature = "devtools")]
+        {
+            let snap =
+                crate::devtools::capture_snapshot(self.token as u32, self.component.as_ref());
+            if let Ok(json) = serde_json::to_string(&snap) {
+                crate::devtools::update_latest_snapshot(json);
+            }
+        }
         apply_overrides(&mut tree, &self.resized);
         apply_validation(&mut tree, &self.validation);
         self.update_title(&tree);

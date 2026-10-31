@@ -1,7 +1,46 @@
 //! Инспекция состояния приложения: JSON-снимок дерева, реактивных свойств
 //! и (в перспективе) раскладки для инструментов разработки (DevTools).
+//!
+//! При включённой фиче `devtools`:
+//! * [`capture_snapshot`] строит снимок текущего состояния компонента;
+//! * [`update_latest_snapshot`] / [`read_latest_snapshot`] передают последний
+//!   снимок (как JSON-строку) из UI-потока в TCP-сервер;
+//! * модуль [`server`] — TCP-сервер на `127.0.0.1`, который отдаёт
+//!   последний снимок по команде `SNAPSHOT\n`.
+
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::component::Component;
+
+/// Глобальное хранение последнего JSON-снимка: обновляется из UI-потока при
+/// каждой перерисовке, читается TCP-сервером на отдельном потоке.
+static LATEST_SNAPSHOT: OnceLock<Arc<Mutex<Option<String>>>> = OnceLock::new();
+
+/// Возвращает (и при необходимости создаёт) глобальное хранилище снимка.
+fn latest_snapshot_slot() -> &'static Arc<Mutex<Option<String>>> {
+    LATEST_SNAPSHOT.get_or_init(|| Arc::new(Mutex::new(None)))
+}
+
+/// Сохраняет последнюю JSON-строку снимка.
+///
+/// Вызывается из UI-потока (обработчик перерисовки) после каждого кадра.
+/// Если `LATEST_SNAPSHOT` ещё не было создано, создаётся автоматически.
+pub fn update_latest_snapshot(json: String) {
+    let slot = latest_snapshot_slot();
+    if let Ok(mut guard) = slot.lock() {
+        *guard = Some(json);
+    }
+}
+
+/// Читает последний JSON-снимок для TCP-сервера.
+///
+/// Возвращает клон строки или `None`, если снимок ещё не был захвачен.
+/// Безопасно вызывать из любого потока.
+#[doc(hidden)]
+pub(crate) fn read_latest_snapshot() -> Option<String> {
+    let slot = latest_snapshot_slot();
+    slot.lock().ok()?.clone()
+}
 
 /// Снимок состояния интерфейса в формате JSON.
 ///
@@ -53,3 +92,7 @@ pub fn capture_snapshot(token: u32, component: &dyn Component) -> DevToolsSnapsh
         layout: None,
     }
 }
+
+/// TCP-сервер для DevTools: отдаёт последний JSON-снимок по построчному
+/// протоколу (`SNAPSHOT\n` → JSON, `QUIT\n` → закрыть соединение).
+pub mod server;
