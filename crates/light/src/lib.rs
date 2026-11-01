@@ -82,6 +82,7 @@
 // Позволяет генерируемому коду обращаться к `::light::…` изнутри самой библиотеки.
 extern crate self as light;
 
+#[cfg(feature = "devtools")]
 use serde::Deserialize;
 
 pub use light_fw_core::*;
@@ -103,6 +104,7 @@ pub use light_fw_core::enable_devtools;
 pub use light_fw_element_form;
 
 /// Профиль из `light.config.json`: один из разделов `dev` / `prod`.
+#[cfg(feature = "devtools")]
 #[derive(Debug, Clone, Deserialize)]
 struct ConfigProfile {
     /// Настройки DevTools (TCP-инспектор).
@@ -111,6 +113,7 @@ struct ConfigProfile {
 }
 
 /// Настройки DevTools в `light.config.json`: `enabled` и `port`.
+#[cfg(feature = "devtools")]
 #[derive(Debug, Clone, Deserialize)]
 struct DevtoolsConfig {
     /// Включён ли TCP-сервер инспектора.
@@ -122,6 +125,7 @@ struct DevtoolsConfig {
 }
 
 /// Порт DevTools по умолчанию, если он не задан в конфиге.
+#[cfg(feature = "devtools")]
 fn default_devtools_port() -> u16 {
     9229
 }
@@ -131,6 +135,7 @@ fn default_devtools_port() -> u16 {
 /// При `cfg!(debug_assertions)` (сборка debug) берётся раздел `dev`, иначе —
 /// `prod`. Если файла нет или он не парсится, используется профиль с
 /// разумными значениями по умолчанию (`devtools` выключен, порт 9229).
+#[cfg(feature = "devtools")]
 fn load_profile(config_path: &str) -> ConfigProfile {
     let text = match std::fs::read_to_string(config_path) {
         Ok(text) => text,
@@ -158,8 +163,12 @@ fn load_profile(config_path: &str) -> ConfigProfile {
 /// Читает `config_path` (при отсутствии файла или ошибке разборки — использует
 /// значения по умолчанию). Для отладочной сборки (`cfg!(debug_assertions)`)
 /// выбирается раздел `dev`, для release — `prod`; если в выбранном профиле
-/// включён DevTools, поднимается TCP-сервер на заданном порту (по умолчанию
-/// 9229). Затем запускает приложение через [`light_fw_core::run`].
+/// включён DevTools **и фича `devtools` активна** (`cargo dev`), поднимается
+/// TCP-сервер на заданном порту (по умолчанию 9229). Затем запускает
+/// приложение через [`light_fw_core::run`].
+///
+/// DevTools стартует только если фича `devtools` включена (`cargo dev`).
+/// Без неё сервер не поднимается, даже если в JSON `enabled: true`.
 ///
 /// Пример:
 /// ```ignore
@@ -181,21 +190,25 @@ fn load_profile(config_path: &str) -> ConfigProfile {
 ///     light::run_with_config("light.config.json", App::new())
 /// }
 /// ```
-#[cfg(all(feature = "window", feature = "devtools"))]
+#[cfg(feature = "window")]
 pub fn run_with_config(
     config_path: &str,
     component: impl Component + 'static,
 ) -> crate::Result<()> {
-    let profile = load_profile(config_path);
-    if let Some(devtools) = &profile.devtools
-        && devtools.enabled
+    let _ = config_path;
+    #[cfg(feature = "devtools")]
     {
-        match enable_devtools(devtools.port) {
-            Ok(port) => eprintln!("DevTools listening on 127.0.0.1:{port}"),
-            Err(error) => eprintln!(
-                "Не удалось запустить сервер DevTools на порту {}: {error}",
-                devtools.port
-            ),
+        let profile = load_profile(config_path);
+        if let Some(devtools) = &profile.devtools
+            && devtools.enabled
+        {
+            match enable_devtools(devtools.port) {
+                Ok(port) => eprintln!("DevTools listening on 127.0.0.1:{port}"),
+                Err(error) => eprintln!(
+                    "Не удалось запустить сервер DevTools на порту {}: {error}",
+                    devtools.port
+                ),
+            }
         }
     }
     light_fw_core::run(component)
