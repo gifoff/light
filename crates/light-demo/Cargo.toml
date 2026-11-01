@@ -21,6 +21,8 @@ light-fw-behavior-validation = { workspace = true, optional = true }
 
 [features]
 default = ["full"]
+# Заглушка для cfg-условий, генерируемых макросом #[template].
+devtools = []
 # Доступность (AccessKit) поверх окна.
 a11y = ["light/a11y-winit"]
 # Показ кадра через softbuffer (без wgpu/naga).

@@ -5,12 +5,33 @@
 //! * [`capture_snapshot`] строит снимок текущего состояния компонента;
 //! * [`update_latest_snapshot`] / [`read_latest_snapshot`] передают последний
 //!   снимок (как JSON-строку) из UI-потока в TCP-сервер;
+//! * [`send_command`] / [`drain_commands`] — канал управления: TCP-сервер
+//!   отправляет команды (`Click`, `SetState`) в UI-поток, где они
+//!   применяются к компоненту;
 //! * модуль [`server`] — TCP-сервер на `127.0.0.1`, который отдаёт
-//!   последний снимок по команде `SNAPSHOT\n`.
+//!   последний снимок по команде `SNAPSHOT\n` и принимает управляющие
+//!   команды (`CLICK`, `SET_STATE`, `PING`).
 
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::component::Component;
+
+/// Команда управления, отправляемая из TCP-сервера в UI-поток.
+#[derive(Debug, Clone)]
+pub enum DevToolsCommand {
+    /// Симулировать клик по элементу с ключом `key`
+    /// (вызывает [`Component::dispatch`] с [`Event::Click`](crate::vdom::Event::Click)).
+    Click(String),
+    /// Изменить значение реактивного поля `field` на `value`.
+    /// Пока заглушка: применяется, если поле поддерживает прямую запись.
+    SetState {
+        /// Имя поля.
+        field: String,
+        /// Новое значение (JSON).
+        value: serde_json::Value,
+    },
+}
 
 /// Глобальное хранение последнего JSON-снимка: обновляется из UI-потока при
 /// каждой перерисовке, читается TCP-сервером на отдельном потоке.
@@ -40,6 +61,47 @@ pub fn update_latest_snapshot(json: String) {
 pub(crate) fn read_latest_snapshot() -> Option<String> {
     let slot = latest_snapshot_slot();
     slot.lock().ok()?.clone()
+}
+
+// ─── Канал управления: TCP → UI ──────────────────────────────────────────────
+
+/// Глобальная очередь команд управления DevTools. TCP-сервер пушит команды,
+/// UI-поток дренирует их при перерисовке. `Mutex` защищает от гонок;
+/// критическая секция короткая (push/try_pop), contention не проблема для
+/// dev-инструмента.
+static COMMAND_QUEUE: OnceLock<Arc<Mutex<VecDeque<DevToolsCommand>>>> = OnceLock::new();
+
+/// Возвращает (и при необходимости создаёт) глобальную очередь команд.
+fn command_queue() -> &'static Arc<Mutex<VecDeque<DevToolsCommand>>> {
+    COMMAND_QUEUE.get_or_init(|| Arc::new(Mutex::new(VecDeque::new())))
+}
+
+/// Отправляет команду управления в очередь для UI-потока.
+///
+/// Вызывается из TCP-сервера. Команда будет обработана при следующей
+/// перерисовке; если UI ещё не запущено, она просто останется в очереди.
+#[doc(hidden)]
+pub(crate) fn send_command(cmd: DevToolsCommand) {
+    let queue = command_queue();
+    if let Ok(mut guard) = queue.lock() {
+        guard.push_back(cmd);
+    }
+}
+
+/// Извлекает все накопленные команды из очереди.
+///
+/// Вызывается из UI-потока при перерисовке. Команды обрабатываются
+/// синхронно, до отрисовки следующего кадра.
+#[doc(hidden)]
+pub(crate) fn drain_commands() -> Vec<DevToolsCommand> {
+    let queue = command_queue();
+    let mut cmds = Vec::new();
+    if let Ok(mut guard) = queue.lock() {
+        while let Some(cmd) = guard.pop_front() {
+            cmds.push(cmd);
+        }
+    }
+    cmds
 }
 
 /// Снимок состояния интерфейса в формате JSON.

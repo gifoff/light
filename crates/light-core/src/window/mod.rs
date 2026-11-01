@@ -249,15 +249,23 @@ impl WindowState {
             self.apply_focus_command(command);
         }
 
-        let mut tree = self.component.render();
         #[cfg(feature = "devtools")]
         {
+            // Применить накопленные команды DevTools (клик/состояние) до
+            // перерисовки, чтобы следующий кадр уже отражал изменения.
+            for cmd in crate::devtools::drain_commands() {
+                if let crate::devtools::DevToolsCommand::Click(key) = cmd {
+                    self.component.dispatch(&key, DomEvent::Click);
+                }
+                // SetState — пока заглушка, не требуется обработка.
+            }
             let snap =
                 crate::devtools::capture_snapshot(self.token as u32, self.component.as_ref());
             if let Ok(json) = serde_json::to_string(&snap) {
                 crate::devtools::update_latest_snapshot(json);
             }
         }
+        let mut tree = self.component.render();
         apply_overrides(&mut tree, &self.resized);
         apply_validation(&mut tree, &self.validation);
         self.update_title(&tree);

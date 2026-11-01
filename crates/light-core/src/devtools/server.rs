@@ -4,12 +4,18 @@
 //! Протокол (newline-delimited):
 //! * Клиент шлёт `SNAPSHOT\n` — сервер отвечает одной строкой JSON + `\n`
 //!   (или `null\n`, если снимка ещё нет).
+//! * Клиент шлёт `PING\n` — сервер отвечает `PONG\n`.
+//! * Клиент шлёт `CLICK <key>\n` — сервер отправляет команду клика в
+//!   UI-поток (имитация нажатия элемента с ключом `key`).
+//! * Клиент шлёт `SET_STATE <field> <json>\n` — сервер пытается изменить
+//!   реактивное поле (пока заглушка: отвечает `not supported yet\n`).
 //! * Клиент шлёт `QUIT\n` — сервер закрывает соединение.
 //! * Неизвестная команда — сервер отвечает `unknown command\n` и продолжает
 //!   обслуживание.
 //!
 //! Сервер слушает только на `127.0.0.1` (безопасность). Работа ведётся в
-//! отдельном `[std::thread]`, не блокируя UI-поток.
+//! отдельном `[std::thread]`, не блокируя UI-поток. Клиенты обрабатываются
+//! последовательно (head-of-line blocking) — приемлемо для dev-инструмента.
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -58,21 +64,46 @@ fn read_line(stream: &mut TcpStream) -> std::io::Result<String> {
 /// Обрабатывает одного клиента до закрытия соединения или команды `QUIT`.
 fn handle_client(mut stream: TcpStream) {
     while let Some(command) = read_command(&mut stream) {
-        match command.as_str() {
-            "SNAPSHOT" => {
-                let response = super::read_latest_snapshot().unwrap_or_else(|| "null".to_owned());
-                if write_response(&mut stream, &response).is_none() {
-                    break;
-                }
-            }
-            "QUIT" => break,
-            "" => continue,
-            _ => {
-                if write_response(&mut stream, "unknown command").is_none() {
-                    break;
-                }
+        if command.is_empty() {
+            continue;
+        }
+        // QUIT не шлёт ответа — просто закрывает соединение (клиент видит EOF).
+        if command == "QUIT" {
+            break;
+        }
+        let response = dispatch_command(&command);
+        if write_response(&mut stream, &response).is_none() {
+            break;
+        }
+    }
+}
+
+/// Выполняет одну команду протокола и возвращает строку-ответ.
+fn dispatch_command(command: &str) -> String {
+    // Разбираем команду: первое слово — имя, остальное — аргументы.
+    let mut parts = command.splitn(3, ' ');
+    let name = parts.next().unwrap_or("");
+    let arg1 = parts.next().unwrap_or("");
+    let _ = parts.next(); // arg2 (для SET_STATE: JSON-значение) пока не используется
+
+    match name {
+        "SNAPSHOT" => super::read_latest_snapshot().unwrap_or_else(|| "null".to_owned()),
+        "PING" => "PONG".to_owned(),
+        "CLICK" => {
+            if !arg1.is_empty() {
+                super::send_command(super::DevToolsCommand::Click(arg1.to_owned()));
+                "ok".to_owned()
+            } else {
+                "missing key".to_owned()
             }
         }
+        "SET_STATE" => {
+            // Пока заглушка: прямая запись в реактивные поля через serde
+            // потребует downcast к конкретному типу компонента, что реализуется
+            // отдельно.
+            "not supported yet".to_owned()
+        }
+        _ => "unknown command".to_owned(),
     }
 }
 

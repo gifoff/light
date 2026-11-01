@@ -1,5 +1,6 @@
 //! Интеграционные тесты TCP-сервера DevTools: построчный протокол
-//! `SNAPSHOT\n` → JSON / `QUIT\n` → закрытие / неизвестная команда.
+//! `SNAPSHOT\n` → JSON / `PING\n` → `PONG` / `QUIT\n` → закрытие /
+//! неизвестная команда → `unknown command`.
 
 #![cfg(feature = "devtools")]
 
@@ -67,4 +68,28 @@ fn quit_closes_connection() {
     let mut buf = [0u8; 1];
     let n = stream.read(&mut buf).expect("read");
     assert_eq!(n, 0, "EOF after QUIT");
+}
+
+/// `PING\n` → `PONG\n`: сервер отвечает на проверку живости.
+#[test]
+fn server_responds_to_ping() {
+    let port = light::devtools::server::start(0).expect("server starts");
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    stream.write_all(b"PING\n").expect("send");
+    let line = read_line(&mut stream);
+    assert_eq!(line.trim(), "PONG", "expected PONG, got: {line:?}");
+}
+
+/// Неизвестная команда `BLAH\n` → `unknown command\n`, соединение живёт дальше.
+#[test]
+fn server_handles_unknown_command() {
+    let port = light::devtools::server::start(0).expect("server starts");
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    stream.write_all(b"BLAH\n").expect("send");
+    let line = read_line(&mut stream);
+    assert_eq!(line.trim(), "unknown command");
+    // Соединение живо: PING ещё работает.
+    stream.write_all(b"PING\n").expect("ping after unknown");
+    let line2 = read_line(&mut stream);
+    assert_eq!(line2.trim(), "PONG");
 }

@@ -123,7 +123,9 @@ pub use control::{
     set_current_window_token,
 };
 #[cfg(feature = "devtools")]
-pub use devtools::{DevToolsInspect, DevToolsSnapshot, capture_snapshot, update_latest_snapshot};
+pub use devtools::{
+    DevToolsCommand, DevToolsInspect, DevToolsSnapshot, capture_snapshot, update_latest_snapshot,
+};
 pub use dom::Dom;
 pub use error::{Error, Result};
 pub use light_fw_macros::{proxy, template};

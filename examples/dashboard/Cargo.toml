@@ -5,6 +5,9 @@ edition = "2024"
 publish = false
 description = "Dashboard example for Light with images, tabs and a modal"
 
+[features]
+devtools = []
+
 [dependencies]
 light = { workspace = true, features = [
     "align-content",

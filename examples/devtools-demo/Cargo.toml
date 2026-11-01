@@ -5,5 +5,8 @@ edition = "2024"
 publish = false
 description = "DevTools TCP server demo for Light"
 
+[features]
+devtools = []
+
 [dependencies]
 light = { workspace = true, features = ["devtools"] }

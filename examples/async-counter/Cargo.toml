@@ -5,6 +5,9 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 publish = false
 
+[features]
+devtools = []
+
 [dependencies]
 light = { path = "../../crates/light", features = ["async-runtime", "async-await"] }
 futures-timer = "3.0"
