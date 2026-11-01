@@ -2,6 +2,43 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.13.0] - 2026-11-01
+
+### Added
+
+- DevTools: TCP-сервер на 127.0.0.1:9229, к которому может подключиться
+  IDE-плагин или внешний инспектор.
+- JSON-снимок состояния: `DevToolsSnapshot` с полями `window_token`,
+  `vdom`, `state`, `layout` (сериализация VDOM и реактивных свойств
+  через `serde` + `serde_json`).
+- Протокол управления: `SNAPSHOT`, `PING`, `CLICK <key>`, `QUIT`.
+  Клик из TCP-клиента вызывает `dispatch` в UI-потоке через
+  `EventLoopProxy` (wake-up), с ответом `ok:true/false`.
+- Атрибут `key` в шаблонах — статическая адресация узла для
+  DevTools-кликов. Экспортируется в JSON-снимке VDOM.
+- `light.config.json` с профилями `dev`/`prod`.
+- `run_with_config(path, app)`: читает JSON-конфиг, включает DevTools
+  на указанном порту, если фича `devtools` активна.
+- `.cargo/config.toml` с алиасами `cargo dev` / `cargo prod`.
+  `light init` создаёт оба файла автоматически.
+- Пример `examples/devtools-demo` с демонстрацией TCP-клиента.
+
+### Changed
+
+- `Component: Any` supertrait + метод `as_any_mut` для downcast-а
+  при асинхронных обновлениях (из 0.13-A).
+- `run_with_config` доступна только под `cfg(feature = "window")`;
+  внутренний блок DevTools — под `cfg(feature = "devtools")`.
+
+### Fixed
+
+- `inspect_state` в макросе `#[template]` теперь сериализует примитивы
+  через геттеры (`u32`, `String`, `bool`, `f64`), сложные типы — как
+  `null` (без паники).
+- DevTools в release-сборке не стартует (контракт `cargo run` без
+  фич vs `cargo dev`).
+- Защита от `unused import` при сборке без `a11y-winit`.
+
 ## [0.12.0] - 2026-10-31
 
 ### Added
