@@ -100,64 +100,50 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     })?;
     let ident = struct_item.ident.clone();
 
-    // Имя и тип каждого поля структуры — для генерации снимка состояния
-    // (фича `devtools`). Тип нужен, чтобы отличить `Option<T>` (с особым
-    // ветвлением на `None`) от остальных типов.
-    let field_fields: Vec<(Ident, &syn::Type)> = match &struct_item.fields {
+    // Имена полей структуры — для генерации снимка состояния (фича
+    // `devtools`). Каждое поле сериализуется через сгенерированный `#[proxy]`
+    // геттер (`self.field()`), который возвращает актуальное значение
+    // реактивной ячейки, а не сырое поле.
+    let field_names: Vec<Ident> = match &struct_item.fields {
         syn::Fields::Named(fields) => fields
             .named
             .iter()
             .map(|field| {
-                (
-                    field
-                        .ident
-                        .clone()
-                        .expect("поля именованные, ident обязан быть"),
-                    &field.ty,
-                )
+                field
+                    .ident
+                    .clone()
+                    .expect("поля именованные, ident обязан быть")
             })
             .collect::<Vec<_>>(),
         _ => Vec::new(),
     };
-    let inspect_state_method = if field_fields.is_empty() {
+    let inspect_state_method = if field_names.is_empty() {
         quote!()
     } else {
         let map_ident = Ident::new("__light_inspect_map", Span::call_site());
         let self_token = Ident::new("self", Span::call_site());
-        let inserts = field_fields.iter().map(|(name, ty)| {
+        // Каждое поле попадает в снимок настоящим JSON-значением через макрос
+        // `json!` и сгенерированный `#[proxy]`-геттер (`self.field()`),
+        // который читает актуальное значение реактивной ячейки.
+        let inserts = field_names.iter().map(|name| {
             let name_str = syn::LitStr::new(&name.to_string(), name.span());
-            // Поле сериализуется «через геттер» (ТЗ 1.3: `Property<T>` отдаёт
-            // актуальное значение реактивной ячейки, а не сырое поле).
-            //
-            // Если тип поля (или его `Option`-внутренность) примитивный
-            // (`i64`, `bool`, `String`, …), он всегда реализует
-            // `serde::Serialize`, и значение попадает в снимок через
-            // `inspect_field(&self.field())`.
-            //
-            // Вложенные прокси-компоненты (`Counter`, `Shared`, …), `Vec` и
-            // прочие сложные типы отображаются как `null` — так
-            // `--all-features` компилируется для всех примеров без
-            // `#[derive(Serialize)]` на пользовательских типах.
             let getter = quote!(#self_token.#name());
-            let value = if is_primitive_serde(ty) {
-                quote!(::light::devtools::inspect_field(&#getter))
-            } else {
-                quote!(::light::serde_json::Value::Null)
-            };
             quote! {
-                #map_ident.insert(::std::string::String::from(#name_str), #value);
+                #map_ident.insert(
+                    #name_str.to_string(),
+                    ::light::serde_json::json!(#getter),
+                );
             }
         });
         quote! {
             #[cfg(feature = "devtools")]
             fn inspect_state(&self) -> ::light::serde_json::Value {
-                let mut #map_ident: ::std::collections::HashMap<
+                let mut #map_ident: ::light::serde_json::Map<
                     ::std::string::String,
                     ::light::serde_json::Value,
-                > = ::std::collections::HashMap::new();
+                > = ::light::serde_json::Map::new();
                 #(#inserts)*
-                ::light::serde_json::to_value(#map_ident)
-                    .unwrap_or(::light::serde_json::Value::Null)
+                ::light::serde_json::Value::Object(#map_ident)
             }
         }
     };
@@ -2262,64 +2248,6 @@ fn is_plain_ident(text: &str) -> bool {
         _ => return false,
     }
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
-/// Является ли тип поля структуры примитивным, который всегда реализует
-/// `serde::Serialize` и безопасно сериализуется «через геттер» в снимке
-/// состояния (ТЗ 0.13-D-fix, задача 2/3): числа (`i8…i128`, `u8…u128`,
-/// `usize`, `isize`, `f32`, `f64`), `bool`, `char`, `str`, `String`,
-/// `Cow`, а также их `Option`-обёртки (`Option<i64>` и т. п.).
-///
-/// Вложенные прокси-компоненты, `Vec` и прочие сложные типы не попадают
-/// сюда: их `inspect_state` показывает как `null`, что не требует
-/// `#[derive(Serialize)]` нигде и позволяет собрать `--all-features`.
-fn is_primitive_serde(ty: &syn::Type) -> bool {
-    /// Базовый (не-`Option`) примитивный тип из списка выше.
-    fn base(ty: &syn::Type) -> bool {
-        let syn::Type::Path(path) = ty else {
-            return false;
-        };
-        if path.qself.is_some() {
-            return false;
-        }
-        let segs: Vec<String> = path
-            .path
-            .segments
-            .iter()
-            .map(|s| s.ident.to_string())
-            .collect();
-        // Точное имя типа (без путей-префиксов `std::...`).
-        let last = segs.last().cloned().unwrap_or_default();
-        const PRIM: &[&str] = &[
-            "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize",
-            "f32", "f64", "bool", "char", "str", "String", "Cow",
-        ];
-        PRIM.contains(&last.as_str())
-    }
-    // `Option<T>` допустим, если `T` примитивный: `Some(v)` сериализуется
-    // стандартно, а ветвление на `None` генерировать не нужно —
-    // `inspect_field(&self.field())` принимает `&Option<T>` напрямую.
-    let syn::Type::Path(path) = ty else {
-        return base(ty);
-    };
-    if path.qself.is_some() {
-        return false;
-    }
-    let last = match path.path.segments.last() {
-        Some(last) => last,
-        None => return base(ty),
-    };
-    if last.ident != "Option" {
-        return base(ty);
-    }
-    let syn::PathArguments::AngleBracketed(args) = &last.arguments else {
-        return base(ty);
-    };
-    let inner: Vec<&syn::GenericArgument> = args.args.iter().collect();
-    let [syn::GenericArgument::Type(inner_ty)] = inner.as_slice() else {
-        return base(ty);
-    };
-    base(inner_ty)
 }
 
 fn to_ident(segment: &str) -> syn::Result<Ident> {

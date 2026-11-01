@@ -95,6 +95,10 @@ fn snapshot_reflects_reactive_updates() {
         .and_then(|o| o.get("count"))
         .and_then(|v| v.as_i64())
         .expect("count after");
+    // После одного инкремента счётчик ровно `1` (а не `null`): снимок
+    // несёт реальный JSON-значимый реактивный статус.
+    assert_eq!(before_count, 0);
+    assert_eq!(after_count, 1);
     assert_eq!(after_count, before_count + 1);
 }
 
