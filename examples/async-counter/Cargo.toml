@@ -6,7 +6,7 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [features]
-devtools = []
+devtools = ["light/devtools"]
 
 [dependencies]
 light = { path = "../../crates/light", features = ["async-runtime", "async-await"] }

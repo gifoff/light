@@ -6,7 +6,7 @@ publish = false
 description = "Dashboard example for Light with images, tabs and a modal"
 
 [features]
-devtools = []
+devtools = ["light/devtools"]
 
 [dependencies]
 light = { workspace = true, features = [

@@ -6,7 +6,7 @@ publish = false
 description = "DevTools TCP server demo for Light"
 
 [features]
-devtools = []
+devtools = ["light/devtools"]
 
 [dependencies]
 light = { workspace = true, features = ["devtools", "async-runtime"] }

@@ -6,7 +6,7 @@ publish = false
 description = "Todo list example for Light"
 
 [features]
-devtools = []
+devtools = ["light/devtools"]
 
 [dependencies]
 light = { workspace = true }

@@ -18,6 +18,9 @@ struct App {
 impl App {
     fn increment(&self) {
         self.set_count(self.count() + 1);
+        // ТЗ 0.13-D-fix, задача 1.2: показать, что реально сериализует
+        // `inspect_state` после клика (актуальный счётчик, а не устаревшее 0).
+        eprintln!("INSPECT: {:?}", self.inspect_state());
     }
 
     fn status(&self) -> String {

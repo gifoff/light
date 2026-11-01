@@ -21,8 +21,9 @@ light-fw-behavior-validation = { workspace = true, optional = true }
 
 [features]
 default = ["full"]
-# Заглушка для cfg-условий, генерируемых макросом #[template].
-devtools = []
+# DevTools: пробрасывает фичу в мета-крейт `light`, чтобы сгенерированный
+# код `#[template]` (`inspect_state`) нашёл `::light::serde_json`.
+devtools = ["light/devtools"]
 # Доступность (AccessKit) поверх окна.
 a11y = ["light/a11y-winit"]
 # Показ кадра через softbuffer (без wgpu/naga).
