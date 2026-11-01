@@ -34,13 +34,6 @@ use light::{TaskContext, current_window_token, spawn};
 #[derive(Debug, Clone)]
 pub struct CancelFlag(Arc<AtomicBool>);
 
-impl serde::Serialize for CancelFlag {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        // Сериализуем только булево значение флага (не сам Arc).
-        self.0.load(Ordering::Relaxed).serialize(serializer)
-    }
-}
-
 impl PartialEq for CancelFlag {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)

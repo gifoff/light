@@ -10,4 +10,3 @@ devtools = ["light/devtools"]
 
 [dependencies]
 light = { path = "../../crates/light", features = ["async-runtime"] }
-serde = { version = "1.0" }

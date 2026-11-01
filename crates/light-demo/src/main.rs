@@ -8,7 +8,6 @@ use std::cell::OnceCell;
 use light::prelude::*;
 
 /// Реактивное состояние, разделяемое между окнами приложения.
-#[derive(serde::Serialize)]
 #[proxy]
 struct Shared {
     count: i64,
@@ -27,7 +26,6 @@ fn shared() -> Shared {
 }
 
 /// Отдельный реактивный класс, вложенный в компонент.
-#[derive(serde::Serialize)]
 #[proxy]
 struct Counter {
     count: i64,

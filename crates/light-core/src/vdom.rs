@@ -864,7 +864,7 @@ pub struct ImageData {
     pub(crate) height: u32,
 }
 
-#[cfg(feature = "image-support")]
+#[cfg(all(feature = "image-support", feature = "devtools"))]
 impl serde::Serialize for ImageData {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         // Сериализуем только метаданные (размеры), не сырые байты PNG —
