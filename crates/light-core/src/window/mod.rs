@@ -103,12 +103,19 @@ pub fn run(component: impl Component + 'static) -> crate::Result<()> {
     let mut app = App::new(Box::new(component), font);
     #[cfg(feature = "a11y-winit")]
     {
-        app.proxy = Some(proxy);
+        app.proxy = Some(proxy.clone());
     }
     #[cfg(feature = "async-runtime")]
     {
         crate::async_runtime::install_proxy(event_loop.create_proxy())
             .expect("winit: прокси UI-цикла устанавливается один раз");
+    }
+    // Команды DevTools (CLICK) доставляем через прокси: он будит спящий
+    // цикл событий, и клик обрабатывается сразу, а не при следующей
+    // перерисовке. Без него TCP-сервер ответил бы `timeout`.
+    #[cfg(all(feature = "devtools", feature = "async-runtime"))]
+    {
+        crate::devtools::install_proxy(&proxy);
     }
     let result = event_loop.run_app(&mut app);
     result?;
@@ -251,19 +258,9 @@ impl WindowState {
 
         #[cfg(feature = "devtools")]
         {
-            // Применить накопленные команды DevTools (клик/состояние) до
-            // перерисовки, чтобы следующий кадр уже отражал изменения.
-            for cmd in crate::devtools::drain_commands() {
-                if let crate::devtools::DevToolsCommand::Click { key, response_tx } = cmd {
-                    let handled = self.component.dispatch(&key, DomEvent::Click);
-                    if handled {
-                        self.invalidate();
-                    }
-                    // Ответ в TCP-сервер: обработан клик или нет.
-                    let _ = response_tx.send(handled);
-                }
-                // SetState — пока заглушка, не требуется обработка.
-            }
+            // Клик/изменение состояния DevTools применяются в UI-потоке через
+            // [`UserEvent::DevTools`] (см. `App::handle_devtools_command`);
+            // здесь только захватываем актуальный снимок для TCP-сервера.
             let snap =
                 crate::devtools::capture_snapshot(self.token as u32, self.component.as_ref());
             if let Ok(json) = serde_json::to_string(&snap) {
@@ -2191,6 +2188,37 @@ impl App {
             accesskit_winit::WindowEvent::AccessibilityDeactivated => {}
         }
     }
+
+    /// Применяет команду инспектора DevTools ([`UserEvent::DevTools`]) к
+    /// активному окну.
+    ///
+    /// Клик по элементу (`Click`) вызывается через [`Component::dispatch`];
+    /// результат (обработан/нет) возвращается TCP-серверу по каналу
+    /// `response_tx`, а при обработке состояние помечается на перерисовку.
+    #[cfg(all(feature = "devtools", feature = "async-runtime"))]
+    fn handle_devtools_command(&mut self, cmd: crate::devtools::DevToolsCommand) {
+        match cmd {
+            crate::devtools::DevToolsCommand::Click { key, response_tx } => {
+                // Активное окно — то, к которому адресуются команды; если его
+                // нет, клик некуда применить и отвечаем «не обработан».
+                let Some(id) = self.tokens.get(&crate::control::active_window()).copied() else {
+                    let _ = response_tx.send(false);
+                    return;
+                };
+                let Some(window) = self.windows.get_mut(&id) else {
+                    let _ = response_tx.send(false);
+                    return;
+                };
+                let handled = window.component.dispatch(&key, DomEvent::Click);
+                if handled {
+                    window.invalidate();
+                }
+                let _ = response_tx.send(handled);
+            }
+            // SetState — пока заглушка, обработка не требуется.
+            crate::devtools::DevToolsCommand::SetState { .. } => {}
+        }
+    }
 }
 
 impl ApplicationHandler<UserEvent> for App {
@@ -2209,6 +2237,17 @@ impl ApplicationHandler<UserEvent> for App {
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
+        #[cfg(all(feature = "devtools", feature = "async-runtime"))]
+        if let crate::async_runtime::UserEvent::DevTools(cmd) = event {
+            self.handle_devtools_command(cmd);
+            // Перерисовываем все открытые окна: состояние могло измениться в
+            // любом из них, а `invalidate()` вызывается только для окна, к
+            // которому применили команду. Так инспектор сразу увидит результат.
+            for window in self.windows.values_mut() {
+                window.window.request_redraw();
+            }
+            return;
+        }
         let (token, command) = match event {
             UserEvent::Command { token, command } => (token, command),
             #[cfg(feature = "a11y-winit")]
@@ -2255,6 +2294,14 @@ impl ApplicationHandler<UserEvent> for App {
                     None => eprintln!("async-runtime: target window closed"),
                 }
                 return;
+            }
+            // Ветка `UserEvent::DevTools` обрабатывается выше ранним возвратом
+            // (`handle_devtools_command`); здесь лишь обеспечиваем полноту
+            // матча в конфигурации `devtools` + `async-runtime`, где ранний
+            // возврат уже перехватил такое событие (ветка недостижима).
+            #[cfg(all(feature = "devtools", feature = "async-runtime"))]
+            UserEvent::DevTools(_) => {
+                unreachable!("devtools-событие перехватывается ранним возвратом выше")
             }
         };
         match command {

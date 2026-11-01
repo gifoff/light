@@ -37,6 +37,8 @@ use std::thread::{JoinHandle, Result as ThreadResult};
 use thiserror::Error;
 use winit::event_loop::EventLoopProxy;
 
+#[cfg(feature = "devtools")]
+use crate::devtools::DevToolsCommand;
 use crate::{WindowCommand, component::Component, control::WindowToken};
 #[cfg(feature = "a11y-winit")]
 use accesskit_winit;
@@ -68,6 +70,11 @@ pub enum UserEvent {
     Access(accesskit_winit::Event),
     /// Замыкание, поставленное в очередь через [`post_to_ui`].
     UpdateUI(Box<dyn FnOnce() + Send + 'static>),
+    /// Команда инспектора DevTools (клик по элементу, изменение состояния).
+    /// Применяется в UI-потоке к активному окну; результат клика возвращается
+    /// по каналу внутри [`DevToolsCommand`] TCP-серверу.
+    #[cfg(feature = "devtools")]
+    DevTools(DevToolsCommand),
     /// Типизированное обновление компонента через [`post_update`]
     /// или [`post_update_to`].
     ///
@@ -100,6 +107,8 @@ impl std::fmt::Debug for UserEvent {
             #[cfg(feature = "a11y-winit")]
             Self::Access(event) => f.debug_tuple("Access").field(event).finish(),
             Self::UpdateUI(_) => f.debug_struct("UpdateUI").field("f", &"<closure>").finish(),
+            #[cfg(feature = "devtools")]
+            Self::DevTools(cmd) => f.debug_tuple("DevTools").field(cmd).finish(),
             Self::Action {
                 f: _,
                 target,

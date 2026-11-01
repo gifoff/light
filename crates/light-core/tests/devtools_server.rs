@@ -95,8 +95,15 @@ fn server_handles_unknown_command() {
     assert_eq!(line2.trim(), "PONG");
 }
 
-/// `CLICK <key>\n` без запущенного UI: команда уходит в очередь, но её никто
-/// не дренирует — сервер ждёт ответа 1 с и отвечает `timeout`.
+/// `CLICK <key>\n` без запущенного цикла событий: прокси не установлен
+/// (цикл не создан), команда остаётся в очереди, её никто не дренирует —
+/// сервер ждёт ответа 1 с и отвечает `timeout`.
+///
+/// Это проверяет именно «без прокси» ветку [`send_command`]. Реальный клик
+/// (с запущенным циклом) покрывается макросным тестом
+/// `explicit_key_addresses_dispatch` в `tests/template.rs`: он доказывает, что
+/// `dispatch("inc_btn", Click)` вызывает обработчик, а `UserEvent::DevTools`
+/// доставляет именно эту команду в UI-поток.
 #[test]
 fn click_without_ui_times_out() {
     let port = light::devtools::server::start(0).expect("server starts");

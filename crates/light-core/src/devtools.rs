@@ -14,8 +14,19 @@
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, OnceLock};
+#[cfg(all(feature = "async-runtime", feature = "window"))]
+use winit::event_loop::EventLoopProxy;
 
 use crate::component::Component;
+
+/// Прокси цикла событий для доставки команд DevTools в UI-поток.
+///
+/// Устанавливается один раз в [`crate::window::run`] (при включённых
+/// `async-runtime` и `window`). Пока он не установлен — команды уходят в
+/// глобальную очередь [`COMMAND_QUEUE`], которую UI дренирует при перерисовке
+/// (режим «без прокси» нужен для тестов TCP-сервера без запущенного цикла).
+#[cfg(all(feature = "async-runtime", feature = "window"))]
+static DEVTOOLS_PROXY: OnceLock<EventLoopProxy<crate::async_runtime::UserEvent>> = OnceLock::new();
 
 /// Команда управления, отправляемая из TCP-сервера в UI-поток.
 #[derive(Debug)]
@@ -87,21 +98,46 @@ fn command_queue() -> &'static Arc<Mutex<VecDeque<DevToolsCommand>>> {
 
 /// Отправляет команду управления в очередь для UI-потока.
 ///
-/// Вызывается из TCP-сервера. Команда будет обработана при следующей
-/// перерисовке; если UI ещё не запущено, она просто останется в очереди.
+/// Вызывается из TCP-сервера. Если прокси цикла событий уже установлен
+/// (`async-runtime` + `window`), команда доставляется напрямую через
+/// [`EventLoopProxy`] — это будит спящий цикл, и клик обрабатывается сразу,
+/// не дожидаясь перерисовки. В противном случае (прокси нет, например в
+/// тестах) команда кладётся в глобальную очередь [`COMMAND_QUEUE`].
 #[doc(hidden)]
 pub(crate) fn send_command(cmd: DevToolsCommand) {
+    #[cfg(all(feature = "async-runtime", feature = "window"))]
+    if let Some(proxy) = DEVTOOLS_PROXY.get() {
+        let _ = proxy.send_event(crate::async_runtime::UserEvent::DevTools(cmd));
+        return;
+    }
     let queue = command_queue();
     if let Ok(mut guard) = queue.lock() {
         guard.push_back(cmd);
     }
 }
 
+/// Устанавливает прокси цикла событий для доставки команд DevTools.
+///
+/// Вызывается один раз в [`crate::window::run`]; повторные установки
+/// игнорируются (вторая установка просто не выполняется). Нужен, чтобы клики
+/// от инспектора обрабатывались сразу, а не при следующей перерисовке окна.
+#[doc(hidden)]
+#[cfg(all(feature = "async-runtime", feature = "window"))]
+pub(crate) fn install_proxy(proxy: &EventLoopProxy<crate::async_runtime::UserEvent>) {
+    let _ = DEVTOOLS_PROXY.set(proxy.clone());
+}
+
 /// Извлекает все накопленные команды из очереди.
 ///
 /// Вызывается из UI-потока при перерисовке. Команды обрабатываются
 /// синхронно, до отрисовки следующего кадра.
+///
+/// `dead_code` допускается: с прокси цикла событий (`async-runtime` +
+/// `window`) команды доставляются сразу и не накапливаются в очереди, но
+/// без прокси (например, в тестах TCP-сервера) `send_command` кладёт их сюда —
+/// это единственное место, где очередь вообще читается.
 #[doc(hidden)]
+#[allow(dead_code)]
 pub(crate) fn drain_commands() -> Vec<DevToolsCommand> {
     let queue = command_queue();
     let mut cmds = Vec::new();

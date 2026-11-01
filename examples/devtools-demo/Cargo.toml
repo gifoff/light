@@ -9,4 +9,4 @@ description = "DevTools TCP server demo for Light"
 devtools = []
 
 [dependencies]
-light = { workspace = true, features = ["devtools"] }
+light = { workspace = true, features = ["devtools", "async-runtime"] }
