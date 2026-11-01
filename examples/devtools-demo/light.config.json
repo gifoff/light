@@ -1,0 +1,15 @@
+{
+    "dev": {
+        "devtools": {
+            "enabled": true,
+            "port": 9229
+        },
+        "log_level": "debug"
+    },
+    "prod": {
+        "devtools": {
+            "enabled": false
+        },
+        "log_level": "error"
+    }
+}

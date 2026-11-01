@@ -30,15 +30,7 @@ impl App {
 }
 
 fn main() -> light::Result<()> {
-    // Запускаем TCP-сервер DevTools; при ошибке (порт занят и т.п.)
-    // сообщаем и выходим.
-    let port = match light::enable_devtools(9229) {
-        Ok(port) => port,
-        Err(e) => {
-            eprintln!("Не удалось запустить DevTools сервер на порту 9229: {e}");
-            std::process::exit(1);
-        }
-    };
-    eprintln!("DevTools listening on 127.0.0.1:{port}");
-    light::run(App::new())
+    // Конфигурация берётся из `light.config.json`: в debug-сборке (профиль
+    // `dev`) DevTools включается на порту 9229, в release (`prod`) — нет.
+    light::run_with_config("light.config.json", App::new())
 }

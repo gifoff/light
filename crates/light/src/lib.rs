@@ -82,6 +82,8 @@
 // Позволяет генерируемому коду обращаться к `::light::…` изнутри самой библиотеки.
 extern crate self as light;
 
+use serde::Deserialize;
+
 pub use light_fw_core::*;
 
 #[cfg(feature = "async-await")]
@@ -99,3 +101,102 @@ pub use light_fw_behavior_validation;
 pub use light_fw_core::enable_devtools;
 #[cfg(feature = "elements-form")]
 pub use light_fw_element_form;
+
+/// Профиль из `light.config.json`: один из разделов `dev` / `prod`.
+#[derive(Debug, Clone, Deserialize)]
+struct ConfigProfile {
+    /// Настройки DevTools (TCP-инспектор).
+    #[serde(default)]
+    devtools: Option<DevtoolsConfig>,
+}
+
+/// Настройки DevTools в `light.config.json`: `enabled` и `port`.
+#[derive(Debug, Clone, Deserialize)]
+struct DevtoolsConfig {
+    /// Включён ли TCP-сервер инспектора.
+    #[serde(default)]
+    enabled: bool,
+    /// Порт для TCP-сервера (по умолчанию 9229).
+    #[serde(default = "default_devtools_port")]
+    port: u16,
+}
+
+/// Порт DevTools по умолчанию, если он не задан в конфиге.
+fn default_devtools_port() -> u16 {
+    9229
+}
+
+/// Считывает `light.config.json` и возвращает профиль для текущей сборки.
+///
+/// При `cfg!(debug_assertions)` (сборка debug) берётся раздел `dev`, иначе —
+/// `prod`. Если файла нет или он не парсится, используется профиль с
+/// разумными значениями по умолчанию (`devtools` выключен, порт 9229).
+fn load_profile(config_path: &str) -> ConfigProfile {
+    let text = match std::fs::read_to_string(config_path) {
+        Ok(text) => text,
+        Err(_) => return ConfigProfile { devtools: None },
+    };
+    let parsed: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(value) => value,
+        Err(_) => return ConfigProfile { devtools: None },
+    };
+    let section = if cfg!(debug_assertions) {
+        "dev"
+    } else {
+        "prod"
+    };
+    match parsed.get(section) {
+        Some(profile) => {
+            serde_json::from_value(profile.clone()).unwrap_or(ConfigProfile { devtools: None })
+        }
+        None => ConfigProfile { devtools: None },
+    }
+}
+
+/// Запускает приложение по конфигурации из `light.config.json`.
+///
+/// Читает `config_path` (при отсутствии файла или ошибке разборки — использует
+/// значения по умолчанию). Для отладочной сборки (`cfg!(debug_assertions)`)
+/// выбирается раздел `dev`, для release — `prod`; если в выбранном профиле
+/// включён DevTools, поднимается TCP-сервер на заданном порту (по умолчанию
+/// 9229). Затем запускает приложение через [`light_fw_core::run`].
+///
+/// Пример:
+/// ```ignore
+/// use light::prelude::*;
+///
+/// #[template("templates/doc_example.html")]
+/// #[proxy]
+/// struct App {
+///     count: i64,
+/// }
+///
+/// impl App {
+///     fn increment(&self) {
+///         self.set_count(self.count() + 1);
+///     }
+/// }
+///
+/// fn main() -> light::Result<()> {
+///     light::run_with_config("light.config.json", App::new())
+/// }
+/// ```
+#[cfg(all(feature = "window", feature = "devtools"))]
+pub fn run_with_config(
+    config_path: &str,
+    component: impl Component + 'static,
+) -> crate::Result<()> {
+    let profile = load_profile(config_path);
+    if let Some(devtools) = &profile.devtools
+        && devtools.enabled
+    {
+        match enable_devtools(devtools.port) {
+            Ok(port) => eprintln!("DevTools listening on 127.0.0.1:{port}"),
+            Err(error) => eprintln!(
+                "Не удалось запустить сервер DevTools на порту {}: {error}",
+                devtools.port
+            ),
+        }
+    }
+    light_fw_core::run(component)
+}

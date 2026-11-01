@@ -18,6 +18,29 @@ pub const LIGHT_DEPENDENCY_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Содержимое `.gitignore` нового проекта.
 pub const GITIGNORE: &str = "target/\n";
 
+/// Алиасы `cargo dev` / `cargo prod`: отладочный режим (DevTools) и релиз.
+pub const CARGO_CONFIG: &str =
+    "[alias]\ndev = \"run --features light/dev-mode\"\nprod = \"run --release\"\n";
+
+/// Конфигурация `light.config.json`: профили `dev` (DevTools на 9229, debug)
+/// и `prod` (DevTools выключен, error).
+pub const LIGHT_CONFIG: &str = r#"{
+    "dev": {
+        "devtools": {
+            "enabled": true,
+            "port": 9229
+        },
+        "log_level": "debug"
+    },
+    "prod": {
+        "devtools": {
+            "enabled": false
+        },
+        "log_level": "error"
+    }
+}
+"#;
+
 const COUNTER_MAIN: &str = include_str!("../../../examples/counter/src/main.rs");
 const COUNTER_HTML: &str = include_str!("../../../examples/counter/templates/counter.html");
 const TODO_MAIN: &str = include_str!("../../../examples/todo/src/main.rs");
@@ -380,6 +403,12 @@ pub fn plan(options: &InitOptions) -> Result<InitPlan> {
             cargo_toml(&options.name, &components),
         ),
         (PathBuf::from("src").join("main.rs"), main),
+        // Алиасы `cargo dev` / `cargo prod` и конфигурация DevTools/логирования.
+        (
+            PathBuf::from(".cargo").join("config.toml"),
+            CARGO_CONFIG.to_string(),
+        ),
+        (PathBuf::from("light.config.json"), LIGHT_CONFIG.to_string()),
     ];
     if let Some(template) = options.template {
         for (path, content) in template.template_files() {
@@ -514,6 +543,8 @@ mod tests {
         assert!(names.contains(&"Cargo.toml".to_string()));
         assert!(names.contains(&"src/main.rs".to_string()));
         assert!(names.contains(&".gitignore".to_string()));
+        assert!(names.contains(&".cargo/config.toml".to_string()));
+        assert!(names.contains(&"light.config.json".to_string()));
         assert!(plan.write_lockfile);
     }
 
@@ -665,7 +696,22 @@ mod tests {
                 .expect("todo template")
                 .contains("Light Todo")
         );
-        assert_eq!(plan.files.len(), 3, "Cargo.toml + main.rs + template");
+        // Cargo.toml + main.rs + шаблон + `.cargo/config.toml` + `light.config.json`.
+        assert_eq!(
+            plan.files.len(),
+            5,
+            "Cargo.toml + main.rs + template + cargo config + light config"
+        );
+        assert!(
+            by_path(".cargo/config.toml")
+                .expect("cargo config")
+                .contains("dev = \"run --features light/dev-mode\"")
+        );
+        assert!(
+            by_path("light.config.json")
+                .expect("light config")
+                .contains("\"port\": 9229")
+        );
     }
 
     #[test]

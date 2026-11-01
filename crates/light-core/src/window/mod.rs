@@ -256,17 +256,12 @@ impl WindowState {
             self.apply_focus_command(command);
         }
 
+        // Клик/изменение состояния DevTools применяются в UI-потоке через
+        // [`UserEvent::DevTools`] (см. `App::handle_devtools_command`); здесь
+        // только гарантируем актуальный снимок для TCP-сервера (основное
+        // обновление — в `invalidate` при каждом изменении состояния).
         #[cfg(feature = "devtools")]
-        {
-            // Клик/изменение состояния DevTools применяются в UI-потоке через
-            // [`UserEvent::DevTools`] (см. `App::handle_devtools_command`);
-            // здесь только захватываем актуальный снимок для TCP-сервера.
-            let snap =
-                crate::devtools::capture_snapshot(self.token as u32, self.component.as_ref());
-            if let Ok(json) = serde_json::to_string(&snap) {
-                crate::devtools::update_latest_snapshot(json);
-            }
-        }
+        self.update_devtools_snapshot();
         let mut tree = self.component.render();
         apply_overrides(&mut tree, &self.resized);
         apply_validation(&mut tree, &self.validation);
@@ -1538,7 +1533,23 @@ impl WindowState {
 
     fn invalidate(&mut self) {
         self.full_redraw = true;
+        #[cfg(feature = "devtools")]
+        self.update_devtools_snapshot();
         self.window.request_redraw();
+    }
+
+    /// Обновляет снимок DevTools (`LATEST_SNAPSHOT`) при изменении состояния.
+    ///
+    /// Вызывается из [`invalidate`] — то есть при каждом изменении реактивного
+    /// свойства, а не только при перерисовке. Так TCP-инспектор сразу видит
+    /// актуальный `state` (например `count`), не дожидаясь следующего кадра;
+    /// иначе `inspect_state` возвращал бы устаревшее значение.
+    #[cfg(feature = "devtools")]
+    fn update_devtools_snapshot(&self) {
+        let snap = crate::devtools::capture_snapshot(self.token as u32, self.component.as_ref());
+        if let Ok(json) = serde_json::to_string(&snap) {
+            crate::devtools::update_latest_snapshot(json);
+        }
     }
 
     /// Применяет программный запрос фокуса (`crate::control::focus`/`blur`).

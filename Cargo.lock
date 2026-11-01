@@ -2122,6 +2122,7 @@ dependencies = [
  "light-fw-behavior-validation",
  "light-fw-core",
  "light-fw-element-form",
+ "serde",
  "serde_json",
 ]
 
