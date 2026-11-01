@@ -254,8 +254,13 @@ impl WindowState {
             // Применить накопленные команды DevTools (клик/состояние) до
             // перерисовки, чтобы следующий кадр уже отражал изменения.
             for cmd in crate::devtools::drain_commands() {
-                if let crate::devtools::DevToolsCommand::Click(key) = cmd {
-                    self.component.dispatch(&key, DomEvent::Click);
+                if let crate::devtools::DevToolsCommand::Click { key, response_tx } = cmd {
+                    let handled = self.component.dispatch(&key, DomEvent::Click);
+                    if handled {
+                        self.invalidate();
+                    }
+                    // Ответ в TCP-сервер: обработан клик или нет.
+                    let _ = response_tx.send(handled);
                 }
                 // SetState — пока заглушка, не требуется обработка.
             }

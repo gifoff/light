@@ -6,7 +6,9 @@
 //!   (или `null\n`, если снимка ещё нет).
 //! * Клиент шлёт `PING\n` — сервер отвечает `PONG\n`.
 //! * Клиент шлёт `CLICK <key>\n` — сервер отправляет команду клика в
-//!   UI-поток (имитация нажатия элемента с ключом `key`).
+//!   UI-поток (имитация нажатия элемента с ключом `key`) и ждёт результата:
+//!   `ok:true\n`, если клик обработан, `ok:false\n`, если нет, либо
+//!   `timeout\n`, если UI не ответил в течение секунды.
 //! * Клиент шлёт `SET_STATE <field> <json>\n` — сервер пытается изменить
 //!   реактивное поле (пока заглушка: отвечает `not supported yet\n`).
 //! * Клиент шлёт `QUIT\n` — сервер закрывает соединение.
@@ -91,8 +93,19 @@ fn dispatch_command(command: &str) -> String {
         "PING" => "PONG".to_owned(),
         "CLICK" => {
             if !arg1.is_empty() {
-                super::send_command(super::DevToolsCommand::Click(arg1.to_owned()));
-                "ok".to_owned()
+                // Ожидаем результат обработки клика из UI-потока (1 с —
+                // достаточно, чтобы UI успел проснуться и обработать команду;
+                // если окно не запущено/зависло — ответим `timeout`).
+                let (tx, rx) = std::sync::mpsc::channel();
+                super::send_command(super::DevToolsCommand::Click {
+                    key: arg1.to_owned(),
+                    response_tx: tx,
+                });
+                match rx.recv_timeout(std::time::Duration::from_secs(1)) {
+                    Ok(true) => "ok:true".to_owned(),
+                    Ok(false) => "ok:false".to_owned(),
+                    _ => "timeout".to_owned(),
+                }
             } else {
                 "missing key".to_owned()
             }

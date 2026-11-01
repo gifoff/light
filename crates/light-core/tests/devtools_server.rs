@@ -1,5 +1,6 @@
 //! Интеграционные тесты TCP-сервера DevTools: построчный протокол
 //! `SNAPSHOT\n` → JSON / `PING\n` → `PONG` / `QUIT\n` → закрытие /
+//! `CLICK <key>\n` → `ok:true`/`ok:false`/`timeout` /
 //! неизвестная команда → `unknown command`.
 
 #![cfg(feature = "devtools")]
@@ -92,4 +93,19 @@ fn server_handles_unknown_command() {
     stream.write_all(b"PING\n").expect("ping after unknown");
     let line2 = read_line(&mut stream);
     assert_eq!(line2.trim(), "PONG");
+}
+
+/// `CLICK <key>\n` без запущенного UI: команда уходит в очередь, но её никто
+/// не дренирует — сервер ждёт ответа 1 с и отвечает `timeout`.
+#[test]
+fn click_without_ui_times_out() {
+    let port = light::devtools::server::start(0).expect("server starts");
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    stream.write_all(b"CLICK inc_btn\n").expect("send");
+    let line = read_line(&mut stream);
+    assert_eq!(
+        line.trim(),
+        "timeout",
+        "без UI-потока клик должен завершиться таймаутом, got: {line:?}"
+    );
 }

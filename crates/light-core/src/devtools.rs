@@ -18,11 +18,20 @@ use std::sync::{Arc, Mutex, OnceLock};
 use crate::component::Component;
 
 /// Команда управления, отправляемая из TCP-сервера в UI-поток.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum DevToolsCommand {
     /// Симулировать клик по элементу с ключом `key`
     /// (вызывает [`Component::dispatch`] с [`Event::Click`](crate::vdom::Event::Click)).
-    Click(String),
+    ///
+    /// Результат обработки (`true` — обработано, `false` — нет) возвращается
+    /// в TCP-сервер по каналу `response_tx`; сервер на его основе отвечает
+    /// клиенту `ok:true` / `ok:false`.
+    Click {
+        /// Ключ узла (атрибут `key="..."` в шаблоне).
+        key: String,
+        /// Канал возврата результата обработки клика.
+        response_tx: std::sync::mpsc::Sender<bool>,
+    },
     /// Изменить значение реактивного поля `field` на `value`.
     /// Пока заглушка: применяется, если поле поддерживает прямую запись.
     SetState {

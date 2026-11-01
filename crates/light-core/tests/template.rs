@@ -1138,3 +1138,59 @@ fn dynamic_node_kind_attrs_bind_values() {
         other => panic!("ожидался список, найдено {other:?}"),
     }
 }
+
+/// Явный статический ключ элемента (`key="inc_btn"`) используется как адрес для
+/// событий: `dispatch("inc_btn", …)` доходит до обработчика, а отсутствующий
+/// ключ — нет. Это то, на что опирается команда DevTools `CLICK <key>`.
+#[test]
+fn explicit_key_addresses_dispatch() {
+    #[template("tests/templates/explicit_key.html")]
+    #[proxy]
+    struct KeyApp {
+        value: i64,
+    }
+
+    impl KeyApp {
+        fn increment(&self) {
+            self.set_value(self.value() + 1);
+        }
+    }
+
+    let app = KeyApp::new();
+    let tree = app.render();
+
+    // Кнопка «Инкремент» получила явный ключ из атрибута `key`.
+    let key = find_button_key(&tree, "Инкремент").expect("кнопка «Инкремент»");
+    assert_eq!(
+        key, "inc_btn",
+        "явный атрибут key переопределил позиционный"
+    );
+
+    // Клик по явному ключу вызывает обработчик (value растёт).
+    assert!(
+        app.dispatch("inc_btn", Event::Click),
+        "клик по inc_btn должен быть обработан"
+    );
+    assert_eq!(app.value(), 1, "@click вызван через явный ключ");
+
+    // Клик по несуществующему ключу не обрабатывается.
+    assert!(
+        !app.dispatch("no_such_key", Event::Click),
+        "несуществующий ключ не обрабатывает клик"
+    );
+}
+
+/// Возвращает ключ контейнера-кнопки, содержащего текст `content`.
+fn find_button_key(node: &VElement, content: &str) -> Option<&'static str> {
+    if matches!(node.kind, NodeKind::Button { .. })
+        && node
+            .children
+            .iter()
+            .any(|c| matches!(&c.kind, NodeKind::Text { content: t } if t == content))
+    {
+        return Some(node.key);
+    }
+    node.children
+        .iter()
+        .find_map(|c| find_button_key(c, content))
+}

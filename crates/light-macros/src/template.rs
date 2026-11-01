@@ -472,6 +472,7 @@ struct Generator {
 /// Ключ узла: известный на этапе компиляции либо вычисляемый во время работы
 /// (`v-for`). Статические ключи остаются `&'static str`-литералами, динамические
 /// интернируются через [`light::vdom::intern_key`].
+#[derive(Clone)]
 enum KeyExpr {
     /// Ключ, целиком известный на этапе компиляции.
     Lit(String),
@@ -519,6 +520,21 @@ fn child_key(base: Option<&KeyExpr>, index: usize) -> KeyExpr {
     match base {
         Some(base) => base.child(index),
         None => KeyExpr::Lit(index.to_string()),
+    }
+}
+
+/// Статический явный ключ элемента из атрибута `key="..."`.
+///
+/// Если атрибут задан — узел (и всё его поддерево) получает этот ключ вместо
+/// позиционного: по нему адресуются события (в том числе команды DevTools
+/// `CLICK <key>`). Значение обязано быть литералом (без `:`/интерполяции),
+/// иначе макрос не может сформировать литералную ветку в `dispatch`.
+fn static_key(element: &Element, fallback: &KeyExpr) -> KeyExpr {
+    match attr_value(&element.attrs, "key") {
+        Some(value) if !value.trim_start().starts_with(':') => {
+            KeyExpr::Lit(value.trim().to_owned())
+        }
+        _ => fallback.clone(),
     }
 }
 
@@ -802,7 +818,8 @@ impl Generator {
                 if let Some(spec) = attr_value(&element.attrs, "v-for") {
                     return self.gen_for_push(element, key, spec);
                 }
-                let element = self.gen_element(element, key)?;
+                // Явный статический ключ (`key="..."`) переопределяет позиционный.
+                let element = self.gen_element(element, &static_key(element, key))?;
                 Ok(quote! { __children.push(#element); })
             }
         }
@@ -1030,6 +1047,7 @@ impl Generator {
                 || name == ":validator"
                 || name == ":src"
                 || name == "required-indicator"
+                || name == "key"
             {
                 continue;
             }
