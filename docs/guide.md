@@ -1536,6 +1536,32 @@ if let Some(window) = a11y::active_window() {
 
 Готовые примеры — `cargo run --example a11y_form` и `cargo run --example a11y_dialog`.
 
+### Запуск с DevTools
+
+DevTools включаются одним из трёх способов:
+
+```bash
+# 1. Алиас `cargo dev` — debug-сборка с фичей devtools (по умолчанию в
+#    debug-сборке inspect_state генерируется всегда, фича не обязательна).
+cargo dev -p my-app
+
+# 2. Алиас `cargo prod` — release-сборка без DevTools.
+cargo prod -p my-app
+
+# 3. Явное включение фичи.
+cargo run --features devtools -p my-app
+```
+
+В debug-сборке метод `inspect_state` генерируется макросом `#[template]`
+автоматически (не нужно помнить про `--features`). В release-сборке
+`inspect_state` присутствует только при явном включении фичи `devtools`;
+без фичи сервер DevTools НЕ запускается и снимки состояния недоступны.
+
+Для примера `example-devtools-demo` достаточно `cargo run -p example-devtools-demo`
+— фича `devtools` уже включена в базовых зависимостях примера.
+
+---
+
 ## DevTools
 
 Фича `devtools` добавляет TCP-сервер, который передаёт JSON-снимок состояния UI (виртуальное дерево, реактивные свойства) внешним инструментам разработки (IDE / standalone inspector) и принимает управляющие команды.

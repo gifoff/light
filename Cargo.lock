@@ -1244,6 +1244,7 @@ version = "0.10.3"
 dependencies = [
  "futures-timer",
  "light",
+ "serde",
 ]
 
 [[package]]
@@ -1279,6 +1280,7 @@ name = "example-multi-window"
 version = "0.10.3"
 dependencies = [
  "light",
+ "serde",
 ]
 
 [[package]]
@@ -2133,6 +2135,7 @@ dependencies = [
  "light",
  "light-fw-behavior-validation",
  "light-fw-element-form",
+ "serde",
  "serde_json",
 ]
 

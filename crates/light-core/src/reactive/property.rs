@@ -104,3 +104,11 @@ impl<T> fmt::Debug for Property<T> {
             .finish_non_exhaustive()
     }
 }
+
+impl<T: serde::Serialize> serde::Serialize for Property<T> {
+    /// Сериализует текущее значение свойства (без метаданных обозревателя).
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let borrowed = self.value.borrow();
+        (*borrowed).serialize(serializer)
+    }
+}

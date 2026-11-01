@@ -136,7 +136,11 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             }
         });
         quote! {
-            #[cfg(feature = "devtools")]
+            // DevTools-инспекция: в debug-сборке метод генерируется всегда
+            // (не нужно помнить про `--features devtools`), в release — только
+            // при явном включении фичи. `::light::serde_json` резолвится всегда,
+            // т.к. крейт `light` держит `serde_json` неопциональной зависимостью.
+            #[cfg(any(feature = "devtools", debug_assertions))]
             fn inspect_state(&self) -> ::light::serde_json::Value {
                 let mut #map_ident: ::light::serde_json::Map<
                     ::std::string::String,

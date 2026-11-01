@@ -34,6 +34,12 @@ const TICK_MS: u64 = 100;
 #[derive(Clone)]
 pub struct CancelFlag(Arc<AtomicBool>);
 
+impl serde::Serialize for CancelFlag {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.load(Ordering::Relaxed).serialize(serializer)
+    }
+}
+
 impl std::fmt::Debug for CancelFlag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("CancelFlag")

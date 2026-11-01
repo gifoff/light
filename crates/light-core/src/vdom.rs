@@ -865,6 +865,20 @@ pub struct ImageData {
 }
 
 #[cfg(feature = "image-support")]
+impl serde::Serialize for ImageData {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Сериализуем только метаданные (размеры), не сырые байты PNG —
+        // в снимок DevTools нецелесообразно включать многомегабайтные данные.
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("ImageData", 3)?;
+        state.serialize_field("width", &self.width)?;
+        state.serialize_field("height", &self.height)?;
+        state.serialize_field("key", &*self.key)?;
+        state.end()
+    }
+}
+
+#[cfg(feature = "image-support")]
 impl ImageData {
     /// Загружает PNG с разумными ограничениями: не более 8 МиБ и 4096 px
     /// по каждой стороне.
