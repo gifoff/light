@@ -14,6 +14,7 @@ name = "light_fw_core"
 [dependencies]
 futures = { version = "0.3", optional = true }
 futures-timer = { version = "3.0", optional = true }
+light-fw-html.workspace = true
 light-fw-macros.workspace = true
 serde = { version = "1.0", optional = true, features = ["derive"] }
 serde_json = { version = "1.0", optional = true }
@@ -113,6 +114,9 @@ include = ["light-fw-macros/include"]
 # Требует `async-runtime`: TCP-команды доставляются в UI-поток через
 # EventLoopProxy, который существует только при этой фиче.
 devtools = ["dep:serde", "dep:serde_json", "async-runtime"]
+# Шаблоны во время выполнения: `render()` читает HTML с диска (mtime-кэш),
+# поэтому правка разметки в dev-режиме видна без пересборки.
+runtime-templates = ["dep:serde_json", "window", "elements-checkbox", "elements-radio", "elements-select"]
 
 [dev-dependencies]
 criterion = "0.5"

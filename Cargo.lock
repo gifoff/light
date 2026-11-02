@@ -2258,6 +2258,7 @@ dependencies = [
  "futures",
  "futures-timer",
  "insta",
+ "light-fw-html",
  "light-fw-macros",
  "pixels",
  "png",

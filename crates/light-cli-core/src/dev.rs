@@ -26,7 +26,6 @@ use std::time::{Duration, Instant};
 
 use notify::{Config, PollWatcher, RecursiveMode, Watcher as _};
 
-const DEBOUNCE: Duration = Duration::from_millis(150);
 const DEVTOOLS_PORT: u16 = 9229;
 /// Интервал опроса файловой системы [`PollWatcher`]. На UNC- и сетевых дисках
 /// нативный watcher события не ловит, поэтому используем периодическое
@@ -39,6 +38,10 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 const STARTUP_IGNORE: Duration = Duration::from_secs(30);
 /// Периодичность проверки открытия порта DevTools (9229) фоном.
 const PORT_PROBE: Duration = Duration::from_millis(250);
+/// Дебаунс для изменений `.rs`/`Cargo.toml` (полная пересборка + рестарт).
+const RS_DEBOUNCE: Duration = Duration::from_millis(500);
+/// Дебаунс для изменений `.html` (runtime-перезагрузка шаблона без пересборки).
+const HTML_DEBOUNCE: Duration = Duration::from_millis(100);
 
 /// Разобранные параметры команды `light dev`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -177,12 +180,50 @@ pub fn request_save_state(port: u16) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Отправляет команду `RELOAD_TEMPLATE\n` в TCP-сервер DevTools на
+/// `127.0.0.1:<port>` и закрывает соединение. Приложение перечитывает
+/// HTML-шаблон с диска и перерисовывает UI без пересборки. Ошибки не
+/// являются фатальными — просто проигнорируются.
+pub fn request_reload_template(port: u16) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::net::TcpStream;
+    let mut stream = TcpStream::connect(("127.0.0.1", port))?;
+    stream.write_all(b"RELOAD_TEMPLATE\n")?;
+    Ok(())
+}
+
 /// Проверяет, открыт ли TCP-порт DevTools (на нём приложение принимает команду
 /// `SAVE_STATE`). `TcpStream::connect` к свободному порту возвращает ошибку
 /// мгновенно (connection refused), так что это дешёвая проверка.
 fn is_port_open(port: u16) -> bool {
     use std::net::TcpStream;
     TcpStream::connect(("127.0.0.1", port)).is_ok()
+}
+
+/// Тип изменения файла для классификации hot-reload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChangeKind {
+    /// HTML-шаблон: runtime-перезагрузка без пересборки (`RELOAD_TEMPLATE`).
+    Html,
+    /// Rust-исходник или `Cargo.toml`: полная пересборка + рестарт.
+    Source,
+}
+
+/// Классифицирует путь изменённого файла в [`ChangeKind`].
+///
+/// `.html` → [`ChangeKind::Html`]; `.rs`/`Cargo.toml` → [`ChangeKind::Source`].
+/// Любой другой расширение (например, `.json`, `.png`) считается нерелевантным
+/// и классифицируется как `Source` (консервативно: лучше лишняя пересборка).
+pub fn classify_change(path: &std::path::Path) -> Option<ChangeKind> {
+    let file_name = path.file_name()?.to_string_lossy();
+    if file_name == "Cargo.toml" {
+        return Some(ChangeKind::Source);
+    }
+    match path.extension()?.to_string_lossy().as_ref() {
+        "html" => Some(ChangeKind::Html),
+        "rs" => Some(ChangeKind::Source),
+        _ => None,
+    }
 }
 
 /// Живое состояние наблюдателя: окно игнорирования при сборке/старте
@@ -291,8 +332,9 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
 
     let mut child = spawn_cmd(args, &cwd).spawn()?;
 
-    // Канал на перезапуск от наблюдателя.
-    let (restart_tx, restart_rx) = mpsc::channel::<Instant>();
+    // Канал на перезапуск от наблюдателя. Несёт тип изменения: Html →
+    // RELOAD_TEMPLATE (без убийства), Source → kill/rebuild/respawn.
+    let (restart_tx, restart_rx) = mpsc::channel::<(Instant, ChangeKind)>();
     // Флаг завершения: общий между главным потоком, наблюдателем и
     // фоном-проверкой порта. Атомарный (в отличие от mpsc::Receiver) — легко
     // шараится между несколькими тредами без clone() канала.
@@ -341,7 +383,9 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
             Err(_) => return,
         };
         // Сбрасывает дебаунс; актуально только вне окна `is_starting`.
-        let mut last_event: Option<Instant> = None;
+        // Отдельный таймер для каждого типа изменения (Html vs Source).
+        let mut last_html: Option<Instant> = None;
+        let mut last_rs: Option<Instant> = None;
         loop {
             // 1) Завершение от основного потока.
             if done_flag_watch.load(Ordering::Relaxed) {
@@ -353,47 +397,50 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                 state = new_state;
                 if !state.is_starting && state.pending_change {
                     eprintln!("light dev: применяю изменение, зафиксированное во время сборки");
-                    let _ = restart_tx.send(Instant::now());
+                    let _ = restart_tx.send((Instant::now(), ChangeKind::Source));
                     state.pending_change = false;
+                    last_rs = Some(Instant::now());
                 }
                 continue;
             }
             // 3) События наблюдателя.
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(Ok(event)) => {
-                    // Игнорируем события вне watched-путей.
-                    let relevant = event
+                    // Классифицируем: берём первый релевантный путь и
+                    // определяем тип (Html / Source / None — нерелевантно).
+                    let kind = event
                         .paths
                         .iter()
-                        .any(|p| watch_paths_copy.iter().any(|w| p.starts_with(w)));
-                    if !relevant {
+                        .find(|p| watch_paths_copy.iter().any(|w| p.starts_with(w)))
+                        .and_then(|p| classify_change(p));
+                    let Some(kind) = kind else {
                         continue;
-                    }
+                    };
                     eprintln!(
-                        "light dev: change detected at {:?}{}",
+                        "light dev: change detected at {:?} ({:?}){}",
                         event.paths,
+                        kind,
                         if state.is_starting {
                             " (во время сборки — запомню)"
                         } else {
                             ""
                         }
                     );
-                    // Чистая машина состояний: во время is_starting сохраняет
-                    // изменение в pending_change и не рестартует; вне окна —
-                    // рестарт (либо применение pending_change после его сброса).
                     if handle_watch_event(&mut state, true) {
-                        let _ = restart_tx.send(Instant::now());
-                        // Дебаунс на будущее (на случай серии чейджей).
-                        last_event = Some(Instant::now());
+                        let _ = restart_tx.send((Instant::now(), kind));
+                        match kind {
+                            ChangeKind::Html => last_html = Some(Instant::now()),
+                            ChangeKind::Source => last_rs = Some(Instant::now()),
+                        }
                     } else if state.is_starting {
                         // Изменение во время сборки: пока просто помним.
                         // pending_change уже поставлен в handle_watch_event.
                     } else if state.pending_change {
-                        // Окно только что закрылось, накопленное изменение
-                        // применено; обнуляем дебаунс, чтобы последующие
-                        // чейджи снова считались.
                         state.pending_change = false;
-                        last_event = Some(Instant::now());
+                        match kind {
+                            ChangeKind::Html => last_html = Some(Instant::now()),
+                            ChangeKind::Source => last_rs = Some(Instant::now()),
+                        }
                     }
                 }
                 Ok(Err(e)) => {
@@ -401,13 +448,19 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     // Дебаунс: серия чейджей вне окна — один рестарт.
-                    if let Some(t) = last_event
-                        && t.elapsed() >= DEBOUNCE
-                        && !state.is_starting
-                        && !state.pending_change
-                    {
-                        last_event = None;
-                        let _ = restart_tx.send(Instant::now());
+                    if !state.is_starting && !state.pending_change {
+                        if let Some(t) = last_html
+                            && t.elapsed() >= HTML_DEBOUNCE
+                        {
+                            last_html = None;
+                            let _ = restart_tx.send((Instant::now(), ChangeKind::Html));
+                        }
+                        if let Some(t) = last_rs
+                            && t.elapsed() >= RS_DEBOUNCE
+                        {
+                            last_rs = None;
+                            let _ = restart_tx.send((Instant::now(), ChangeKind::Source));
+                        }
                     }
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -455,7 +508,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         // Внутренний цикл опроса: выходим в наружный цикл по первому событию
         // (перезапуск от наблюдателя либо завершение дочернего процесса).
         enum Ev {
-            Restart,
+            Restart(ChangeKind),
             Exited(std::process::ExitStatus),
         }
         let ev = loop {
@@ -474,8 +527,8 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                 });
                 clear_deadline = None;
             }
-            if restart_rx.try_recv().is_ok() {
-                break Ev::Restart;
+            if let Ok((_ts, kind)) = restart_rx.try_recv() {
+                break Ev::Restart(kind);
             }
             match child.try_wait() {
                 Ok(Some(s)) => break Ev::Exited(s),
@@ -495,46 +548,60 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                 eprintln!("light dev: приложение завершилось с кодом {code}");
                 return Ok(code);
             }
-            Ev::Restart => {
-                eprintln!("light dev: обнаружены изменения — сохраняю состояние и перезапускаю…");
-                if let Err(e) = request_save_state(DEVTOOLS_PORT) {
+            Ev::Restart(kind) => match kind {
+                ChangeKind::Html => {
+                    eprintln!("light dev: HTML-шаблон изменён — reload без пересборки…");
+                    if let Err(e) = request_reload_template(DEVTOOLS_PORT) {
+                        eprintln!("light dev: не удалось отправить RELOAD_TEMPLATE: {e}");
+                    }
+                }
+                ChangeKind::Source => {
                     eprintln!(
-                        "light dev: не удалось отправить SAVE_STATE: {e} \
-                         (состояние может быть не сохранено)"
+                        "light dev: обнаружены изменения — сохраняю состояние и перезапускаю…"
                     );
-                }
-                // Короткая пауза: даём UI-потоку время обработать команду и
-                // записать файл, прежде чем уберём процесс.
-                thread::sleep(Duration::from_millis(200));
-                kill_child(&mut child);
-                // Пересоздаём дочерний процесс и сбрасываем наблюдателя в
-                // is_starting: новое приложение снова сначала соберётся/запустится,
-                // поэтому окно игнорирования открывается заново.
-                match spawn_cmd(args, &cwd).spawn() {
-                    Ok(c) => {
-                        child = c;
-                        // Сбрасываем наблюдателя в is_starting. Дедлайн
-                        // `clear_deadline` — новый каждый прогон внешнего цикла
-                        // (в начале тела `let mut ... = Some(now + STARTUP_IGNORE)`),
-                        // поэтому явного сброса здесь не нужно.
-                        let _ = state_tx.send(WatchState::starting());
-                        eprintln!("light dev: приложение перезапущено");
+                    if let Err(e) = request_save_state(DEVTOOLS_PORT) {
+                        eprintln!(
+                            "light dev: не удалось отправить SAVE_STATE: {e} \
+                            (состояние может быть не сохранено)"
+                        );
                     }
-                    Err(e) => {
-                        eprintln!("light dev: не удалось перезапустить приложение: {e}");
-                        done_flag.store(true, Ordering::Relaxed);
-                        let _ = watcher.join();
-                        return Ok(1);
+                    // Короткая пауза: даём UI-потоку время обработать команду и
+                    // записать файл, прежде чем уберём процесс.
+                    thread::sleep(Duration::from_millis(200));
+                    kill_child(&mut child);
+                    // Пересоздаём дочерний процесс и сбрасываем наблюдателя в
+                    // is_starting: новое приложение снова сначала соберётся/запустится,
+                    // поэтому окно игнорирования открывается заново.
+                    match spawn_cmd(args, &cwd).spawn() {
+                        Ok(c) => {
+                            child = c;
+                            // Сбрасываем наблюдателя в is_starting. Дедлайн
+                            // `clear_deadline` — новый каждый прогон внешнего цикла
+                            // (в начале тела `let mut ... = Some(now + STARTUP_IGNORE)`),
+                            // поэтому явного сброса здесь не нужно.
+                            let _ = state_tx.send(WatchState::starting());
+                            eprintln!("light dev: приложение перезапущено");
+                        }
+                        Err(e) => {
+                            eprintln!("light dev: не удалось перезапустить приложение: {e}");
+                            done_flag.store(true, Ordering::Relaxed);
+                            let _ = watcher.join();
+                            return Ok(1);
+                        }
                     }
                 }
-            }
+            },
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{WatchState, handle_watch_event, parse_dev_command, resolve_package_root};
+    use super::{
+        ChangeKind, WatchState, classify_change, handle_watch_event, parse_dev_command,
+        resolve_package_root,
+    };
+    use std::path::Path;
 
     /// Событие вне watched-путей: рестарта нет, состояние не меняется.
     #[test]
@@ -656,5 +723,45 @@ mod tests {
             args.extra_cargo_args,
             vec!["--release".to_owned(), "--quiet".to_owned()]
         );
+    }
+
+    /// `.html` → `ChangeKind::Html`.
+    #[test]
+    fn classify_html_file() {
+        assert_eq!(
+            classify_change(Path::new("templates/app.html")),
+            Some(ChangeKind::Html)
+        );
+    }
+
+    /// `.rs` → `ChangeKind::Source`.
+    #[test]
+    fn classify_rs_file() {
+        assert_eq!(
+            classify_change(Path::new("src/main.rs")),
+            Some(ChangeKind::Source)
+        );
+    }
+
+    /// `Cargo.toml` → `ChangeKind::Source`.
+    #[test]
+    fn classify_cargo_toml() {
+        assert_eq!(
+            classify_change(Path::new("Cargo.toml")),
+            Some(ChangeKind::Source)
+        );
+    }
+
+    /// Неизвестное расширение → `None` (игнорируется).
+    #[test]
+    fn classify_unknown_extension_returns_none() {
+        assert_eq!(classify_change(Path::new("assets/logo.png")), None);
+        assert_eq!(classify_change(Path::new("data.json")), None);
+    }
+
+    /// Файл без расширения → `None`.
+    #[test]
+    fn classify_no_extension_returns_none() {
+        assert_eq!(classify_change(Path::new("README")), None);
     }
 }

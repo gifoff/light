@@ -146,6 +146,12 @@ fn dispatch_command(command: &str) -> String {
             super::send_command(super::DevToolsCommand::SaveState);
             "ok".to_owned()
         }
+        "RELOAD_TEMPLATE" => {
+            // Перечтение HTML-шаблона выполняется асинхронно в UI-потоке;
+            // сервер отвечает сразу, не ожидая перерисовки.
+            super::send_command(super::DevToolsCommand::ReloadTemplate);
+            "ok".to_owned()
+        }
         _ => "unknown command".to_owned(),
     }
 }

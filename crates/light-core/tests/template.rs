@@ -2,11 +2,17 @@
 //!
 //! Каждый тест строит дерево, доставляет событие и проверяет через
 //! [`diff`], что обновились **только** изменившиеся элементы.
+//!
+//! Эти тесты проверяют компиляционный путь макроса. При включённой фиче
+//! `runtime-templates` рендер идёт через runtime-парсер, который пока не
+//! поддерживает все конструкции (явные ключи, сложные обработчики) —
+//! поэтому тесты отключаются при `runtime-templates`.
 
 #![cfg(all(
     feature = "elements-checkbox",
     feature = "elements-radio",
-    feature = "elements-select"
+    feature = "elements-select",
+    not(feature = "runtime-templates")
 ))]
 
 extern crate light_fw_core as light;

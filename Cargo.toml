@@ -39,6 +39,7 @@ light-fw-core = { path = "crates/light-core", version = "0.13.0" }
 light-fw-element-form = { path = "crates/light-element-form", version = "0.13.0" }
 light-fw-behavior-validation = { path = "crates/light-behavior-validation", version = "0.13.0" }
 light-fw-macros = { path = "crates/light-macros", version = "0.13.0" }
+light-fw-html = { path = "crates/light-html", version = "0.13.0" }
 
 syn = { version = "2", features = ["full"] }
 quote = "1"

@@ -2285,6 +2285,20 @@ impl App {
                     eprintln!("DevTools: не удалось сохранить состояние: {error}");
                 }
             }
+            // ReloadTemplate: перечитываем HTML-шаблон с диска (runtime-templates)
+            // и перерисовываем все окна. Кэш шаблонов ключируется по mtime,
+            // поэтому при изменённом файле `render_dynamic` вернёт новый
+            // VElement; при неизменённом — кэшированный (дешёвый).
+            #[cfg(feature = "runtime-templates")]
+            crate::devtools::DevToolsCommand::ReloadTemplate => {
+                for window in self.windows.values_mut() {
+                    window.invalidate();
+                }
+            }
+            #[cfg(not(feature = "runtime-templates"))]
+            crate::devtools::DevToolsCommand::ReloadTemplate => {
+                // Фича runtime-templates не включена — команда без эффекта.
+            }
         }
     }
 }

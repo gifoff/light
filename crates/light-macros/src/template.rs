@@ -237,8 +237,75 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         arms,
         field_validators,
         form_validators,
+        click_handlers,
         ..
     } = generator;
+
+    // Runtime-шаблон: путь к файлу (уникальная константа для каждого компонента).
+    let template_rel = &relative;
+    let const_name = Ident::new(
+        &format!("__light_template_path_{}", ident),
+        Span::call_site(),
+    );
+    let self_template_path = quote! {
+        const #const_name: &'static str =
+            concat!(env!("CARGO_MANIFEST_DIR"), "/", #template_rel);
+    };
+
+    // Runtime-рендер: проверка в начале `render()` — если файл на диске изменился
+    // и успешно разобрался, используем его вместо статического дерева.
+    let runtime_render_check = quote! {
+        if ::light::FEATURE_RUNTIME_TEMPLATES {
+            if let Some(__rt) = ::light::runtime::render_dynamic(
+                #const_name,
+                include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/", #template_rel)),
+                self,
+            ) {
+                return __rt;
+            }
+        }
+    };
+
+    // Runtime-диспетчеризация: ветви `dispatch_by_name` для @click-обработчиков.
+    // Используем последовательные `if` вместо `match`, потому что ключи могут быть
+    // произвольными выражениями (`intern_key(format!(…))`), а не строковыми литералами.
+    let dispatch_arms = click_handlers.iter().map(|(key, call)| {
+        quote! {
+            if __key == #key { #call; return true; }
+        }
+    });
+    let dispatch_by_name_method = if click_handlers.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            fn dispatch_by_name(&self, __key: &str, __event: ::light::vdom::Event) -> bool {
+                if !matches!(__event, ::light::vdom::Event::Click) {
+                    return false;
+                }
+                #(#dispatch_arms)*
+                false
+            }
+        }
+    };
+
+    // Runtime-оценка полей: `eval_field` для каждого примитивного поля структуры.
+    let eval_arms = field_fields
+        .iter()
+        .filter(|(_name, ty)| is_primitive_serde(ty))
+        .map(|(name, _ty)| {
+            let name_str = name.to_string();
+            quote! {
+                #name_str => Some(self.#name().to_string()),
+            }
+        });
+    let eval_field_method = quote! {
+        fn eval_field(&self, __name: &str) -> ::std::option::Option<String> {
+            match __name {
+                #(#eval_arms)*
+                _ => None,
+            }
+        }
+    };
 
     // Пользовательские проверки полей (`:validator`) и форм (`@validate`).
     let field_validator_arms = field_validators
@@ -335,6 +402,7 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
     Ok(quote! {
         #struct_item
+        #self_template_path
 
         #(#track_files)*
         #id_symbol
@@ -345,6 +413,7 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             }
 
             fn render(&self) -> ::light::vdom::VElement {
+                #runtime_render_check
                 let mut __children = ::std::vec::Vec::new();
                 #(#pushes)*
                 #render_body
@@ -356,7 +425,11 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 #[allow(unused_imports)]
                 use ::light::vdom::{VNode as _, VWindow as _};
                 #(#arms)*
-                false
+                if ::light::FEATURE_RUNTIME_TEMPLATES {
+                    self.dispatch_by_name(__key, __event)
+                } else {
+                    false
+                }
             }
 
             #modal_method
@@ -366,6 +439,8 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             #validate_form_method
             #inspect_state_method
             #inject_state_method
+            #eval_field_method
+            #dispatch_by_name_method
         }
     })
 }
@@ -506,6 +581,9 @@ struct Generator {
     field_validators: Vec<(String, TokenStream)>,
     /// Пользовательские проверки форм: `(ключ формы, вызов метода)`.
     form_validators: Vec<(String, TokenStream)>,
+    /// Обработчики `@click` для runtime-диспетчеризации: `(ключ узла как токен,
+    /// вызов метода)`. Токен ключа — выражение типа `&'static str`.
+    click_handlers: Vec<(TokenStream, TokenStream)>,
 }
 
 /// Ключ узла: известный на этапе компиляции либо вычисляемый во время работы
@@ -962,6 +1040,13 @@ impl Generator {
             self.arms.push(quote! {
                 if __key == #key { #(#branches)* }
             });
+        }
+        // Запоминаем @click для runtime-диспетчеризации (фича `runtime-templates`).
+        if let Some(handler) = attr_value(&element.attrs, "@click")
+            && is_plain_click_handler(handler)
+        {
+            let call = self.handler_call(handler, None)?;
+            self.click_handlers.push((key.clone(), call));
         }
         Ok(())
     }
@@ -2284,6 +2369,14 @@ fn is_plain_ident(text: &str) -> bool {
         _ => return false,
     }
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Обработчик `@click`, подходящий для runtime-диспетчеризации: простой
+/// идентификатор (без аргументов, без `::`, без пробелов), опционально с
+/// префиксом `this.`. Сложные выражения не диспетчеризуются во runtime.
+fn is_plain_click_handler(handler: &str) -> bool {
+    let trimmed = handler.trim().trim_start_matches("this.");
+    is_plain_ident(trimmed)
 }
 
 /// Является ли тип поля структуры примитивным, который всегда реализует

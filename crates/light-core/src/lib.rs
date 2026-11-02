@@ -80,6 +80,9 @@
 // Позволяет генерируемому коду обращаться к `::light::…` изнутри самой библиотеки.
 extern crate self as light;
 
+/// Флаг runtime-templates: доступен ли парсинг HTML-шаблонов во время выполнения.
+pub const FEATURE_RUNTIME_TEMPLATES: bool = cfg!(feature = "runtime-templates");
+
 // Публичные зависимости, доступные под именем `::light::…` в сгенерированном
 // коде (макрос `#[template]`).
 #[cfg(feature = "devtools")]
@@ -98,6 +101,7 @@ pub mod file_dialog;
 pub mod layout;
 pub mod prelude;
 pub mod reactive;
+pub mod runtime;
 mod text_wrap;
 pub mod validation;
 pub mod vdom;
