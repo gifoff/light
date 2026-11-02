@@ -19,7 +19,8 @@ use std::os::unix::process::ExitStatusExt as _;
 use std::os::windows::process::ExitStatusExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -31,6 +32,13 @@ const DEVTOOLS_PORT: u16 = 9229;
 /// нативный watcher события не ловит, поэтому используем периодическое
 /// опросование (500 мс — разумный баланс между задержкой реакции и нагрузкой).
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
+/// Максимум времени, которое наблюдатель игнорирует события, пока приложение
+/// собирается/стартует. Защита от вечной блокировки: если порт 9229 так и не
+/// открылся (например, сборка зависла), по истечении этого дедлайна наблюдение
+/// всё равно возобновляется.
+const STARTUP_IGNORE: Duration = Duration::from_secs(30);
+/// Периодичность проверки открытия порта DevTools (9229) фоном.
+const PORT_PROBE: Duration = Duration::from_millis(250);
 
 /// Разобранные параметры команды `light dev`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -169,12 +177,80 @@ pub fn request_save_state(port: u16) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Проверяет, открыт ли TCP-порт DevTools (на нём приложение принимает команду
+/// `SAVE_STATE`). `TcpStream::connect` к свободному порту возвращает ошибку
+/// мгновенно (connection refused), так что это дешёвая проверка.
+fn is_port_open(port: u16) -> bool {
+    use std::net::TcpStream;
+    TcpStream::connect(("127.0.0.1", port)).is_ok()
+}
+
+/// Живое состояние наблюдателя: окно игнорирования при сборке/старте
+/// (`is_starting`) и накопленное «изменение было во время сборки»
+/// (`pending_change`), которое нужно применить сразу после сброса окна.
+#[derive(Debug, Default)]
+pub struct WatchState {
+    /// Игнорировать события (приложение ещё собирается или только стартует).
+    pub is_starting: bool,
+    /// Зафиксировано изменение во время `is_starting`; применить после сброса.
+    pub pending_change: bool,
+}
+
+impl WatchState {
+    /// Создаёт новое состояние: окно игнорирования включено.
+    pub fn starting() -> Self {
+        Self {
+            is_starting: true,
+            pending_change: false,
+        }
+    }
+}
+
+/// Логика обработки одного события наблюдателя с учётом состояния
+/// [`WatchState`]. Отделена от потоков, чтобы юнит-тестить без запуска
+/// процесса и файлового watcher'а.
+///
+/// Возвращает `true`, если после события следует отправить сигнал рестарта
+/// (только если изменение реально произошло и окно игнорирования закрыто).
+///
+/// Правила:
+/// * во время `is_starting` событие не приводит к рестарту, но запоминается —
+///   флаг `pending_change` поднимается (защита от гонки: пользователь мог
+///   править файл, пока компилятор ещё собирает `light-fw-core`, а порт 9229
+///   не слушается);
+/// * после сброса `is_starting` накопленный `pending_change` применяется сразу
+///   и сбрасывается — один перезапуск за накопленную серию изменений;
+/// * вне окна любое подходящее событие даёт рестарт.
+pub fn handle_watch_event(state: &mut WatchState, is_relevant: bool) -> bool {
+    if !is_relevant {
+        return false;
+    }
+    if state.is_starting {
+        // Изменение во время сборки: не рестартуем сейчас, но помним о нём.
+        state.pending_change = true;
+        false
+    } else if state.pending_change {
+        // Окно закрылось, но до этого был зафиксирован чейдж — применяем.
+        state.pending_change = false;
+        true
+    } else {
+        // Прямой чейдж вне окна.
+        true
+    }
+}
+
 /// Убивает дочерний процесс и дожидается его завершения.
+///
+/// После `wait()` даём ОС короткую паузу, чтобы освободить хендлы на `.rmeta`
+/// и `.pdb` (Windows AV / антивирус часто держит файл ещё мгновение): без этой
+/// паузы следующий `cargo run` может упасть с `os error 5` (Access Denied).
 pub fn kill_child(child: &mut Child) {
     if let Err(e) = child.kill() {
         eprintln!("light dev: не удалось завершить дочерний процесс: {e}");
     }
     let _ = child.wait();
+    // Пауза для освобождения файловых хендлов ОС/автовикором.
+    thread::sleep(Duration::from_millis(500));
 }
 
 /// Точка входа команды `light dev`: запускает дочерний процесс и цикл
@@ -217,11 +293,19 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
 
     // Канал на перезапуск от наблюдателя.
     let (restart_tx, restart_rx) = mpsc::channel::<Instant>();
-    // Сигнал завершиться наблюдателю.
-    let (done_tx, done_rx) = mpsc::channel::<()>();
+    // Флаг завершения: общий между главным потоком, наблюдателем и
+    // фоном-проверкой порта. Атомарный (в отличие от mpsc::Receiver) — легко
+    // шараится между несколькими тредами без clone() канала.
+    let done_flag = Arc::new(AtomicBool::new(false));
+    // Состояние наблюдателя (is_starting/pending_change) и канал на его
+    // обновление. Главный поток решает, когда закрывать окно игнорирования:
+    // как только порт 9229 открылся или прошёл STARTUP_IGNORE.
+    let (state_tx, state_rx) = mpsc::channel::<WatchState>();
+    let _ = state_tx.send(WatchState::starting());
 
     let watch_paths_copy = watch_paths(&package_root);
     eprintln!("light dev: watching {:?}", watch_paths_copy);
+    let done_flag_watch = done_flag.clone();
     let watcher = thread::spawn(move || {
         if watch_paths_copy.is_empty() {
             eprintln!("light dev: нет путей для наблюдения (нет src/, templates/, Cargo.toml)");
@@ -249,11 +333,32 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                 eprintln!("light dev: не удалось следить за {}: {e}", path.display());
             }
         }
+        // Начальное состояние: is_starting = true. Главное окно наблюдателя
+        // закрывается, когда главный поток шлёт обновление (порт 9229 открыт
+        // либо дедлайн STARTUP_IGNORE прошёл).
+        let mut state = match state_rx.recv() {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        // Сбрасывает дебаунс; актуально только вне окна `is_starting`.
         let mut last_event: Option<Instant> = None;
         loop {
-            if done_rx.try_recv().is_ok() {
+            // 1) Завершение от основного потока.
+            if done_flag_watch.load(Ordering::Relaxed) {
                 break;
             }
+            // 2) Обновление состояния от главного потока. Прерываем цикл
+            //    немедленно и применяем накопленный pending_change сразу.
+            if let Ok(new_state) = state_rx.try_recv() {
+                state = new_state;
+                if !state.is_starting && state.pending_change {
+                    eprintln!("light dev: применяю изменение, зафиксированное во время сборки");
+                    let _ = restart_tx.send(Instant::now());
+                    state.pending_change = false;
+                }
+                continue;
+            }
+            // 3) События наблюдателя.
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(Ok(event)) => {
                     // Игнорируем события вне watched-путей.
@@ -261,8 +366,33 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                         .paths
                         .iter()
                         .any(|p| watch_paths_copy.iter().any(|w| p.starts_with(w)));
-                    if relevant {
-                        eprintln!("light dev: change detected at {:?}", event.paths);
+                    if !relevant {
+                        continue;
+                    }
+                    eprintln!(
+                        "light dev: change detected at {:?}{}",
+                        event.paths,
+                        if state.is_starting {
+                            " (во время сборки — запомню)"
+                        } else {
+                            ""
+                        }
+                    );
+                    // Чистая машина состояний: во время is_starting сохраняет
+                    // изменение в pending_change и не рестартует; вне окна —
+                    // рестарт (либо применение pending_change после его сброса).
+                    if handle_watch_event(&mut state, true) {
+                        let _ = restart_tx.send(Instant::now());
+                        // Дебаунс на будущее (на случай серии чейджей).
+                        last_event = Some(Instant::now());
+                    } else if state.is_starting {
+                        // Изменение во время сборки: пока просто помним.
+                        // pending_change уже поставлен в handle_watch_event.
+                    } else if state.pending_change {
+                        // Окно только что закрылось, накопленное изменение
+                        // применено; обнуляем дебаунс, чтобы последующие
+                        // чейджи снова считались.
+                        state.pending_change = false;
                         last_event = Some(Instant::now());
                     }
                 }
@@ -270,8 +400,11 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     eprintln!("light dev: ошибка наблюдателя: {e}");
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
+                    // Дебаунс: серия чейджей вне окна — один рестарт.
                     if let Some(t) = last_event
                         && t.elapsed() >= DEBOUNCE
+                        && !state.is_starting
+                        && !state.pending_change
                     {
                         last_event = None;
                         let _ = restart_tx.send(Instant::now());
@@ -282,7 +415,43 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         }
     });
 
+    // Фоновая проверка открытия порта DevTools (9229). Как только приложение
+    // стало принимать команды — снимаем окно игнорирования наблюдателя.
+    // Завершается после первого успеха (порт уже слушается).
+    {
+        let state_probe_tx = state_tx.clone();
+        let done_probe_flag = done_flag.clone();
+        thread::spawn(move || {
+            let start = Instant::now();
+            loop {
+                if done_probe_flag.load(Ordering::Relaxed) {
+                    break;
+                }
+                if is_port_open(DEVTOOLS_PORT) {
+                    eprintln!(
+                        "light dev: порт DevTools {DEVTOOLS_PORT} открыт — слежу за изменениями"
+                    );
+                    let _ = state_probe_tx.send(WatchState {
+                        is_starting: false,
+                        pending_change: true,
+                    });
+                    break;
+                }
+                if start.elapsed() >= STARTUP_IGNORE {
+                    // Дедлайн обработает главный поток; этот тред молча
+                    // завершается.
+                    break;
+                }
+                thread::sleep(PORT_PROBE);
+            }
+        });
+    }
+
     loop {
+        // Дедлайн защиты от вечной блокировки: если порт 9229 так и не
+        // открылся за STARTUP_IGNORE (сборка зависла), закрываем окно
+        // игнорирования наблюдателя, чтобы он снова начал ловить чейджи.
+        let mut clear_deadline: Option<Instant> = Some(Instant::now() + STARTUP_IGNORE);
         // Внутренний цикл опроса: выходим в наружный цикл по первому событию
         // (перезапуск от наблюдателя либо завершение дочернего процесса).
         enum Ev {
@@ -290,6 +459,21 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
             Exited(std::process::ExitStatus),
         }
         let ev = loop {
+            // Тик дедлайна: один раз за каждый прогон внутреннего цикла.
+            if let Some(deadline) = clear_deadline
+                && Instant::now() >= deadline
+            {
+                eprintln!(
+                    "light dev: порт DevTools {} не открылся за {:?} — снимаю окно \
+                     игнорирования наблюдателя",
+                    DEVTOOLS_PORT, STARTUP_IGNORE
+                );
+                let _ = state_tx.send(WatchState {
+                    is_starting: false,
+                    pending_change: true,
+                });
+                clear_deadline = None;
+            }
             if restart_rx.try_recv().is_ok() {
                 break Ev::Restart;
             }
@@ -305,7 +489,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         };
         match ev {
             Ev::Exited(status) => {
-                let _ = done_tx.send(());
+                done_flag.store(true, Ordering::Relaxed);
                 let _ = watcher.join();
                 let code = status.code().unwrap_or(1);
                 eprintln!("light dev: приложение завершилось с кодом {code}");
@@ -323,14 +507,22 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                 // записать файл, прежде чем уберём процесс.
                 thread::sleep(Duration::from_millis(200));
                 kill_child(&mut child);
+                // Пересоздаём дочерний процесс и сбрасываем наблюдателя в
+                // is_starting: новое приложение снова сначала соберётся/запустится,
+                // поэтому окно игнорирования открывается заново.
                 match spawn_cmd(args, &cwd).spawn() {
                     Ok(c) => {
                         child = c;
+                        // Сбрасываем наблюдателя в is_starting. Дедлайн
+                        // `clear_deadline` — новый каждый прогон внешнего цикла
+                        // (в начале тела `let mut ... = Some(now + STARTUP_IGNORE)`),
+                        // поэтому явного сброса здесь не нужно.
+                        let _ = state_tx.send(WatchState::starting());
                         eprintln!("light dev: приложение перезапущено");
                     }
                     Err(e) => {
                         eprintln!("light dev: не удалось перезапустить приложение: {e}");
-                        let _ = done_tx.send(());
+                        done_flag.store(true, Ordering::Relaxed);
                         let _ = watcher.join();
                         return Ok(1);
                     }
@@ -342,7 +534,67 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_dev_command, resolve_package_root};
+    use super::{WatchState, handle_watch_event, parse_dev_command, resolve_package_root};
+
+    /// Событие вне watched-путей: рестарта нет, состояние не меняется.
+    #[test]
+    fn watch_event_ignored_outside_watched_paths() {
+        let mut s = WatchState::starting();
+        assert!(!handle_watch_event(&mut s, false));
+        assert!(s.is_starting);
+        assert!(!s.pending_change);
+    }
+
+    /// Изменение во время is_starting: рестарт не отправляется, но
+    /// pending_change запоминается.
+    #[test]
+    fn watch_event_during_startup_sets_pending() {
+        let mut s = WatchState::starting();
+        assert!(!handle_watch_event(&mut s, true));
+        assert!(s.is_starting);
+        assert!(s.pending_change);
+    }
+
+    /// Серия изменений во время is_starting: pending_change остаётся true
+    /// (не «всплывает»), рестартов не происходит.
+    #[test]
+    fn watch_event_multiple_during_startup_still_no_restart() {
+        let mut s = WatchState::starting();
+        assert!(!handle_watch_event(&mut s, true));
+        assert!(!handle_watch_event(&mut s, true));
+        assert!(!handle_watch_event(&mut s, true));
+        assert!(s.is_starting);
+        assert!(s.pending_change);
+    }
+
+    /// После закрытия is_starting (и применения pending_change) прямой
+    /// чейдж даёт рестарт.
+    #[test]
+    fn watch_event_direct_after_startup_clear() {
+        let mut s = WatchState {
+            is_starting: false,
+            pending_change: false,
+        };
+        assert!(handle_watch_event(&mut s, true));
+        assert!(!s.is_starting);
+        assert!(!s.pending_change);
+    }
+
+    /// Ключевая сценарий ТЗ: изменение во время сборки → закрытие окна →
+    /// накопленное изменение применяется одним рестартом.
+    #[test]
+    fn watch_event_pending_applied_after_window_close() {
+        let mut s = WatchState::starting();
+        // Чейдж во время сборки.
+        assert!(!handle_watch_event(&mut s, true));
+        assert!(s.pending_change);
+        // Главный поток закрывает окно (порт открыт / дедлайн прошёл).
+        s.is_starting = false;
+        // Наблюдатель видит, что pending_change есть, и применяет его.
+        assert!(handle_watch_event(&mut s, true));
+        assert!(!s.pending_change);
+        assert!(!s.is_starting);
+    }
 
     /// Без имени пакета корнем становится текущий каталог (быстрый путь без
     /// запуска `cargo metadata`).
