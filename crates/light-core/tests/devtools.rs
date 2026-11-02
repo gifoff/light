@@ -182,3 +182,62 @@ fn non_proxy_component_state_is_null() {
     let snap = light::capture_snapshot(0, &plain);
     assert!(snap.state.is_null(), "no reactive properties -> null");
 }
+
+/// Полный сброс состояния: `inject_state` перезаписывает оба реактивных поля,
+/// а геттеры возвращают новые значения.
+#[test]
+fn inject_state_updates_all_fields() {
+    let mut app = CounterApp::new();
+    // Начальные значения — из шаблона (label) и по умолчанию (count = 0).
+    let original_label = app.label().to_owned();
+    let state = serde_json::json!({
+        "label": "Счётчик после инъекции",
+        "count": 42
+    });
+    app.inject_state(&state);
+    assert_eq!(app.label(), "Счётчик после инъекции");
+    assert_eq!(app.count(), 42);
+    // Убедимся, что действительно изменилось (label из шаблона — не та же строка).
+    assert_ne!(original_label, "Счётчик после инъекции");
+}
+
+/// Частичная инъекция: поле, отсутствующее в состоянии, сохраняет своё значение.
+#[test]
+fn inject_state_partial_leaves_missing_fields_untouched() {
+    let mut app = CounterApp::new();
+    let original_label = app.label().to_owned();
+    let state = serde_json::json!({
+        "count": 7
+    });
+    app.inject_state(&state);
+    assert_eq!(app.count(), 7);
+    // `label` отсутствует в состоянии — не должен измениться.
+    assert_eq!(app.label(), original_label);
+}
+
+/// Поле с несовместимым типом игнорируется: значение не применяется, другое
+/// поле — применяется.
+#[test]
+fn inject_state_wrong_type_is_ignored() {
+    let mut app = CounterApp::new();
+    let state = serde_json::json!({
+        "label": "текст",
+        "count": "не число"
+    });
+    app.inject_state(&state);
+    // `count` — строка вместо i64: отброшено, остаётся начальное (0).
+    assert_eq!(app.count(), 0);
+    // `label` — корректный String: применён.
+    assert_eq!(app.label(), "текст");
+}
+
+/// Пустое состояние ничего не меняет: геттеры возвращают начальные значения.
+#[test]
+fn inject_state_empty_object_is_noop() {
+    let mut app = CounterApp::new();
+    let label_before = app.label().to_owned();
+    let count_before = app.count();
+    app.inject_state(&serde_json::json!({}));
+    assert_eq!(app.label(), label_before);
+    assert_eq!(app.count(), count_before);
+}

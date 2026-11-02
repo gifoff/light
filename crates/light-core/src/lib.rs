@@ -124,7 +124,8 @@ pub use control::{
 };
 #[cfg(feature = "devtools")]
 pub use devtools::{
-    DevToolsCommand, DevToolsInspect, DevToolsSnapshot, capture_snapshot, update_latest_snapshot,
+    DevToolsCommand, DevToolsInspect, DevToolsSnapshot, STATE_FILE, capture_snapshot,
+    load_state_file, save_state_file, state_file_path, update_latest_snapshot,
 };
 pub use dom::Dom;
 pub use error::{Error, Result};

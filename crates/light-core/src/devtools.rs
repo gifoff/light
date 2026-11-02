@@ -44,13 +44,29 @@ pub enum DevToolsCommand {
         response_tx: std::sync::mpsc::Sender<bool>,
     },
     /// Изменить значение реактивного поля `field` на `value`.
-    /// Пока заглушка: применяется, если поле поддерживает прямую запись.
+    ///
+    /// Применяется к компоненту активного окна через
+    /// [`Component::inject_state`](crate::component::Component::inject_state);
+    /// результат обработки (`true` — окно найдено и перерисовано,
+    /// `false` — активного окна нет) возвращается TCP-серверу по каналу
+    /// `response_tx`; сервер на его основе отвечает клиенту
+    /// `ok:true` / `ok:false`.
     SetState {
         /// Имя поля.
         field: String,
         /// Новое значение (JSON).
         value: serde_json::Value,
+        /// Канал возврата результата применения состояния.
+        response_tx: std::sync::mpsc::Sender<bool>,
     },
+    /// Сохранить текущее состояние компонента активного окна в файл
+    /// `.light/state.json` (относительно рабочей директории приложения).
+    ///
+    /// Команда выполняется асинхронно: UI-поток сам пишет файл при обработке
+    /// команды; TCP-сервер отвечает клиенту `ok\n` сразу после отправки
+    /// (без ожидания завершения записи). Файл читается при следующем запуске
+    /// (`#[cfg(feature = "devtools")]`) для восстановления состояния.
+    SaveState,
 }
 
 /// Глобальное хранение последнего JSON-снимка: обновляется из UI-потока при
@@ -209,6 +225,66 @@ pub fn capture_snapshot(token: u32, component: &dyn Component) -> DevToolsSnapsh
         state: component.inspect_state(),
         layout: None,
     }
+}
+
+/// Путь файла состояния относительно рабочей директории приложения.
+///
+/// Приложение (запущенное `light dev` или `cargo run`) работает из корня
+/// проекта, поэтому относительный путь `.light/state.json` указывает на каталог
+/// проекта; при необходимости можно переопределить переменной окружения
+/// `LIGHT_STATE_FILE` (например, в тестах — на временный файл).
+pub const STATE_FILE: &str = ".light/state.json";
+
+/// Возвращает фактический путь файла состояния.
+///
+/// Если переменная окружения `LIGHT_STATE_FILE` задана и непуста — её значение,
+/// иначе [`STATE_FILE`] (относительно текущей рабочей директории).
+pub fn state_file_path() -> std::path::PathBuf {
+    std::env::var_os("LIGHT_STATE_FILE")
+        .map(std::path::PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::PathBuf::from(STATE_FILE))
+}
+
+/// Сохраняет JSON-объект состояния компонента в файл [`state_file_path`].
+///
+/// Создаёт родительский каталог (`.light/`), если его ещё нет. Ошибки записи
+/// не являются критическими для UI: они логируются в stderr, а функция
+/// возвращает `Result`, чтобы вызывающая сторона могла отреагировать
+/// (например, сообщить инспектору через `SET_STATE`/`SAVE_STATE`).
+///
+/// Вызывается из UI-потока: при закрытии окна и по команде `SAVE_STATE`
+/// из DevTools.
+pub fn save_state_file(state: &serde_json::Value) -> std::io::Result<()> {
+    let path = state_file_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let json = serde_json::to_string_pretty(state).map_err(std::io::Error::other)?;
+    std::fs::write(&path, json)?;
+    Ok(())
+}
+
+/// Читает ранее сохранённое состояние компонента из [`state_file_path`].
+///
+/// Возвращает `Ok(Some(value))`, если файл существует и успешно разобран в
+/// JSON-объект; `Ok(None)` — если файла нет (нормальный первый запуск);
+/// `Err(..)` — при ошибке чтения или разбора (файл повреждён). Повреждённый
+/// файл не блокирует запуск: вызывающая сторона логирует ошибку и продолжает
+/// с чистым состоянием.
+pub fn load_state_file() -> Result<Option<serde_json::Value>, std::io::Error> {
+    let path = state_file_path();
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(&path)?;
+    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("не удалось разобрать {}: {e}", path.display()),
+        )
+    })?;
+    Ok(Some(value))
 }
 
 /// TCP-сервер для DevTools: отдаёт последний JSON-снимок по построчному

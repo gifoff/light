@@ -121,6 +121,36 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             .collect::<Vec<_>>(),
         _ => Vec::new(),
     };
+
+    // Метод `inject_state` (фича `devtools`): восстанавливает значения полей из
+    // JSON-объекта, снятого `inspect_state`, через сеттеры `set_<поле>`
+    // (их генерирует `#[proxy]`). Не-примитивные поля (и `Option`) пропущены,
+    // как и в `inspect_state`. Геттер здесь не читается — только сеттер,
+    // поэтому дробного заёма (`&self` на геттере + `&mut self` на сеттере) нет.
+    let inject_bodies = field_fields
+        .iter()
+        .filter(|(_name, ty)| is_primitive_serde(ty))
+        .map(|(name, ty)| {
+            let setter = Ident::new(&format!("set_{name}"), name.span());
+            let name_str = name.to_string();
+            quote! {
+                if let ::std::option::Option::Some(__value) = state.get(#name_str) {
+                    if let ::std::result::Result::Ok(__parsed) =
+                        ::light::serde_json::from_value::<#ty>(__value.clone())
+                    {
+                        self.#setter(__parsed);
+                    }
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+    let inject_state_method = quote! {
+        #[cfg(feature = "devtools")]
+        fn inject_state(&mut self, state: &::light::serde_json::Value) {
+            #(#inject_bodies)*
+        }
+    };
+
     let inspect_state_method = if field_fields.is_empty() {
         quote!()
     } else {
@@ -335,6 +365,7 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             #validate_field_method
             #validate_form_method
             #inspect_state_method
+            #inject_state_method
         }
     })
 }

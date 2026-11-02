@@ -9,8 +9,13 @@
 //!   UI-поток (имитация нажатия элемента с ключом `key`) и ждёт результата:
 //!   `ok:true\n`, если клик обработан, `ok:false\n`, если нет, либо
 //!   `timeout\n`, если UI не ответил в течение секунды.
-//! * Клиент шлёт `SET_STATE <field> <json>\n` — сервер пытается изменить
-//!   реактивное поле (пока заглушка: отвечает `not supported yet\n`).
+//! * Клиент шлёт `SET_STATE <field> <json>\n` — сервер отправляет команду
+//!   изменения реактивного поля в UI-поток (применяет значение к активному
+//!   окну) и ждёт результата: `ok:true\n`, если состояние применено,
+//!   `ok:false\n`, если активного окна нет, либо `timeout\n`.
+//! * Клиент шлёт `SAVE_STATE\n` — сервер просит UI-поток сохранить текущее
+//!   состояние компонента в `.light/state.json` и сразу отвечает `ok\n`
+//!   (запись асинхронна; результат видно при следующем запуске).
 //! * Клиент шлёт `QUIT\n` — сервер закрывает соединение.
 //! * Неизвестная команда — сервер отвечает `unknown command\n` и продолжает
 //!   обслуживание.
@@ -86,7 +91,7 @@ fn dispatch_command(command: &str) -> String {
     let mut parts = command.splitn(3, ' ');
     let name = parts.next().unwrap_or("");
     let arg1 = parts.next().unwrap_or("");
-    let _ = parts.next(); // arg2 (для SET_STATE: JSON-значение) пока не используется
+    let arg2 = parts.next().unwrap_or(""); // для SET_STATE: JSON-значение
 
     match name {
         "SNAPSHOT" => super::read_latest_snapshot().unwrap_or_else(|| "null".to_owned()),
@@ -111,10 +116,35 @@ fn dispatch_command(command: &str) -> String {
             }
         }
         "SET_STATE" => {
-            // Пока заглушка: прямая запись в реактивные поля через serde
-            // потребует downcast к конкретному типу компонента, что реализуется
-            // отдельно.
-            "not supported yet".to_owned()
+            if arg1.is_empty() {
+                return "missing field".to_owned();
+            }
+            // `arg2` — JSON-значение поля; при его отсутствии или ошибке
+            // разбора отвечаем сразу, не отправляя команду в UI-поток.
+            let value = match serde_json::from_str::<serde_json::Value>(arg2) {
+                Ok(value) => value,
+                Err(_) => return "invalid json".to_owned(),
+            };
+            // Как и для CLICK: ожидаем применения состояния из UI-потока
+            // (1 с достаточно; если окна нет или оно зависло — `ok:false` /
+            // `timeout`).
+            let (tx, rx) = std::sync::mpsc::channel();
+            super::send_command(super::DevToolsCommand::SetState {
+                field: arg1.to_owned(),
+                value,
+                response_tx: tx,
+            });
+            match rx.recv_timeout(std::time::Duration::from_secs(1)) {
+                Ok(true) => "ok:true".to_owned(),
+                Ok(false) => "ok:false".to_owned(),
+                _ => "timeout".to_owned(),
+            }
+        }
+        "SAVE_STATE" => {
+            // Сохранение состояния выполняется асинхронно в UI-потоке (см.
+            // `window/mod.rs`); сервер отвечает сразу, не ожидая записи.
+            super::send_command(super::DevToolsCommand::SaveState);
+            "ok".to_owned()
         }
         _ => "unknown command".to_owned(),
     }

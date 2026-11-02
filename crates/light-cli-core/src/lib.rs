@@ -6,6 +6,9 @@
 pub mod add;
 pub mod backup;
 pub mod cargo;
+/// Супервизор `light dev`: горячая перезагрузка приложения с восстановлением
+/// состояния.
+pub mod dev;
 pub mod doctor;
 pub mod edit;
 /// Типы ошибок CLI.

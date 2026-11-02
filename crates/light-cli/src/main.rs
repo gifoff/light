@@ -2,6 +2,7 @@ use clap::Parser;
 
 mod cmd_add;
 mod cmd_check;
+mod cmd_dev;
 mod cmd_doctor;
 mod cmd_init;
 mod cmd_lock;
@@ -43,6 +44,9 @@ enum Command {
     Vendor(cmd_vendor::VendorArgs),
     /// Опубликовать крейты воркспейса в crates.io.
     Publish(cmd_publish::PublishArgs),
+    /// Разработать приложение Light с горячей перезагрузкой и восстановлением
+    /// состояния (`light dev [ПАКЕТ] [аргументы cargo…]`).
+    Dev(cmd_dev::DevArgs),
 }
 
 /// Формат вывода отчёта.
@@ -66,6 +70,7 @@ fn main() {
         Command::Update(args) => cmd_update::run(args),
         Command::Vendor(args) => cmd_vendor::run(args),
         Command::Publish(args) => cmd_publish::run(args),
+        Command::Dev(args) => cmd_dev::run(args),
     };
     match result {
         Ok(code) => std::process::exit(code),

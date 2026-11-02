@@ -2094,6 +2094,17 @@ impl App {
         };
         let token = state.token;
         let parent = state.parent;
+        // При закрытии верхнего окна сохраняем состояние компонента в файл
+        // `.light/state.json` (фича `devtools`). Запись асинхронна от UI:
+        // ошибка лишь логируется — не блокируем выход приложения. Токены
+        // дочерних окон не перезаписываются до цикла удаления ниже, поэтому
+        // здесь все окна ещё на месте.
+        #[cfg(feature = "devtools")]
+        if state.parent.is_none()
+            && let Err(error) = crate::devtools::save_state_file(&state.component.inspect_state())
+        {
+            eprintln!("DevTools: не удалось сохранить состояние: {error}");
+        }
         let mut closing = self.descendants(token);
         closing.push(token);
         for token in closing {
@@ -2204,8 +2215,13 @@ impl App {
     /// активному окну.
     ///
     /// Клик по элементу (`Click`) вызывается через [`Component::dispatch`];
-    /// результат (обработан/нет) возвращается TCP-серверу по каналу
-    /// `response_tx`, а при обработке состояние помечается на перерисовку.
+    /// изменение состояния (`SetState`) — через
+    /// [`Component::inject_state`](crate::component::Component::inject_state),
+    /// восстановление значений из `.light/state.json` (команда `SAVE_STATE`)
+    /// пишет файл состояния в UI-потоке. Результат обработки (`Click`/
+    /// `SetState`) возвращается TCP-серверу по каналу `response_tx`; при
+    /// обработке компонент помечается на перерисовку, а новый снимок
+    /// обновляет `LATEST_SNAPSHOT`, чтобы инспектор сразу увидел изменение.
     #[cfg(all(feature = "devtools", feature = "async-runtime"))]
     fn handle_devtools_command(&mut self, cmd: crate::devtools::DevToolsCommand) {
         match cmd {
@@ -2226,8 +2242,49 @@ impl App {
                 }
                 let _ = response_tx.send(handled);
             }
-            // SetState — пока заглушка, обработка не требуется.
-            crate::devtools::DevToolsCommand::SetState { .. } => {}
+            // SetState: применяем новое значение поля к компоненту активного
+            // окна. Состояние передано парой `field`/`value` (см. сервер),
+            // но `inject_state` принимает объект `{field: value}` — собираем
+            // его здесь. Если поля нет или десериализация не удалась (тип не
+            // совпадает), `inject_state` ничего не меняет — считаем команду
+            // применённой (активное окно найдено, перерисовка запрошена).
+            crate::devtools::DevToolsCommand::SetState {
+                field,
+                value,
+                response_tx,
+            } => {
+                let Some(id) = self.tokens.get(&crate::control::active_window()).copied() else {
+                    let _ = response_tx.send(false);
+                    return;
+                };
+                let Some(window) = self.windows.get_mut(&id) else {
+                    let _ = response_tx.send(false);
+                    return;
+                };
+                let mut state = serde_json::Map::new();
+                state.insert(field, value);
+                window
+                    .component
+                    .inject_state(&serde_json::Value::Object(state));
+                window.invalidate();
+                let _ = response_tx.send(true);
+            }
+            // SaveState: пишем текущее состояние компонента активного окна в
+            // файл `.light/state.json`. Ошибки записи логируем в stderr — UI
+            // продолжает работать; инспектор уже получил ответ `ok`.
+            crate::devtools::DevToolsCommand::SaveState => {
+                let Some(id) = self.tokens.get(&crate::control::active_window()).copied() else {
+                    return;
+                };
+                let Some(window) = self.windows.get(&id) else {
+                    return;
+                };
+                if let Err(error) =
+                    crate::devtools::save_state_file(&window.component.inspect_state())
+                {
+                    eprintln!("DevTools: не удалось сохранить состояние: {error}");
+                }
+            }
         }
     }
 }
@@ -2237,8 +2294,23 @@ impl ApplicationHandler<UserEvent> for App {
         if !self.windows.is_empty() {
             return;
         }
-        let Some(component) = self.root.take() else {
-            return;
+        let component = match self.root.take() {
+            Some(c) => c,
+            None => return,
+        };
+        // Восстанавливаем состояние из `.light/state.json`, если файл есть
+        // (фича `devtools`). Применяем до первого рендера: значения должны
+        // отразиться в первом кадре. Повреждённый/отсутствующий файл не
+        // блокирует запуск — просто продолжаем с чистым состоянием.
+        #[cfg(not(feature = "devtools"))]
+        let component = component;
+        #[cfg(feature = "devtools")]
+        let component = {
+            let mut c = component;
+            if let Ok(Some(state)) = crate::devtools::load_state_file() {
+                c.inject_state(&state);
+            }
+            c
         };
         self.build_registry(&*component);
         if let Err(error) = self.create_window(event_loop, component, None) {

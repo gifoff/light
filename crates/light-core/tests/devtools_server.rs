@@ -116,3 +116,70 @@ fn click_without_ui_times_out() {
         "без UI-потока клик должен завершиться таймаутом, got: {line:?}"
     );
 }
+
+/// `SET_STATE` без имени поля (пустое поле) → `missing field`; команда не
+/// уходит в UI-поток.
+#[test]
+fn set_state_empty_field_returns_missing_field() {
+    let port = light::devtools::server::start(0).expect("server starts");
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    // Два пробела: имя поля пустое, есть JSON-значение.
+    stream.write_all(b"SET_STATE  5\n").expect("send");
+    let line = read_line(&mut stream);
+    assert_eq!(line.trim(), "missing field");
+}
+
+/// `SET_STATE <field>` без значения (одно слово) → `invalid json`: пустое
+/// значение не разбирается как JSON.
+#[test]
+fn set_state_without_value_returns_invalid_json() {
+    let port = light::devtools::server::start(0).expect("server starts");
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    stream.write_all(b"SET_STATE count\n").expect("send");
+    let line = read_line(&mut stream);
+    assert_eq!(line.trim(), "invalid json");
+}
+
+/// `SET_STATE <field> <не-json>` → `invalid json` (значение не разобрано).
+#[test]
+fn set_state_invalid_json_returns_error() {
+    let port = light::devtools::server::start(0).expect("server starts");
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    stream
+        .write_all(b"SET_STATE count not-a-json\n")
+        .expect("send");
+    let line = read_line(&mut stream);
+    assert_eq!(line.trim(), "invalid json");
+}
+
+/// `SET_STATE count 5` без запущенного цикла событий: команда уходит в очередь,
+/// её никто не дренирует — сервер ждёт ответа 1 с и отвечает `timeout` (как и
+/// для CLICK без UI).
+#[test]
+fn set_state_without_ui_times_out() {
+    let port = light::devtools::server::start(0).expect("server starts");
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    stream.write_all(b"SET_STATE count 5\n").expect("send");
+    let line = read_line(&mut stream);
+    assert_eq!(
+        line.trim(),
+        "timeout",
+        "без UI-потока SET_STATE должен завершиться таймаутом, got: {line:?}"
+    );
+}
+
+/// `SAVE_STATE` — асинхронная команда: сервер отвечает `ok` немедленно, не
+/// ожидая записи состояния (запись выполняется в UI-потоке; без UI она просто
+/// не произойдёт, но протокол-ответ тот же).
+#[test]
+fn save_state_returns_ok_immediately() {
+    let port = light::devtools::server::start(0).expect("server starts");
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    stream.write_all(b"SAVE_STATE\n").expect("send");
+    let line = read_line(&mut stream);
+    assert_eq!(
+        line.trim(),
+        "ok",
+        "SAVE_STATE обязан ответить ok, got: {line:?}"
+    );
+}
