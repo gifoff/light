@@ -7,24 +7,30 @@
 //! запуске приложение восстанавливает состояние из `.light/state.json`
 //! (см. модуль `devtools` в `light-fw-core`).
 //!
-//! Надёжный мониторинг файлов использует crate `notify` (RecursionMode::Normal);
-//! отложенный (debounce ~150 мс) повторный запуск координирует отдельный
-//! поток, чтобы кратковременные серии событий не запускали много перезагрузок.
+//! Надёжный мониторинг файлов использует `notify::PollWatcher` — периодическое
+//! опросование файловой системы, которое работает на любых ФС, включая UNC и
+//! сетевые диски, где нативный watcher (`recommended_watcher`) события не ловит.
+//! Отложенный (debounce ~150 мс) повторный запуск координирует отдельный поток,
+//! чтобы кратковременные серии событий не запускали много перезагрузок.
 
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt as _;
 #[cfg(windows)]
 use std::os::windows::process::ExitStatusExt as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use notify::Watcher as _;
+use notify::{Config, PollWatcher, RecursiveMode, Watcher as _};
 
 const DEBOUNCE: Duration = Duration::from_millis(150);
 const DEVTOOLS_PORT: u16 = 9229;
+/// Интервал опроса файловой системы [`PollWatcher`]. На UNC- и сетевых дисках
+/// нативный watcher события не ловит, поэтому используем периодическое
+/// опросование (500 мс — разумный баланс между задержкой реакции и нагрузкой).
+const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Разобранные параметры команды `light dev`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -69,6 +75,61 @@ pub fn parse_dev_command(raw: &[String]) -> DevArgs {
         }
     }
     out
+}
+
+/// Определяет корень пакета, который запускает `light dev`.
+///
+/// Если передан аргумент `package` (например `example-devtools-demo`), корень
+/// находится через `cargo metadata --no-deps` — берётся родительский каталог
+/// `manifest_path` нужного пакета. Это важно: без этого `watch_paths` слежил бы
+/// за корнем воркспейса (где лежат все `examples/*`), а не за конкретным
+/// примером, и изменения в `examples/<name>/` не отслеживались бы.
+///
+/// Если пакет не передан или `cargo metadata` завершился с ошибкой, возвращается
+/// `cwd` (поведение «как раньше» — наблюдение текущего каталога).
+pub fn resolve_package_root(package: Option<&str>, cwd: &Path) -> PathBuf {
+    let Some(name) = package else {
+        return cwd.to_path_buf();
+    };
+    let output = Command::new("cargo")
+        .args(["metadata", "--no-deps", "--format-version", "1"])
+        .current_dir(cwd)
+        .output();
+    let Ok(output) = output else {
+        eprintln!("light dev: `cargo metadata` не запустился — слежу за cwd");
+        return cwd.to_path_buf();
+    };
+    if !output.status.success() {
+        eprintln!(
+            "light dev: `cargo metadata` завершился с ошибкой — слежу за cwd: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return cwd.to_path_buf();
+    }
+    let Ok(meta) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
+        eprintln!("light dev: не удалось разобрать вывод `cargo metadata` — слежу за cwd");
+        return cwd.to_path_buf();
+    };
+    let Some(packages) = meta.get("packages").and_then(|p| p.as_array()) else {
+        eprintln!("light dev: в выводе `cargo metadata` нет полей `packages` — слежу за cwd");
+        return cwd.to_path_buf();
+    };
+    let found = packages
+        .iter()
+        .find(|pkg| pkg.get("name").and_then(|n| n.as_str()) == Some(name));
+    match found
+        .and_then(|pkg| pkg.get("manifest_path"))
+        .and_then(|m| m.as_str())
+    {
+        Some(manifest_path) => PathBuf::from(manifest_path)
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| cwd.to_path_buf()),
+        None => {
+            eprintln!("light dev: пакет `{name}` не найден в воркспейсе — слежу за cwd");
+            cwd.to_path_buf()
+        }
+    }
 }
 
 /// Строит список путей для наблюдения: `src/` и `templates/` (только если
@@ -124,6 +185,9 @@ pub fn kill_child(child: &mut Child) {
 /// бинарного `light-fw-cli` (см. `cmd_dev` в `light-cli`).
 pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     let cwd = std::env::current_dir()?;
+    // Корень пакета: если передан `package`, ищем его через `cargo metadata`,
+    // иначе — текущий каталог. Именно этот корень передаётся в `watch_paths`.
+    let package_root = resolve_package_root(args.package.as_deref(), &cwd);
     let spawn_cmd = |args: &DevArgs, cwd: &std::path::Path| -> Command {
         let mut cmd = Command::new("cargo");
         cmd.arg("run");
@@ -156,16 +220,24 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     // Сигнал завершиться наблюдателю.
     let (done_tx, done_rx) = mpsc::channel::<()>();
 
-    let watch_paths_copy = watch_paths(&cwd);
+    let watch_paths_copy = watch_paths(&package_root);
+    eprintln!("light dev: watching {:?}", watch_paths_copy);
     let watcher = thread::spawn(move || {
         if watch_paths_copy.is_empty() {
             eprintln!("light dev: нет путей для наблюдения (нет src/, templates/, Cargo.toml)");
             return;
         }
         let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
-        let mut watcher = match notify::recommended_watcher(move |res| {
-            let _ = tx.send(res);
-        }) {
+        // PollWatcher: периодическое опросование файловой системы. В отличие от
+        // нативного `recommended_watcher`, работает на UNC- и сетевых дисках,
+        // где нативный механизм события просто не ловит.
+        let config = Config::default().with_poll_interval(POLL_INTERVAL);
+        let mut watcher = match PollWatcher::new(
+            move |res| {
+                let _ = tx.send(res);
+            },
+            config,
+        ) {
             Ok(w) => w,
             Err(e) => {
                 eprintln!("light dev: не удалось создать файловый наблюдатель: {e}");
@@ -173,7 +245,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
             }
         };
         for path in &watch_paths_copy {
-            if let Err(e) = watcher.watch(path, notify::RecursiveMode::NonRecursive) {
+            if let Err(e) = watcher.watch(path, RecursiveMode::NonRecursive) {
                 eprintln!("light dev: не удалось следить за {}: {e}", path.display());
             }
         }
@@ -190,6 +262,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                         .iter()
                         .any(|p| watch_paths_copy.iter().any(|w| p.starts_with(w)));
                     if relevant {
+                        eprintln!("light dev: change detected at {:?}", event.paths);
                         last_event = Some(Instant::now());
                     }
                 }
@@ -269,7 +342,15 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_dev_command;
+    use super::{parse_dev_command, resolve_package_root};
+
+    /// Без имени пакета корнем становится текущий каталог (быстрый путь без
+    /// запуска `cargo metadata`).
+    #[test]
+    fn package_root_without_package_is_cwd() {
+        let root = resolve_package_root(None, std::path::Path::new("/tmp/workspace"));
+        assert_eq!(root, std::path::PathBuf::from("/tmp/workspace"));
+    }
 
     /// Без аргументов: ни пакета, ни доп. флагов.
     #[test]
