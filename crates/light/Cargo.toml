@@ -99,7 +99,9 @@ a11y-keyboard = ["light-fw-core/a11y-keyboard"]
 # Включение шаблонов `<include src="...">`.
 include = ["light-fw-core/include"]
 # Инспекция состояния: JSON-снимок VDOM и реактивных свойств (DevTools).
-devtools = ["light-fw-core/devtools"]
+# Тянет `light-fw-core/devtools` (в который уже входит `async-runtime`)
+# и явную `light-fw-core/async-runtime` для наглядности в `cargo tree`.
+devtools = ["light-fw-core/devtools", "light-fw-core/async-runtime"]
 # Отладочный режим: DevTools + асинхронная доставка команд в UI-поток.
 # Используется алиасом `cargo dev` (`run --features light/dev-mode`).
 dev-mode = ["devtools", "async-runtime"]
