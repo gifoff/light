@@ -2291,7 +2291,6 @@ impl App {
             // VElement; при неизменённом — кэшированный (дешёвый).
             #[cfg(feature = "runtime-templates")]
             crate::devtools::DevToolsCommand::ReloadTemplate => {
-                eprintln!("light: ReloadTemplate → invalidate() all windows");
                 for window in self.windows.values_mut() {
                     window.invalidate();
                 }

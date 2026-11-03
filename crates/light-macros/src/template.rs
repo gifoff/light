@@ -256,16 +256,13 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     // и успешно разобрался, используем его вместо статического дерева.
     let runtime_render_check = quote! {
         if ::light::FEATURE_RUNTIME_TEMPLATES {
-            eprintln!("light: render() called, runtime-templates active");
             if let Some(__rt) = ::light::runtime::render_dynamic(
                 #const_name,
                 include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/", #template_rel)),
                 self,
             ) {
-                eprintln!("light: render() using runtime VDOM");
                 return __rt;
             }
-            eprintln!("light: render() falling back to static VDOM");
         }
     };
 

@@ -61,22 +61,20 @@ static FALLBACK_LOGGED: AtomicBool = AtomicBool::new(false);
 /// используется статическое дерево из бинарника.
 #[cfg(feature = "runtime-templates")]
 fn log_fallback_once() {
-    if FALLBACK_LOGGED
-        .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
-        .is_ok()
-    {
-        eprintln!("light: runtime template failed to parse — falling back to static VDOM");
-    }
+    let _ = FALLBACK_LOGGED.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed);
 }
 
-/// Логирует ошибку разбора конкретного атрибута элемента (для `eprintln!` —
-/// без `?`, чтобы не требовать `Option<!>` — нестабильный тип).
+/// Логирует ошибку разбора конкретного атрибута элемента.
+/// В debug-сборках выводит диагностику; в release — тихо возвращает None.
+#[cfg(debug_assertions)]
 fn parse_fail(element: &str, attr_name: &str, attr_value: &str) {
     eprintln!(
         "light: runtime parse failed at {:?} (attr {:?}={:?})",
         element, attr_name, attr_value
     );
 }
+#[cfg(not(debug_assertions))]
+fn parse_fail(_element: &str, _attr_name: &str, _attr_value: &str) {}
 
 /// Читает HTML-шаблон с диска и разбирает его в [`VElement`], используя mtime-кэш.
 ///
@@ -113,21 +111,10 @@ pub fn render_dynamic<C: Component + ?Sized>(
                         if let Some((cached_mtime, cached_html)) = cache.get(path)
                             && *cached_mtime == mtime
                         {
-                            eprintln!(
-                                "light: render_dynamic({:?}) mtime={:?} cache_mtime={:?} HIT",
-                                path, mtime, cached_mtime
-                            );
                             cached_html.clone()
                         } else {
-                            eprintln!(
-                                "light: render_dynamic({:?}) mtime={:?} cache_mtime={:?} MISS",
-                                path,
-                                mtime,
-                                cache.get(path).map(|(m, _)| *m)
-                            );
                             let html = std::fs::read_to_string(path).ok()?;
                             cache.insert(path, (mtime, html.clone()));
-                            eprintln!("light: render_dynamic updated cache for {:?}", path);
                             html
                         }
                     }
@@ -139,7 +126,6 @@ pub fn render_dynamic<C: Component + ?Sized>(
         let result = parse_template(&html, component);
         if result.is_none() {
             log_fallback_once();
-            eprintln!("light: parse_template returned None → fallback to static VDOM");
             let result = parse_template(fallback, component);
             if result.is_none() {
                 log_fallback_once();
@@ -173,8 +159,6 @@ pub fn parse_template<C: Component + ?Sized>(html: &str, component: &C) -> Optio
     let nodes = match light_fw_html::parse(html) {
         Ok(nodes) => nodes,
         Err(_) => {
-            let head: String = html.chars().take(80).collect();
-            eprintln!("light: runtime parse failed at <document> (attr html={head:?})");
             return None;
         }
     };
@@ -323,16 +307,13 @@ fn build_element<C: Component + ?Sized>(
         let mut s = elem.style;
         s.width = Size::Percent(100.0);
         elem = elem.with_style(s);
-        eprintln!(
-            "light: build {:?} kind=Column width={:?} (runtime)",
-            element.name, elem.style.width
-        );
     }
-    if matches!(&kind, ElementKind::Container(NodeKind::Window)) {
-        eprintln!(
-            "light: build {:?} kind=Window width={:?} (runtime)",
-            element.name, elem.style.width
-        );
+    // Button клипит содержимое по своим границам (аналог overflow:hidden в CSS).
+    if matches!(&kind, ElementKind::Container(NodeKind::Button { .. })) {
+        let mut s = elem.style;
+        s.overflow_x = Overflow::Hidden;
+        s.overflow_y = Overflow::Hidden;
+        elem = elem.with_style(s);
     }
     Some(elem)
 }
@@ -354,10 +335,6 @@ fn build_children<C: Component + ?Sized>(
                     continue;
                 }
                 let key = child_key(base, index);
-                eprintln!(
-                    "light: build Text content={:?} parent={:?} (runtime)",
-                    content, parent_kind
-                );
                 let mut text = VElement::leaf(
                     intern_key(&key),
                     NodeKind::Text {
@@ -427,10 +404,6 @@ fn render_segments<C: Component + ?Sized>(
                 let value = match eval_simple(component, path) {
                     Some(v) => v,
                     None => {
-                        eprintln!(
-                            "light: render_segments/eval_simple failed for {{ {:?} }}",
-                            path
-                        );
                         return None;
                     }
                 };
@@ -879,11 +852,7 @@ fn text_content(children: &[light_fw_html::Node]) -> Option<String> {
             for segment in segments {
                 match segment {
                     light_fw_html::Segment::Literal(text) => out.push_str(text),
-                    light_fw_html::Segment::Path(path) => {
-                        eprintln!(
-                            "light: text_content: dynamic interpolation {{ {:?} }} not supported",
-                            path
-                        );
+                    light_fw_html::Segment::Path(_path) => {
                         return None;
                     }
                 }
@@ -897,19 +866,11 @@ fn text_content(children: &[light_fw_html::Node]) -> Option<String> {
 /// простой идентификатор (без точек) обязателен.
 fn eval_simple<C: Component + ?Sized>(component: &C, name: &str) -> Option<String> {
     if name.contains('.') || name.is_empty() {
-        eprintln!(
-            "light: eval_simple rejected {:?} (complex or empty path)",
-            name
-        );
         return None;
     }
     match component.eval_field(name) {
         Some(v) => Some(v),
         None => {
-            eprintln!(
-                "light: eval_field({:?}) returned None — not a struct field (method or missing)",
-                name
-            );
             // Метод (а не поле): возвращаем пустую строку, чтобы runtime-рендер
             // продолжал работу. Статическое дерево будет содержать правильное
             // значение при следующей пересборке.
