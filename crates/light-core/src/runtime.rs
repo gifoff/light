@@ -244,11 +244,14 @@ fn build_element<C: Component + ?Sized>(
         "div" | "span" => {
             let direction = attr_value(&element.attrs, "direction");
             let node_kind = match direction {
-                None => NodeKind::Column,
+                // `vertical` и отсутствие атрибута — стандартная колонка (по
+                // умолчанию); `horizontal` — ряд. Любое другое значение не
+                // является ошибкой: родитель выравнивает его через `align-items`.
+                None | Some("vertical") => NodeKind::Column,
                 Some("horizontal") => NodeKind::Row,
                 Some(bad) => {
                     parse_fail(&element.name, "direction", bad);
-                    return None;
+                    NodeKind::Column
                 }
             };
             (ElementKind::Container(node_kind), None)
