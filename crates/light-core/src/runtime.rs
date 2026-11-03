@@ -352,7 +352,24 @@ fn build_children<C: Component + ?Sized>(
                     continue;
                 }
                 let key = child_key(base, index);
-                out.push(VElement::leaf(intern_key(&key), NodeKind::Text { content }));
+                eprintln!(
+                    "light: build Text content={:?} width=Auto (runtime)",
+                    content
+                );
+                let mut text = VElement::leaf(
+                    intern_key(&key),
+                    NodeKind::Text {
+                        content: content.clone(),
+                    },
+                );
+                // Растянуть Text по ширине родителя, чтобы text_wrap работал
+                // на полной ширине контейнера (аналог static-layout stretch).
+                if matches!(text.style.width, Size::Auto) {
+                    let mut s = text.style;
+                    s.width = Size::Percent(100.0);
+                    text = text.with_style(s);
+                }
+                out.push(text);
             }
             light_fw_html::Node::Element(element) => {
                 let positional = child_key(base, index);
