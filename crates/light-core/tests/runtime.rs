@@ -290,15 +290,60 @@ fn interpolation_resolves_field() {
     matches!(&el.children[0].children[0].kind, NodeKind::Text { content } if content == "7");
 }
 
-/// Неизвестное поле в интерполяции → None (строгий режим).
+/// Неизвестное поле в интерполяции → парсинг успешен, пустой текст отброшен.
 #[test]
-fn interpolation_unknown_field_fails() {
+fn interpolation_unknown_field_gives_empty() {
     let c = Empty;
     let result = light::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><div>{{ missing }}</div></window>"#,
         &c,
     );
-    assert!(result.is_none());
+    let el = result.expect("unknown field should not fail the whole template");
+    // Пустой текст не создаёт узла — div без детей.
+    assert!(
+        el.children[0].children.is_empty(),
+        "empty interpolation text should produce no child nodes"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// app.html (интеграционный тест: полный шаблон devtools-demo)
+// ---------------------------------------------------------------------------
+
+/// `parse_template` на реальном app.html devtools-demo → Some.
+///
+/// Шаблоны с методами (`{{ status }}`), где `status` — метод, а не поле,
+/// должны парситься успешно: неизвестные поля дают пустую строку.
+#[test]
+fn parse_app_html_returns_some() {
+    struct DemoApp {
+        #[allow(dead_code)]
+        count: i64,
+    }
+    impl Component for DemoApp {
+        fn render(&self) -> VElement {
+            VElement::container("", NodeKind::Column, Vec::new())
+        }
+        fn eval_field(&self, name: &str) -> Option<String> {
+            if name == "count" {
+                Some(self.count.to_string())
+            } else {
+                None
+            }
+        }
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+    let c = DemoApp { count: 0 };
+    let html = include_str!("../../../examples/devtools-demo/templates/app.html");
+    let el = light::runtime::parse_template(html, &c).expect("app.html must parse at runtime");
+    // Корневой window содержит titlebar и body div.
+    assert!(
+        el.children.len() >= 2,
+        "expected titlebar + body, got {}",
+        el.children.len()
+    );
 }
 
 // ---------------------------------------------------------------------------

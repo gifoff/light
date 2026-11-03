@@ -127,6 +127,9 @@ pub fn render_dynamic<C: Component + ?Sized>(
                                     Some(element)
                                 }
                                 None => {
+                                    eprintln!(
+                                        "light: parse_template returned None → fallback to static VDOM"
+                                    );
                                     log_fallback_once();
                                     // Fallback: встроенный в бинарник шаблон.
                                     parse_template(fallback, component)
@@ -386,7 +389,16 @@ fn render_segments<C: Component + ?Sized>(
         match segment {
             light_fw_html::Segment::Literal(text) => out.push_str(text),
             light_fw_html::Segment::Path(path) => {
-                let value = eval_simple(component, path)?;
+                let value = match eval_simple(component, path) {
+                    Some(v) => v,
+                    None => {
+                        eprintln!(
+                            "light: render_segments/eval_simple failed for {{ {:?} }}",
+                            path
+                        );
+                        return None;
+                    }
+                };
                 out.push_str(&value);
             }
         }
@@ -832,7 +844,13 @@ fn text_content(children: &[light_fw_html::Node]) -> Option<String> {
             for segment in segments {
                 match segment {
                     light_fw_html::Segment::Literal(text) => out.push_str(text),
-                    light_fw_html::Segment::Path(_) => return None,
+                    light_fw_html::Segment::Path(path) => {
+                        eprintln!(
+                            "light: text_content: dynamic interpolation {{ {:?} }} not supported",
+                            path
+                        );
+                        return None;
+                    }
                 }
             }
         }
@@ -844,9 +862,25 @@ fn text_content(children: &[light_fw_html::Node]) -> Option<String> {
 /// простой идентификатор (без точек) обязателен.
 fn eval_simple<C: Component + ?Sized>(component: &C, name: &str) -> Option<String> {
     if name.contains('.') || name.is_empty() {
+        eprintln!(
+            "light: eval_simple rejected {:?} (complex or empty path)",
+            name
+        );
         return None;
     }
-    component.eval_field(name)
+    match component.eval_field(name) {
+        Some(v) => Some(v),
+        None => {
+            eprintln!(
+                "light: eval_field({:?}) returned None — not a struct field (method or missing)",
+                name
+            );
+            // Метод (а не поле): возвращаем пустую строку, чтобы runtime-рендер
+            // продолжал работу. Статическое дерево будет содержать правильное
+            // значение при следующей пересборке.
+            Some(String::new())
+        }
+    }
 }
 
 /// Запрашивает булево значение поля: `"true"/"1"/"yes"/"on"` → `true`.
