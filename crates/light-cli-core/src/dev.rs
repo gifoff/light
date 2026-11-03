@@ -1,6 +1,6 @@
 //! Горячая перезагрузка приложения Light: супервизор `light dev`.
 //!
-//! Запускает приложение (`target/hot/debug/<bin>`) как дочерний процесс,
+//! Запускает приложение (копию из `target/hot-run/`) как дочерний процесс,
 //! следит за исходниками (`src/`, `templates/`, `Cargo.toml`). Две реакции:
 //! * **HTML** (файлы `*.html`) → команда `RELOAD_TEMPLATE` через TCP-сервер
 //!   DevTools на порту 9229: приложение перечитывает HTML-шаблон с диска и
@@ -33,7 +33,7 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use notify::{Config, PollWatcher, RecursiveMode, Watcher as _};
 
@@ -62,7 +62,7 @@ const HTML_DEBOUNCE: Duration = Duration::from_millis(100);
 /// Разобранные параметры команды `light dev`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DevArgs {
-    /// Пакет воркспейса, который запускается (`target/hot/debug/<bin>`).
+    /// Пакет воркспейса, который запускается (копия из `target/hot-run/`).
     pub package: Option<String>,
     /// Дополнительные флаги cargo, передаваемые после имени пакета
     /// (например, `--release`).
@@ -508,28 +508,72 @@ pub fn kill_child(child: &mut Child) {
 ///
 /// Cargo кладёт бинарник в `target/debug/<package-name>` (двери сохраняются):
 /// `example-devtools-demo` → `example-devtools-demo.exe` (Windows) или
-/// `example-devtools-demo` (unix). Путь в debug-каталоге:
-/// `<root>/target/hot/debug/<package-name>.exe`.
+/// `example-devtools-demo` (unix). Путь к свежему артефакту:
+/// `<build_target>/debug/<package-name>.exe`.
 pub fn bin_name(package: &str) -> String {
     package.to_string()
 }
 
-/// Абсолютный путь к собранным артефактам (`target/hot/debug/<bin>`).
+/// Свежий артефакт после `cargo build --target-dir <build_target>`:
+/// `<build_target>/debug/<package>.exe` (Windows) / `.exec`-без (unix).
 ///
-/// `<root>` — корень, в котором лежит `target/` (для workspace-члена это
-/// `workspace_root`, для одиночного крейта — `package_root`). Windows: `.exe`
-/// на конце, unix: без расширения.
-pub fn hot_bin_path(pkg_root: &Path, package: &str) -> PathBuf {
-    let mut p = pkg_root
-        .join("target")
-        .join("hot")
-        .join("debug")
-        .join(bin_name(package));
+/// Запущенный процесс НЕ держит этот файл — он запущен из копии в
+/// [`run_exe_path`] (`target/hot-run/`). Поэтому следующая сборка может
+/// перезаписывать свежий бинарник без os error 5.
+pub fn fresh_bin_path(build_target: &Path, package: &str) -> PathBuf {
+    let mut p = build_target.join("debug").join(bin_name(package));
     #[cfg(windows)]
     {
         p.set_extension("exe");
     }
     p
+}
+
+/// Копия свежего бинарника в `target/hot-run/`, от которой и запускается
+/// приложение: `<run_dir>/<bin>-<ts>.exe`. Timestamp (`as_millis`) делает имя
+/// уникальным на каждый swap; старые копии чистятся [`cleanup_run_dir`].
+pub fn run_exe_path(run_dir: &Path, bin: &str) -> PathBuf {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let mut p = run_dir.join(format!("{bin}-{ts}"));
+    #[cfg(windows)]
+    {
+        p.set_extension("exe");
+    }
+    p
+}
+
+/// Удаляет все `.exe` в `run_dir`, кроме активного (`keep`). Ошибки молча
+/// игнорируются: файл мог быть ещё жив в AV-кэше.
+pub fn cleanup_run_dir(run_dir: &Path, keep: &Path) {
+    if let Ok(entries) = std::fs::read_dir(run_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path == keep {
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) == Some("exe") {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+    }
+}
+
+/// Копирует свежий бинарник из `<build_target>/debug/` в
+/// `<run_dir>/<bin>-<ts>.exe`. Создаёт `run_dir`, если её нет.
+/// Возвращает путь к копии.
+pub fn copy_fresh_to_run(
+    build_target: &Path,
+    run_dir: &Path,
+    bin: &str,
+) -> std::result::Result<PathBuf, std::io::Error> {
+    std::fs::create_dir_all(run_dir)?;
+    let fresh = fresh_bin_path(build_target, bin);
+    let dest = run_exe_path(run_dir, bin);
+    std::fs::copy(&fresh, &dest)?;
+    Ok(dest)
 }
 
 /// Результат одной фоновой сборки.
@@ -598,8 +642,8 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     let package_root = resolve_package_root(args.package.as_deref(), &cwd);
     // ТЗ 0.14.2-B-fix: для workspace-членов артефакты cargo кладутся в
     // workspace_root/target, а не в package_root/target. Берём workspace_root
-    // (если доступен) как корень для target/hot и bin_path; fallback —
-    // package_root (одиночный крейт без workspace).
+    // (если доступен) как корень для target/hot-build и target/hot-run;
+    // fallback — package_root (одиночный крейт без workspace).
     let target_root = resolve_workspace_root(&cwd).unwrap_or_else(|| {
         eprintln!(
             "light dev: `cargo metadata` недоступен — target_dir из package_root {:?}",
@@ -608,26 +652,32 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         package_root.clone()
     });
     eprintln!("light dev: workspace_root = {:?}", target_root);
-    // Имя бинарника: пакет + замена `-` → `_`. Запускаем уже собранный
-    // артефакт из `target/hot/debug/` (вместо `cargo run`).
+    // ТЗ 0.14.2-B-fix2: две папки — сборка в `target/hot-build` (cargo её
+    // никогда не блокирует), запуск из копии в `target/hot-run/<bin>-<ts>.exe`
+    // (Windows не даёт перезаписать запущенный .exe, но копия свободна).
+    let build_target = target_root.join("target").join("hot-build");
+    let run_dir = target_root.join("target").join("hot-run");
     let bin = bin_name(args.package.as_deref().unwrap_or("app"));
-    let hot_target = target_root.join("target").join("hot");
-    let hot_bin = hot_bin_path(&target_root, &bin);
-    eprintln!("light dev: target_dir = {:?}", hot_target);
-    eprintln!("light dev: binary path = {:?}", hot_bin);
+    eprintln!(
+        "light dev: build_target = {:?}, run_dir = {:?}",
+        build_target, run_dir
+    );
 
-    // === ФАЗА A: warm-up build ===
-    // Блокирующий `cargo build` в отдельный target-dir (`target/hot`). При
-    // ошибке — сразу exit 1 (старого процесса нет, «оставлять живым» нечего).
+    // === ФАЗА A: warm-up build в target/hot-build ===
+    // Блокирующий `cargo build` в отдельный target-dir. При ошибке — сразу
+    // exit 1 (старого процесса нет, «оставлять живым» нечего).
     {
-        eprintln!("light dev: warm-up build (cargo build --target-dir target/hot)…");
+        eprintln!(
+            "light dev: warm-up build (cargo build --target-dir {:?})…",
+            build_target
+        );
         let mut cmd = Command::new("cargo");
         cmd.arg("build");
         if let Some(package) = &args.package {
             cmd.args(["-p", package]);
         }
         cmd.args(["--features", "devtools"]);
-        cmd.args(["--target-dir", &hot_target.to_string_lossy()]);
+        cmd.args(["--target-dir", &build_target.to_string_lossy()]);
         cmd.args(&args.extra_cargo_args);
         cmd.stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
@@ -648,22 +698,36 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
             }
         }
         // ТЗ 0.14.2-B-fix 4: после успешного build проверим, что бинарник
-        // действительно лежит там, где мы его ищем. Если нет — путь расхожился
-        // (напр. workspace_root != package_root), и запуск даст os error 2.
-        if std::fs::metadata(&hot_bin).is_err() {
+        // действительно лежит там, где мы его ищем. Если нет — путь расхожился.
+        let fresh_bin = fresh_bin_path(&build_target, &bin);
+        if std::fs::metadata(&fresh_bin).is_err() {
             eprintln!(
                 "light dev: BUG — build succeeded but binary not at {:?}. \
                  Search in {:?}...",
-                hot_bin,
-                hot_target.join("debug")
+                fresh_bin,
+                build_target.join("debug")
             );
             return Ok(1);
         }
     }
 
-    // === ФАЗА B: spawn первого дочернего процесса из target/hot/debug/ ===
-    eprintln!("light dev: запускаю {:?}", hot_bin);
-    let child = match Command::new(&hot_bin)
+    // === ФАЗА B: копия в target/hot-run + spawn ===
+    // Запускаем из копии, а не из hot-build: следующая сборка перезапишет
+    // fresh-бинарник без os error 5 (запущен процесс с другой, свободной
+    // копии).
+    let first_run_exe = match copy_fresh_to_run(&build_target, &run_dir, &bin) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("light dev: не удалось скопировать бинарник: {e} — exit 1");
+            return Ok(1);
+        }
+    };
+    eprintln!(
+        "light dev: spawning {:?} (build {:?})",
+        first_run_exe,
+        fresh_bin_path(&build_target, &bin)
+    );
+    let child = match Command::new(&first_run_exe)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -673,7 +737,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         Err(e) => {
             eprintln!(
                 "light dev: не удалось запустить {:?}: {e} — exit 1",
-                hot_bin
+                first_run_exe
             );
             return Ok(1);
         }
@@ -1022,9 +1086,9 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         // дочернего процесса).
         //
         // ТЗ 0.14.2-B: при .rs change мы НЕ убиваем старый процесс сразу —
-        // запускаем `cargo build` в `target/hot` (рекурсивно, но не блокируй
-        // watcher: он живёт в своём треде), а когда сборка закончится:
-        //   - exit 0  → SAVE_STATE, kill old, spawn new из target/hot/debug/
+        // запускаем `cargo build` в `target/hot-build` (рекурсивно, но не
+        // блокируй watcher: он живёт в своём треде), а когда сборка закончится:
+        //   - exit 0  → SAVE_STATE, copy fresh → hot-run, kill old, spawn new
         //   - exit != 0 → старый продолжает работать; stderr cargo уже на консоли.
         enum Ev {
             Restart(ChangeKind),
@@ -1094,7 +1158,10 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                 // Фоновая сборка закончилась. State-machine решает: swap или keep-old.
                 let outcome = sm.poll_outcome(exit_code);
                 if let RebuildOutcome::Success = outcome {
-                    // === SWAP: SAVE_STATE → kill old → spawn new из hot-bin ===
+                    // === SWAP: SAVE_STATE → copy fresh → kill old → spawn new ===
+                    // Порядок (ТЗ 0.14.2-B-fix2 3): copy работает и на живом
+                    // exe (это отдельный файл), kill — после copy, но до spawn
+                    // нового (чтобы не было двух видимых окон).
                     let took = sm
                         .started_at
                         .map(|t| Instant::now().saturating_duration_since(t))
@@ -1109,17 +1176,30 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     // Короткая пауза: даём UI-потоку время обработать команду
                     // и записать файл, прежде чем уберём процесс.
                     thread::sleep(Duration::from_millis(200));
-                    // Берём pid старого процесса до kill (для лога «pid X -> Y»).
+                    // a) Копируем свежий бинарник из hot-build в hot-run.
+                    //    Никто не держит fresh-бинарник (запущена старая
+                    //    копия в hot-run), run_exe новое имя — можно писать.
+                    let new_run_exe = match copy_fresh_to_run(&build_target, &run_dir, &bin) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!(
+                                "light dev: не удалось скопировать свежий бинарник: {e} \
+                                 (old остаётся)"
+                            );
+                            continue;
+                        }
+                    };
+                    eprintln!("light dev: copied fresh build to {:?}", new_run_exe);
+                    // b) Убиваем старый app (через MutexGuard; `kill_child`
+                    //    принимает `&mut Child`).
                     let old_pid = child_arc.lock().map(|g| g.id()).unwrap_or(0);
-                    // Убиваем старый app (через MutexGuard, чтобы освободить
-                    // после kill + wait; `kill_child` принимает `&mut Child`).
                     if let Ok(mut g) = child_arc.lock() {
                         kill_child(&mut g);
                     } else {
                         eprintln!("light dev: child_arc poisoned — не смогла убить old");
                     }
-                    // Spawn нового из target/hot/debug/.
-                    match Command::new(&hot_bin)
+                    // c) Spawn нового из копии в hot-run.
+                    match Command::new(&new_run_exe)
                         .stdin(Stdio::inherit())
                         .stdout(Stdio::inherit())
                         .stderr(Stdio::inherit())
@@ -1134,10 +1214,17 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                                     "light dev: child_arc poisoned — не записала новый process"
                                 );
                             }
+                            // Чистим старые копии (кроме текущей run_exe).
+                            cleanup_run_dir(&run_dir, &new_run_exe);
                             // Сбрасываем watcher в is_starting: он сам решит,
                             // когда закрывать окно (порт 9229 открылся либо
                             // дедлайн STARTUP_IGNORE прошёл).
                             let _ = state_tx.send(WatchState::starting());
+                            eprintln!(
+                                "light dev: spawning {:?} (build {:?})",
+                                new_run_exe,
+                                fresh_bin_path(&build_target, &bin)
+                            );
                             eprintln!("light dev: swap done (pid {old_pid} -> {new_pid})");
                         }
                         Err(e) => {
@@ -1177,8 +1264,8 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     // 1) Если уже идёт сборка — убиваем её (новый save важнее).
                     //    Лог «cancelled in-flight rebuild (new save)».
                     // 2) Поднимаем flag + таймер в state-machine.
-                    // 3) Запускаем `cargo build --target-dir target/hot` в фоне
-                    //    (non-blocking), сохраняем Child в rebuild_arc.
+                    // 3) Запускаем `cargo build --target-dir target/hot-build`
+                    //    в фоне (non-blocking), сохраняем Child в rebuild_arc.
                     // 4) Главный цикл продолжит опрашивать — на Ev::RebuildDone
                     //    сделает swap (success) или промолчит (failure).
                     let had_in_flight = {
@@ -1195,8 +1282,8 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     }
                     eprintln!("light dev: rebuild started (old app still running)");
                     sm.start();
-                    // Собираем команду для background build. `hot_target` —
-                    // тот же путь, что и в warm-up (workspace_root-based).
+                    // Собираем команду для background build. `build_target` —
+                    // тот же путь, что и в warm-up (workspace_root/hot-build).
                     let mut cmd = Command::new("cargo");
                     cmd.arg("build");
                     if let Some(p) = &args.package {
@@ -1206,7 +1293,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                         "--features",
                         "devtools",
                         "--target-dir",
-                        &hot_target.to_string_lossy(),
+                        &build_target.to_string_lossy(),
                     ]);
                     cmd.args(&args.extra_cargo_args);
                     cmd.stdin(Stdio::inherit())
@@ -1239,12 +1326,13 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
 mod tests {
     use super::{
         ChangeKind, RebuildOutcome, RebuildStateMachine, WatchAction, WatchState, bin_name,
-        classify_change, file_hash, handle_watch_event, hot_bin_path, parse_dev_command,
-        resolve_package_root, resolve_startup_completion, wait_port_available,
+        classify_change, cleanup_run_dir, copy_fresh_to_run, file_hash, fresh_bin_path,
+        handle_watch_event, parse_dev_command, resolve_package_root, resolve_startup_completion,
+        run_exe_path, wait_port_available,
     };
     use std::io::Write as _;
     use std::net::TcpListener;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::time::{Duration, Instant};
 
     // ===================== handle_watch_event / resolve =====================
@@ -1783,7 +1871,7 @@ mod tests {
         );
     }
 
-    // ===================== ТЗ 0.14.2-B: bin_name / hot_bin_path =============
+    // ===================== ТЗ 0.14.2-B-fix2: path helpers ================
 
     /// Бинарник: имя пакета без изменений (cargo не заменяет `-`). Windows: `.exe`.
     #[test]
@@ -1793,22 +1881,100 @@ mod tests {
         assert_eq!(bin_name("simple"), "simple");
     }
 
-    /// Путь к бинарнику: `<root>/target/hot/debug/<package-name>`.
-    /// Windows: добавляет `.exe`; unix: без расширения.
+    /// Свежий бинарник: `<build_target>/debug/<package-name>[.exe]`.
     #[test]
-    fn hot_bin_path_layout() {
-        let p = hot_bin_path(Path::new("/tmp/pkg"), "my-app");
+    fn fresh_bin_path_layout() {
+        let base = std::env::temp_dir();
+        let build_target = base.join("hot-build");
+        let p = fresh_bin_path(&build_target, "my-app");
         let s = p.to_string_lossy().to_string();
+        assert!(s.contains("hot-build"), "path contains hot-build: {s}");
+        assert!(
+            s.ends_with("my-app.exe") || s.ends_with("my-app"),
+            "correct bin name: {s}"
+        );
         if cfg!(windows) {
-            assert!(
-                s.ends_with(r"\target\hot\debug\my-app.exe"),
-                "windows layout, got: {s}"
-            );
-        } else {
-            assert!(
-                s.ends_with("/target/hot/debug/my-app"),
-                "unix layout, got: {s}"
-            );
+            assert!(s.ends_with(".exe"), "windows .exe, got: {s}");
         }
+    }
+
+    /// Копия для запуска: `<run_dir>/<bin>-<ts>[.exe]` — имя содержит bin
+    /// и timestamp, расширение `.exe` на Windows.
+    #[test]
+    fn run_exe_path_has_timestamp_and_extension() {
+        let run_dir = std::env::temp_dir().join("hot-run");
+        let p = run_exe_path(&run_dir, "my-app");
+        let file = p
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        assert!(
+            file.starts_with("my-app-"),
+            "filename should start with bin + dash, got: {file}"
+        );
+        if cfg!(windows) {
+            assert!(file.ends_with(".exe"), "windows extension, got: {file}");
+        } else {
+            assert!(!file.ends_with(".exe"), "no .exe on unix, got: {file}");
+        }
+    }
+
+    /// `copy_fresh_to_run`: создаёт run_dir, копирует, возвращает путь к копии.
+    /// `cleanup_run_dir`: удаляет старые .exe, кроме активного.
+    #[test]
+    fn copy_and_cleanup_run_dir() {
+        // Используем CWD-относительный каталог, потому что temp_dir() в этом
+        // окружении имеет ACL-ограничения (см. предсуществующие ACL-файлы
+        // dev::tests::file_hash_*). Каталог уникален по pid + nanos и чистится
+        // в конце теста.
+        let tmp = std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(format!(
+                ".light-dev-test-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+            ));
+        let build_root = tmp.join("hot-build");
+        let build_target = build_root.join("debug");
+        let run_dir = tmp.join("hot-run");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&build_target).expect("create build dir");
+
+        // Создаём фейковый fresh-бинарник в <build_target>/<bin>[.exe].
+        let bin = "test-app";
+        let mut fresh = build_target.join(bin);
+        #[cfg(windows)]
+        {
+            fresh.set_extension("exe");
+        }
+        std::fs::write(&fresh, b"fake").expect("write fake binary");
+
+        // Копируем: build_root = <tmp>/hot-build.
+        let copied = copy_fresh_to_run(&build_root, &run_dir, bin).expect("copy should succeed");
+        assert!(copied.exists(), "copy should exist: {:?}", copied);
+        let name = copied
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        assert!(name.starts_with("test-app-"), "name: {name}");
+
+        // Чистим: добавляем «старый» .exe и проверяем, что он удалён, а
+        // текущий остался.
+        let mut stale = run_dir.join("test-app-oldstale");
+        #[cfg(windows)]
+        {
+            stale.set_extension("exe");
+        }
+        std::fs::write(&stale, b"old").expect("write stale");
+        cleanup_run_dir(&run_dir, &copied);
+        assert!(!stale.exists(), "stale should be removed: {:?}", stale);
+        assert!(copied.exists(), "current should remain: {:?}", copied);
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

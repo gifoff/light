@@ -1,4 +1,5 @@
 /target
+**/target/
 /book
 
 .idea/
@@ -18,3 +19,6 @@ light-fw-cli-*/
 
 # Local verification artifacts
 verify/
+
+# Локальные temp-каталоги для unit-тестов dev::tests
+.light-dev-test-*/
