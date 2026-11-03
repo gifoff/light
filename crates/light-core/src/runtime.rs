@@ -322,6 +322,16 @@ fn build_element<C: Component + ?Sized>(
         let mut s = elem.style;
         s.width = Size::Percent(100.0);
         elem = elem.with_style(s);
+        eprintln!(
+            "light: build {:?} kind=Column width={:?} (runtime)",
+            element.name, elem.style.width
+        );
+    }
+    if matches!(&kind, ElementKind::Container(NodeKind::Window)) {
+        eprintln!(
+            "light: build {:?} kind=Window width={:?} (runtime)",
+            element.name, elem.style.width
+        );
     }
     Some(elem)
 }
