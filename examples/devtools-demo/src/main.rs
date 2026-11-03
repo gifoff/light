@@ -13,20 +13,20 @@ use light::prelude::*;
 #[proxy]
 struct App {
     count: i64,
+    status: String,
 }
 
 impl App {
     fn increment(&self) -> bool {
-        self.set_count(self.count() + 1);
-        true
-    }
-
-    fn status(&self) -> String {
-        if self.count() == 0 {
+        let n = self.count() + 1;
+        self.set_count(n);
+        let s = if n == 0 {
             "Кликните «Инкремент»".to_owned()
         } else {
-            format!("Счётчик: {}", self.count())
-        }
+            format!("Счётчик: {n}")
+        };
+        self.set_status(s);
+        true
     }
 
     fn minimize(&self) -> bool {

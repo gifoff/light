@@ -314,6 +314,15 @@ fn build_element<C: Component + ?Sized>(
     if let Some(cfg) = window_config {
         elem = elem.with_window(cfg);
     }
+    // Vertical-контейнер (Column) без явного width — растягивается на 100%
+    // по ширине родителя, как в static-layout (stretch по cross-оси).
+    if matches!(&kind, ElementKind::Container(NodeKind::Column))
+        && attr_value(&element.attrs, "width").is_none()
+    {
+        let mut s = elem.style;
+        s.width = Size::Percent(100.0);
+        elem = elem.with_style(s);
+    }
     Some(elem)
 }
 
