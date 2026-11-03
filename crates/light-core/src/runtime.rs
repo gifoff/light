@@ -107,12 +107,23 @@ pub fn render_dynamic<C: Component + ?Sized>(
                         if let Some((cached_mtime, cached)) = cache.get(path)
                             && *cached_mtime == mtime
                         {
+                            eprintln!(
+                                "light: render_dynamic({:?}) mtime={:?} cache_mtime={:?} HIT",
+                                path, mtime, cached_mtime
+                            );
                             return Some(cached.clone());
                         }
+                        eprintln!(
+                            "light: render_dynamic({:?}) mtime={:?} cache_mtime={:?} MISS",
+                            path,
+                            mtime,
+                            cache.get(path).map(|(m, _)| *m)
+                        );
                         match std::fs::read_to_string(path) {
                             Ok(html) => match parse_template(&html, component) {
                                 Some(element) => {
                                     cache.insert(path, (mtime, element.clone()));
+                                    eprintln!("light: render_dynamic updated cache for {:?}", path);
                                     Some(element)
                                 }
                                 None => {
