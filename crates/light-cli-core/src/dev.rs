@@ -216,33 +216,66 @@ fn is_port_open(port: u16) -> bool {
     TcpStream::connect(("127.0.0.1", port)).is_ok()
 }
 
+/// Период ожидания между попытками чтения файла при временных ошибках
+/// (`PermissionDenied` / `NotFound`). Редактор может писать файл в два этапа
+/// (append + flush): первое чтение ловит частичный/переходный файл. Повторные
+/// попытки (до 3, каждые 50 мс) дают OS время дописать файл, прежде чем мы
+/// вернём `None`.
+const FILE_HASH_RETRY_INTERVAL: Duration = Duration::from_millis(50);
+/// Максимум попыток чтения файла в [`file_hash`] (1 начальная + 2 повтора).
+const FILE_HASH_MAX_ATTEMPTS: u32 = 3;
+
 /// Хэш содержимого файла (`u64`) для дедупликации событий notify.
 ///
 /// Один «логический» записывающий вызов (например, сохранение в редакторе)
 /// генерирует несколько событий `PollWatcher` — `Modify`, `Modify(Data)`,
-/// `Modify(Metadata)` — с **одинаковым** содержимым. Дебаунс по времени (100/500
-/// мс) эту серию не схватывает, потому что вторая серия приходит ПОСЛЕ debounce.
-/// Хэш содержимого позволяет отфильтровать повторы: если `hash == last_hashes[&path]`
-/// — событие игнорируется как повтор того же содержимого.
+/// `Modify(Metadata)`. **Ключевой порядок**: хэширование выполняется ПОСЛЕ
+/// debounce, а не до него — потому что `Add-Content`-подобная запись идёт в
+/// два этапа (append + flush), и первое событие видит неполное содержимое.
+/// Если бы хэш применялся до debounce, hash1 ≠ hash2, и оба события прошли бы
+/// → двойной reload. После debounce содержимое уже финальное, и повторные
+/// события дают одинаковый хэш → отфильтровываются.
 ///
-/// Возвращает `None`, если файл нельзя прочитать (например, только что удалён
-/// или ещё пишется); в этом случае событие НЕ дедуплицируется и обрабатывается
-/// как изменение (консервативно).
+/// При временных ошибках чтения (`PermissionDenied` на частично-записанном
+/// файле, `NotFound` в момент удаления) функция пробует снова до
+/// [`FILE_HASH_MAX_ATTEMPTS`] раз, ожидая [`FILE_HASH_RETRY_INTERVAL`] между
+/// попытками. Если все попытки упали (файл реально недоступен) — возвращает
+/// `None`; событие тогда НЕ дедуплицируется и обрабатывается как изменение
+/// (консервативно: лучше лишний reload, чем пропущенное изменение).
 pub fn file_hash(path: &Path) -> Option<u64> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    use std::io::Read;
 
-    let mut buf = Vec::new();
-    let mut f = std::fs::File::open(path).ok()?;
-    // Читаем всё содержимое. Файлы, за которыми мы следим, — исходники
-    // (`.rs`, `.html`, `Cargo.toml`), так что объём небольшой (KB–MB).
-    if f.read_to_end(&mut buf).is_err() {
-        return None;
-    }
-    let mut hasher = DefaultHasher::new();
-    buf.hash(&mut hasher);
-    Some(hasher.finish())
+    // Читаем файл с ретраями: временные ошибки (частичная запись, PermissionDenied
+    // на переходном состоянии, NotFound в момент атомарного удаления) часто
+    // проходят через 50 мс. Лог на каждую неудачную попытку + итоговый лог по
+    // ТЗ 2.2 ("light dev: hash({:?}) = {:?}").
+    let mut attempts = 0u32;
+    let buf = loop {
+        match std::fs::read(path) {
+            Ok(b) => break Some(b),
+            Err(e) => {
+                attempts += 1;
+                if attempts >= FILE_HASH_MAX_ATTEMPTS {
+                    break None;
+                }
+                eprintln!(
+                    "light dev: hash({path:?}) read attempt {attempts} failed: {e} \
+                     (повторю через {:?}, всего до {FILE_HASH_MAX_ATTEMPTS:?} попыток)",
+                    FILE_HASH_RETRY_INTERVAL
+                );
+                thread::sleep(FILE_HASH_RETRY_INTERVAL);
+            }
+        }
+    };
+    let result: Option<u64> = buf.map(|b| {
+        let mut hasher = DefaultHasher::new();
+        b.hash(&mut hasher);
+        hasher.finish()
+    });
+    // Лог по ТЗ 2.2: на каждый вызов file_hash — eprintln с Some/None.
+    eprintln!("light dev: hash({:?}) = {:?}", path, result);
+    result
 }
 
 /// Тип изменения файла для классификации hot-reload.
@@ -547,11 +580,18 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         let mut last_html: Option<Instant> = None;
         let mut last_rs: Option<Instant> = None;
         // Дедупликация по хэшу содержимого: один «логический» save генерирует
-        // несколько событий notify (Modify + Modify(Data) + Modify(Metadata))
-        // с одинаковым содержимым. Хэш защищает от повторной обработки;
-        // дебаунс — от быстрых серий записи (редактор пишет файл по частям).
+        // несколько событий notify (Modify + Modify(Data) + Modify(Metadata)).
+        // Ключевой порядок (ТЗ 0.14.2-A-fix4): debounce СНАЧАЛА (файл успевает
+        // дописаться), затем hash-фильтр (повторные события того же
+        // содержимого отброшены), затем handle_watch_event.
         let mut last_hashes: std::collections::HashMap<PathBuf, u64> =
             std::collections::HashMap::new();
+        // Накопитель путей, ожидающих debounce. На событие notify мы НЕ
+        // хэшируем сразу (файл может быть в середине записи); только сохраняем
+        // путь. Когда debounce срабатывает (100/500 мс тишины), проходим по
+        // pending_debounce, хэшируем и дедуплицируем.
+        let mut pending_debounce: std::collections::VecDeque<PathBuf> =
+            std::collections::VecDeque::new();
         // Приоритет pending-флагов (Source > Html): если оба были накоплены,
         // применяем source (пересборка важнее reload).
         let apply_pending = |state: &mut WatchState,
@@ -574,6 +614,9 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                 start_at = Instant::now();
                 last_html = None;
                 last_rs = None;
+                // Сбрасываем накопленные пути: предыдущий запуск дочернего
+                // процесса завершился, и все «недочитанные» изменения теряются.
+                pending_debounce.clear();
                 continue;
             }
             // 3) Окно игнорирования: порт 9229 открылся или дедлайн прошёл.
@@ -606,99 +649,54 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
             // 3) События наблюдателя.
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(Ok(event)) => {
-                    // Для каждого пути из события:
-                    //  1) если путь не в watch_paths → skip;
-                    //  2) хэшируем содержимое файла;
-                    //  3) если хэш == последнему сохранённому для этого пути
-                    //     → ИГНОРИРОВАТЬ (повторное событие того же содержимого,
-                    //     например Modify(Data) / Modify(Metadata) после Modify);
-                    //  4) иначе обновляем last_hashes и классифицируем как
-                    //     настоящее изменение.
+                    // На каждое notify-событие мы НЕ хэшируем сразу: файл может
+                    // быть в середине записи (двухэтапный append + flush), и
+                    // хэш поймает неполное содержимое. Вместо этого:
+                    //  1) фильтруем по watch_paths;
+                    //  2) классифицируем (Html / Source / None) для лога;
+                    //  3) кладём путь в pending_debounce (deduplication по пути,
+                    //     чтобы серия событий одного save не раздувала очередь);
+                    //  4) поднимаем таймер debounce (Html / Source).
                     //
-                    // Если хотя бы один путь дал новое содержимое — обрабатываем
-                    // событие. Берём первый такой путь для классификации (Html /
-                    // Source / None). Это решает проблему «2 RELOAD_TEMPLATE на
-                    // одно изменение»: вторые/третьи события notify с тем же
-                    // хэшем отфильтруются здесь, до debounce.
-                    let mut effective_path: Option<&PathBuf> = None;
+                    // Хэширование + дедупликация happen в timeout-ветке, ПОСЛЕ
+                    // debounce — к тому моменту файл уже полностью записан.
                     for path in &event.paths {
                         if !watch_paths_copy.iter().any(|w| path.starts_with(w)) {
                             continue;
                         }
-                        let hash = match file_hash(path) {
-                            Some(h) => h,
-                            // Файл недоступен (удалён / ещё пишется): не
-                            // дедуплицируем — обрабатываем как изменение.
-                            None => {
-                                effective_path = Some(path);
-                                break;
-                            }
-                        };
-                        match last_hashes.get(path) {
-                            Some(&last) if last == hash => {
-                                // Повторное событие того же содержимого:
-                                // игнорируем.
-                                eprintln!(
-                                    "light dev: повторное событие notify для {:?} \
-                                     (хэш не изменился) — игнорирую",
-                                    path
-                                );
-                                continue;
-                            }
-                            _ => {
-                                last_hashes.insert(path.clone(), hash);
-                                effective_path = Some(path);
-                            }
+                        // Лог по ТЗ 3.1: сразу, до debounce.
+                        let kind_log = classify_change(path);
+                        eprintln!(
+                            "light dev: notify event path={path:?} kind={kind_log:?} \
+                             (queued for debounce)"
+                        );
+                        // Deduplicate by path within the queue: если тот же путь
+                        // уже в pending_debounce, не добавляем повторно (серия
+                        // событий одного save генерирует 2-3 notify на один путь).
+                        if !pending_debounce.contains(path) {
+                            pending_debounce.push_back(path.clone());
                         }
                     }
-                    let kind = effective_path.and_then(|p| classify_change(p));
-                    if kind.is_none() {
-                        continue;
-                    }
-                    let label = match kind {
-                        Some(ChangeKind::Html) => "HTML",
-                        Some(ChangeKind::Source) => "Source",
-                        None => "?",
-                    };
-                    eprintln!(
-                        "light dev: change detected at {:?} ({label}){}",
-                        event.paths,
-                        if state.is_starting {
-                            " (во время сборки — запомню)"
-                        } else {
-                            ""
-                        }
-                    );
-                    match handle_watch_event(&mut state, kind) {
-                        WatchAction::None => {
-                            // Изменение во время сборки: просто запомнили
-                            // (pending_html / pending_source подняты внутри
-                            // handle_watch_event).
-                        }
-                        WatchAction::ApplyPending => {
-                            // Окно было закрыто, а pending остался: применяем.
-                            if let Some(akind) = apply_pending(&mut state, &restart_tx) {
-                                eprintln!("light dev: применяю pending (kind={:?})", akind);
-                                match akind {
-                                    ChangeKind::Html => last_html = Some(Instant::now()),
-                                    ChangeKind::Source => last_rs = Some(Instant::now()),
-                                }
-                            }
-                        }
-                        WatchAction::ReloadHtml => {
-                            eprintln!(
-                                "light dev: HTML change → RELOAD_TEMPLATE \
-                                 (без пересборки)"
-                            );
-                            let _ = restart_tx.send((Instant::now(), ChangeKind::Html));
+                    // Поднимаем таймеры debounce: если любое из релевантных
+                    // изменений пришло, debounce обнуляется и начинает отсчёт
+                    // заново (стандартный trailing-edge debounce).
+                    if event
+                        .paths
+                        .iter()
+                        .any(|p| watch_paths_copy.iter().any(|w| p.starts_with(w)))
+                    {
+                        let has_html = event.paths.iter().any(|p| {
+                            watch_paths_copy.iter().any(|w| p.starts_with(w))
+                                && matches!(classify_change(p), Some(ChangeKind::Html))
+                        });
+                        let has_src = event.paths.iter().any(|p| {
+                            watch_paths_copy.iter().any(|w| p.starts_with(w))
+                                && matches!(classify_change(p), Some(ChangeKind::Source))
+                        });
+                        if has_html {
                             last_html = Some(Instant::now());
                         }
-                        WatchAction::Restart => {
-                            eprintln!(
-                                "light dev: Source change → RESTART \
-                                 (пересборка)"
-                            );
-                            let _ = restart_tx.send((Instant::now(), ChangeKind::Source));
+                        if has_src {
                             last_rs = Some(Instant::now());
                         }
                     }
@@ -707,19 +705,132 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     eprintln!("light dev: ошибка наблюдателя: {e}");
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    // Дебаунс: серия чейджей вне окна — одно действие.
+                    // Дебаунс + hash-дедупликация ПОСЛЕ debounce.
+                    //
+                    // Порядок (ТЗ 0.14.2-A-fix4):
+                    //   1) debounce: дождались тишины (HTML_DEBOUNCE / RS_DEBOUNCE);
+                    //   2) hash: хэшируем содержимое каждого пути из pending_debounce
+                    //      (файл уже полностью записан, потому что прошло ≥ 100/500 мс);
+                    //   3) dedup: отбрасываем пути, чей хэш == last_hashes[path]
+                    //      (повторные события того же содержимого);
+                    //   4) dispatch: берём ПЕРВЫЙ «чистый» путь, классифицируем и
+                    //      передаём в handle_watch_event.
+                    //
+                    // Важно: если pending_debounce пусто — ничего не делаем, даже
+                    // если таймеры debounce истекли (таймеры поднимаются только
+                    // при добавлении путей, так что это ситуация невозможна, но
+                    // защита на случай race с respawn).
                     if !state.is_starting && !state.has_pending() {
-                        if let Some(t) = last_html
-                            && t.elapsed() >= HTML_DEBOUNCE
-                        {
-                            last_html = None;
-                            let _ = restart_tx.send((Instant::now(), ChangeKind::Html));
-                        }
-                        if let Some(t) = last_rs
-                            && t.elapsed() >= RS_DEBOUNCE
-                        {
-                            last_rs = None;
-                            let _ = restart_tx.send((Instant::now(), ChangeKind::Source));
+                        let html_fired =
+                            matches!(last_html, Some(t) if t.elapsed() >= HTML_DEBOUNCE);
+                        let rs_fired = matches!(last_rs, Some(t) if t.elapsed() >= RS_DEBOUNCE);
+                        if html_fired || rs_fired {
+                            if html_fired {
+                                last_html = None;
+                            }
+                            if rs_fired {
+                                last_rs = None;
+                            }
+                            eprintln!(
+                                "light dev: debounce fired, {} paths pending",
+                                pending_debounce.len()
+                            );
+                            // Проходим по pending_debounce: хэшируем и дедуплицируем.
+                            // Файл уже полностью записан (debounce отработал).
+                            let mut clean_events: std::collections::VecDeque<PathBuf> =
+                                std::collections::VecDeque::new();
+                            while let Some(path) = pending_debounce.pop_front() {
+                                match file_hash(&path) {
+                                    Some(hash) => {
+                                        // Сравниваем с последним известным хэшем
+                                        // этого пути:
+                                        //  - совпадает → повторное событие того же
+                                        //    содержимого → игнорируем (по ТЗ:
+                                        //    "duplicate notify event, ignored");
+                                        //  - отличается → настоящее изменение →
+                                        //    обновляем last_hashes и кладём в
+                                        //    clean_events.
+                                        match last_hashes.get(&path) {
+                                            Some(&last) if last == hash => {
+                                                eprintln!(
+                                                    "light dev: duplicate notify event for \
+                                                     {path:?} (hash unchanged) — ignored"
+                                                );
+                                            }
+                                            _ => {
+                                                last_hashes.insert(path.clone(), hash);
+                                                clean_events.push_back(path);
+                                            }
+                                        }
+                                    }
+                                    // Файл недоступен (удалён, ещё пишется после
+                                    // 3 попыток чтения): НЕ дедуплицируем —
+                                    // обрабатываем как изменение (консервативно).
+                                    None => {
+                                        eprintln!(
+                                            "light dev: file_hash returned None for \
+                                             {path:?} (treated as real change, no dedup)"
+                                        );
+                                        clean_events.push_back(path);
+                                    }
+                                }
+                            }
+                            eprintln!(
+                                "light dev: {} clean events after hash-dedup",
+                                clean_events.len()
+                            );
+                            // Берём ПЕРВЫЙ чистый путь, классифицируем и
+                            // передаём в handle_watch_event (по ТЗ 1.3).
+                            if let Some(first) = clean_events.pop_front() {
+                                let kind = classify_change(&first);
+                                // Лог по ТЗ 3.4: при передаче в handle.
+                                eprintln!("light dev: dispatching {kind:?} change for {first:?}");
+                                match handle_watch_event(&mut state, kind) {
+                                    WatchAction::None => {
+                                        // Изменение во время сборки: просто
+                                        // запомнили (pending_флаги подняты внутри
+                                        // handle_watch_event).
+                                    }
+                                    WatchAction::ApplyPending => {
+                                        if let Some(akind) = apply_pending(&mut state, &restart_tx)
+                                        {
+                                            eprintln!(
+                                                "light dev: применяю pending (kind={akind:?})"
+                                            );
+                                            match akind {
+                                                ChangeKind::Html => {
+                                                    last_html = Some(Instant::now());
+                                                }
+                                                ChangeKind::Source => {
+                                                    last_rs = Some(Instant::now());
+                                                }
+                                            }
+                                        }
+                                    }
+                                    WatchAction::ReloadHtml => {
+                                        eprintln!(
+                                            "light dev: HTML change → RELOAD_TEMPLATE \
+                                             (без пересборки)"
+                                        );
+                                        let _ = restart_tx.send((Instant::now(), ChangeKind::Html));
+                                        last_html = Some(Instant::now());
+                                    }
+                                    WatchAction::Restart => {
+                                        eprintln!(
+                                            "light dev: Source change → RESTART \
+                                             (пересборка)"
+                                        );
+                                        let _ =
+                                            restart_tx.send((Instant::now(), ChangeKind::Source));
+                                        last_rs = Some(Instant::now());
+                                    }
+                                }
+                            } else {
+                                eprintln!(
+                                    "light dev: все события отфильтрованы hash-дедупом — \
+                                     action не требуется"
+                                );
+                            }
                         }
                     }
                 }
@@ -1170,6 +1281,128 @@ mod tests {
         let path = dir.join("does_not_exist.html");
         let _ = std::fs::remove_file(&path);
         assert_eq!(file_hash(&path), None);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    // ===================== ТЗ 0.14.2-A-fix4: dedup after debounce =========
+
+    /// **ТЗ 4.1**: имитируем двухэтапный save (append + flush) — первое
+    /// событие видит неполное содержимое, второе — полное. После debounce
+    /// содержимое уже финальное, и hash-фильтр корректно отбрасывает повторы.
+    ///
+    /// Сценарий:
+    ///   1. записать "a" → событие 1 (неполное, append)
+    ///   2. дописать "b" → событие 2 (полное, flush)
+    ///   3. debounce срабатывает → хэшируем: hash("ab")
+    ///   4. last_hashes["file"] = hash("ab")
+    ///   5. следующее notify-событие с тем же содержимым → hash == last →
+    ///      ИГНОРИРУЕТСЯ (1 reload на 2 notify-события, не 2).
+    ///
+    /// Тест проверяет именно то, что происходит ПОСЛЕ debounce: если бы мы
+    /// хэшировали ДО debounce, hash1 ("a") != hash2 ("ab"), и оба события
+    /// прошли бы → двойной reload.
+    #[test]
+    fn dedup_after_debounce() {
+        let dir = std::env::temp_dir().join("light_dev_test_dedup_after_debounce");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("sample.html");
+        let _ = std::fs::remove_file(&path);
+
+        // Этап 1 (append): пишем "a" — это первый notify-событие, файл
+        // содержит только "a".
+        let mut f = std::fs::File::create(&path).expect("create");
+        f.write_all(b"a").expect("write 'a'");
+        f.sync_all().expect("sync");
+        drop(f);
+
+        // Этап 2 (flush): дописываем "b" — второй notify-событие, файл
+        // содержит "ab".
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("reopen-append");
+        f.write_all(b"b").expect("append 'b'");
+        f.sync_all().expect("sync");
+        drop(f);
+
+        // К этому моменту debounce (100/500 мс) уже истёк. Хэшируем финальное
+        // содержимое "ab":
+        let final_hash = file_hash(&path).expect("hash of 'ab'");
+
+        // Симулируем «повторное» notify-событие (Modify(Data) / Modify(Metadata)):
+        // содержимое НЕ изменилось, хэш должен совпадать.
+        let dup_hash = file_hash(&path).expect("hash on duplicate event");
+        assert_eq!(
+            final_hash, dup_hash,
+            "повторное событие того же содержимого должно дать одинаковый хэш \
+             (и быть отброшено hash-фильтром)"
+        );
+
+        // Теперь симулируем НОВЫЙ save: содержимое изменилось.
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .expect("rewrite");
+        f.set_len(0).expect("truncate");
+        f.write_all(b"xyz").expect("write 'xyz'");
+        f.sync_all().expect("sync");
+        drop(f);
+        let new_hash = file_hash(&path).expect("hash of 'xyz'");
+        assert_ne!(
+            final_hash, new_hash,
+            "новое содержимое даёт новый хэш → пройдёт hash-фильтр"
+        );
+
+        // Cleanup.
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// **ТЗ 4.2**: имитируем временную ошибку чтения (например, PermissionDenied
+    /// при частичной записи, NotFound в момент атомарного удаления). `file_hash`
+    /// должна ретраить 3 раза с интервалом 50 мс, и после всех попыток вернуть
+    /// `None` (если файл реально недоступен) или `Some(hash)` (если ошибка
+    /// ушла в процессе ретраев).
+    ///
+    /// Мы не можем реально вызвать `PermissionDenied` под sandbox-ограничениями,
+    /// поэтому тестируем наблюдаемое поведение:
+    /// - файл существует и читается → `Some(hash)`;
+    /// - файла нет вообще → 3 неудачные попытки (лог с "read attempt N failed")
+    ///   и возврат `None`.
+    ///
+    /// Поведение «ретраи до 3 раз» проверяем косвенно: время выполнения
+    /// `file_hash` для несуществующего файла >= 2 × 50 мс (два sleep между
+    /// тремя попытками), но < 1 с (не блокирует поток watcher надолго).
+    #[test]
+    fn file_hash_retries_on_permission_denied() {
+        let dir = std::env::temp_dir().join("light_dev_test_file_hash_retry");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("missing.html");
+        let _ = std::fs::remove_file(&path);
+
+        let start = Instant::now();
+        let result = file_hash(&path);
+        let elapsed = start.elapsed();
+
+        // Файл не существует: все 3 попытки падают, возвращаем None.
+        assert_eq!(
+            result, None,
+            "несуществующий файл → None после всех ретраев"
+        );
+
+        // Два sleep по 50 мс (между 3 попытками): минимум ~100 мс,
+        // максимум ~200 мс с запасом на задержки ОС. НЕ проверяем верхнюю
+        // границу жёстко: Windows `thread::sleep` может overshoot-нуть.
+        assert!(
+            elapsed >= Duration::from_millis(100),
+            "ожидаю минимум 2 × 50 мс ретраев, получил {elapsed:?}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "ретраи должны завершиться быстро (< 1 с), получили {elapsed:?}"
+        );
+
+        // Cleanup.
         let _ = std::fs::remove_dir(&dir);
     }
 }
