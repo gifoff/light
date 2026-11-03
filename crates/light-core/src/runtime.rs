@@ -21,6 +21,7 @@ use std::time::SystemTime;
 use std::{
     collections::HashMap,
     sync::{LazyLock, Mutex, MutexGuard},
+    time::Duration,
 };
 
 use crate::{
@@ -33,19 +34,20 @@ use crate::{
     },
 };
 
-/// Кэш отрендеренных runtime-шаблонов: путь к файлу → (mtime, дерево).
+/// Кэш HTML-шаблонов: путь к файлу → (mtime, текст шаблона).
 ///
-/// При каждом вызове [`render_dynamic`] сверяется mtime файла с сохранённым:
-/// совпадение — дерево возвращается из кэша (клон); файл изменился — он
-/// перечитывается и разбирается заново. `path` хранится как `&'static str`
-/// (макрос генерирует константу через `concat!`/`include_str!`), поэтому ключ
-/// хеш-мапы не аллоцируется.
+/// Хранит **HTML-строку**, а не [`VElement`]: при каждом вызове
+/// [`render_dynamic`] HTML перечитывается из кэша и повторно разбирается через
+/// [`parse_template`], так что `{{ поле }}` всегда вычисляется с актуальным
+/// state. Мtime сверяется с сохранённым: совпадение — HTML берётся из кэша;
+/// файл изменился — он перечитывается с диска. `path` хранится как
+/// `&'static str` (макрос генерирует константу через `concat!`/`include_str!`).
 #[cfg_attr(not(feature = "runtime-templates"), allow(dead_code))]
-static CACHE: LazyLock<Mutex<HashMap<&'static str, (std::time::Duration, VElement)>>> =
+static CACHE: LazyLock<Mutex<HashMap<&'static str, (Duration, String)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[cfg_attr(not(feature = "runtime-templates"), allow(dead_code))]
-fn cache() -> MutexGuard<'static, HashMap<&'static str, (std::time::Duration, VElement)>> {
+fn cache() -> MutexGuard<'static, HashMap<&'static str, (Duration, String)>> {
     // Отравленное мутекс не является ошибкой, требующим возврата: мы просто
     // теряем кэш (разбор происходит заново) — допустимая деградация.
     CACHE.lock().unwrap_or_else(|guard| guard.into_inner())
@@ -83,6 +85,10 @@ fn parse_fail(element: &str, attr_name: &str, attr_value: &str) {
 /// прочитать не удалось; `component` — инстанс, чьи поля читаются при разрешении
 /// `{{ … }}`, а методы вызываются из `dispatch_by_name`.
 ///
+/// Кэшируется **HTML-строка**, а не [`VElement`]: при каждом вызове шаблон
+/// повторно разбирается через [`parse_template`], так что `{{ поле }}` всегда
+/// вычисляется с актуальным state компонента.
+///
 /// Возвращает `None`, если шаблон содержит неподдерживаемую на этапе выполнения
 /// конструкцию или не читается, и fallback тоже не разбирается; в этом случае
 /// сгенерированный макросом статический код [`Component::render`] продолжает работу.
@@ -95,7 +101,7 @@ pub fn render_dynamic<C: Component + ?Sized>(
 ) -> Option<VElement> {
     #[cfg(feature = "runtime-templates")]
     {
-        let result = match std::fs::metadata(path) {
+        let html = match std::fs::metadata(path) {
             Ok(metadata) => {
                 let mtime = metadata
                     .modified()
@@ -104,51 +110,41 @@ pub fn render_dynamic<C: Component + ?Sized>(
                 match mtime {
                     Some(mtime) => {
                         let mut cache = cache();
-                        if let Some((cached_mtime, cached)) = cache.get(path)
+                        if let Some((cached_mtime, cached_html)) = cache.get(path)
                             && *cached_mtime == mtime
                         {
                             eprintln!(
                                 "light: render_dynamic({:?}) mtime={:?} cache_mtime={:?} HIT",
                                 path, mtime, cached_mtime
                             );
-                            return Some(cached.clone());
-                        }
-                        eprintln!(
-                            "light: render_dynamic({:?}) mtime={:?} cache_mtime={:?} MISS",
-                            path,
-                            mtime,
-                            cache.get(path).map(|(m, _)| *m)
-                        );
-                        match std::fs::read_to_string(path) {
-                            Ok(html) => match parse_template(&html, component) {
-                                Some(element) => {
-                                    cache.insert(path, (mtime, element.clone()));
-                                    eprintln!("light: render_dynamic updated cache for {:?}", path);
-                                    Some(element)
-                                }
-                                None => {
-                                    eprintln!(
-                                        "light: parse_template returned None → fallback to static VDOM"
-                                    );
-                                    log_fallback_once();
-                                    // Fallback: встроенный в бинарник шаблон.
-                                    parse_template(fallback, component)
-                                }
-                            },
-                            Err(error) => {
-                                eprintln!("light: failed to read template {path:?}: {error}");
-                                log_fallback_once();
-                                parse_template(fallback, component)
-                            }
+                            cached_html.clone()
+                        } else {
+                            eprintln!(
+                                "light: render_dynamic({:?}) mtime={:?} cache_mtime={:?} MISS",
+                                path,
+                                mtime,
+                                cache.get(path).map(|(m, _)| *m)
+                            );
+                            let html = std::fs::read_to_string(path).ok()?;
+                            cache.insert(path, (mtime, html.clone()));
+                            eprintln!("light: render_dynamic updated cache for {:?}", path);
+                            html
                         }
                     }
-                    None => parse_template(fallback, component),
+                    None => return parse_template(fallback, component),
                 }
             }
-            Err(_) => parse_template(fallback, component),
+            Err(_) => return parse_template(fallback, component),
         };
+        let result = parse_template(&html, component);
         if result.is_none() {
             log_fallback_once();
+            eprintln!("light: parse_template returned None → fallback to static VDOM");
+            let result = parse_template(fallback, component);
+            if result.is_none() {
+                log_fallback_once();
+            }
+            return result;
         }
         result
     }
