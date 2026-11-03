@@ -31,7 +31,7 @@ use std::os::windows::process::ExitStatusExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -481,6 +481,87 @@ pub fn kill_child(child: &mut Child) {
     thread::sleep(Duration::from_millis(500));
 }
 
+// ===================== ТЗ 0.14.2-B: seamless rebuild =========================
+
+/// Имя бинарника пакета: имя пакета с заменой `-` на `_`.
+///
+/// Например `example-devtools-demo` → `example_devtools_demo.exe`
+/// (Windows) или `example_devtools_demo` (unix). Путь в debug-каталоге:
+/// `<root>/target/hot/debug/<bin_name>.exe`.
+pub fn bin_name(package: &str) -> String {
+    package.replace('-', "_")
+}
+
+/// Абсолютный путь к собранным артефактам (`target/hot/debug/<bin>`).
+///
+/// `<root>` — корень пакета (напр. `examples/devtools-demo`). Windows: `.exe`
+/// на конце, unix: без расширения.
+pub fn hot_bin_path(pkg_root: &Path, package: &str) -> PathBuf {
+    let mut p = pkg_root
+        .join("target")
+        .join("hot")
+        .join("debug")
+        .join(bin_name(package));
+    #[cfg(windows)]
+    {
+        p.set_extension("exe");
+    }
+    p
+}
+
+/// Результат одной фоновой сборки.
+///
+/// Чистый тип: main-loop получает его через `poll_rebuild` и передаёт в
+/// [`RebuildStateMachine`] для принятия решения «swap / keep-old».
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RebuildOutcome {
+    /// Сборка успешна — можно выполнять swap.
+    Success,
+    /// Сборка завершилась с ошибкой (exit code сохранён) — old продолжает.
+    Failed(i32),
+}
+
+/// State-machine: решение о реакции на результат фоновой сборки.
+///
+/// Вынесена отдельно от потоков, чтобы юнит-тестировать без реального cargo.
+/// Все методы чистые: принимают текущий статус и возвращают новый (без side
+/// effects кроме лога в `mark_rebuild_failure`, который нужен по ТЗ 5.3).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RebuildStateMachine {
+    /// true, если сейчас идёт фоновая сборка.
+    pub in_progress: bool,
+    /// Момент запуска последней активной сборки (для лога «took N s»).
+    pub started_at: Option<Instant>,
+}
+
+impl RebuildStateMachine {
+    /// Запускаем новую фоновую сборку. Если старая ещё идёт — её нужно убить
+    /// (вызывается снаружи; здесь только поднимаем флаг + таймер).
+    pub fn start(&mut self) {
+        self.in_progress = true;
+        self.started_at = Some(Instant::now());
+    }
+
+    /// Обработать результат завершившейся сборки. Возвращает
+    /// [`RebuildOutcome`], по которому main-loop решает, делать ли swap.
+    pub fn poll_outcome(&mut self, exit_code: i32) -> RebuildOutcome {
+        self.in_progress = false;
+        if exit_code == 0 {
+            RebuildOutcome::Success
+        } else {
+            eprintln!(
+                "light dev: rebuild FAILED (exit {exit_code}), previous version kept running"
+            );
+            RebuildOutcome::Failed(exit_code)
+        }
+    }
+
+    /// Сброс после завершённого цикла (для теста).
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
+
 /// Точка входа команды `light dev`: запускает дочерний процесс и цикл
 /// наблюдения. Возвращает код завершения приложения (не `anyhow`, чтобы ядро
 /// CLI не тягло зависимость, которой нет в его манифесте).
@@ -492,38 +573,86 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     // Корень пакета: если передан `package`, ищем его через `cargo metadata`,
     // иначе — текущий каталог. Именно этот корень передаётся в `watch_paths`.
     let package_root = resolve_package_root(args.package.as_deref(), &cwd);
-    let spawn_cmd = |args: &DevArgs, cwd: &std::path::Path| -> Command {
+    // Имя бинарника: пакет + замена `-` → `_`. ТЗ 0.14.2-B: запускаем уже
+    // собранный артефакт из `target/hot/debug/` (вместо `cargo run`).
+    let bin = bin_name(args.package.as_deref().unwrap_or("app"));
+    let hot_bin = hot_bin_path(&package_root, &bin);
+    eprintln!(
+        "light dev: binary target: {:?} (package: {:?})",
+        hot_bin, args.package
+    );
+
+    // === ФАЗА A: warm-up build ===
+    // Блокирующий `cargo build` в отдельный target-dir (`target/hot`). При
+    // ошибке — сразу exit 1 (старого процесса нет, «оставлять живым» нечего).
+    {
+        eprintln!("light dev: warm-up build (cargo build --target-dir target/hot)…");
         let mut cmd = Command::new("cargo");
-        cmd.arg("run");
+        cmd.arg("build");
         if let Some(package) = &args.package {
             cmd.args(["-p", package]);
         }
         cmd.args(["--features", "devtools"]);
+        cmd.args([
+            "--target-dir",
+            &package_root.join("target").join("hot").to_string_lossy(),
+        ]);
         cmd.args(&args.extra_cargo_args);
         cmd.stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .current_dir(cwd);
-        cmd
+            .stderr(Stdio::inherit());
+        let status = cmd.status();
+        match status {
+            Ok(s) if s.success() => eprintln!("light dev: warm-up build succeeded"),
+            Ok(s) => {
+                eprintln!(
+                    "light dev: warm-up build FAILED (exit {:?}) — exit 1",
+                    s.code()
+                );
+                return Ok(1);
+            }
+            Err(e) => {
+                eprintln!("light dev: не удалось запустить `cargo build`: {e} — exit 1");
+                return Ok(1);
+            }
+        }
+    }
+
+    // === ФАЗА B: spawn первого дочернего процесса из target/hot/debug/ ===
+    eprintln!("light dev: запускаю {:?}", hot_bin);
+    let child = match Command::new(&hot_bin)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!(
+                "light dev: не удалось запустить {:?}: {e} — exit 1",
+                hot_bin
+            );
+            return Ok(1);
+        }
     };
 
-    eprintln!(
-        "light dev: запускаю `cargo run{} --features devtools {}` (cwd: {})",
-        args.package
-            .as_ref()
-            .map(|p| format!(" -p {p}"))
-            .unwrap_or_default(),
-        args.extra_cargo_args.join(" "),
-        cwd.display()
-    );
+    // ТЗ 0.14.2-B: общая обёртка для thread-safe доступа (main loop + rebuild
+    // thread). `child_arc` — приложение, которое сейчас работает (или будет
+    // после swap); `rebuild_arc` — текущая фоновая сборка (или None, если её
+    // нет). Rebuild запускаем из main-потока и просто опрашиваем `try_wait()`
+    // в главном цикле — отдельный тред не нужен (Cargo сам параллелит).
+    let child_arc = Arc::new(Mutex::new(child));
+    let rebuild_arc: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
 
-    let mut child = spawn_cmd(args, &cwd).spawn()?;
+    // State-machine: решение о реакции на результат фоновой сборки. Держим
+    // в main-потоке (swap выполняется там); чистый, без side effects.
+    let mut sm = RebuildStateMachine::default();
 
     // Канал на перезапуск от наблюдателя. Несёт тип изменения: Html →
-    // RELOAD_TEMPLATE (без убийства), Source → kill/rebuild/respawn.
+    // RELOAD_TEMPLATE (без убийства), Source → background rebuild + swap.
     let (restart_tx, restart_rx) = mpsc::channel::<(Instant, ChangeKind)>();
     // Флаг завершения: общий между главным потоком, наблюдателем и
-    // фоном-проверкой порта. Атомарный (в отличие от mpsc::Receiver) — легко
+    // rebuild-тредом. Атомарный (в отличие от mpsc::Receiver) — легко
     // шараится между несколькими тредами без clone() канала.
     let done_flag = Arc::new(AtomicBool::new(false));
     // Состояние наблюдателя (is_starting/pending_change) и канал на его
@@ -844,22 +973,61 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         // открылся за STARTUP_IGNORE (сборка зависла), watcher сам закроет
         // окно игнорирования (он владеет pending-флагами и знает, что
         // применить). Главный поток здесь ничего не решает.
+        //
         // Внутренний цикл опроса: выходим в наружный цикл по первому событию
-        // (перезапуск от наблюдателя либо завершение дочернего процесса).
+        // (restart от наблюдателя, завершение фоновой сборки либо выход
+        // дочернего процесса).
+        //
+        // ТЗ 0.14.2-B: при .rs change мы НЕ убиваем старый процесс сразу —
+        // запускаем `cargo build` в `target/hot` (рекурсивно, но не блокируй
+        // watcher: он живёт в своём треде), а когда сборка закончится:
+        //   - exit 0  → SAVE_STATE, kill old, spawn new из target/hot/debug/
+        //   - exit != 0 → старый продолжает работать; stderr cargo уже на консоли.
         enum Ev {
             Restart(ChangeKind),
+            RebuildDone(i32),
             Exited(std::process::ExitStatus),
         }
         let ev = loop {
             if let Ok((_ts, kind)) = restart_rx.try_recv() {
                 break Ev::Restart(kind);
             }
-            match child.try_wait() {
-                Ok(Some(s)) => break Ev::Exited(s),
-                Ok(None) => {}
-                Err(e) => {
+            // Завершение фоновой сборки: poll rebuild-child в основном потоке.
+            // `lock().ok()` — при poisoned mutex (краш в другом треде) просто
+            // пропускаем опрос; main продолжит работать с app-процессом.
+            let rebuild_done = rebuild_arc.lock().ok().and_then(|mut g| match g.as_mut() {
+                Some(c) => c.try_wait().ok().flatten(),
+                None => None,
+            });
+            if let Some(status) = rebuild_done {
+                let code = status.code().unwrap_or(1);
+                if let Ok(mut g) = rebuild_arc.lock() {
+                    *g = None;
+                }
+                break Ev::RebuildDone(code);
+            }
+            // Опрос дочернего процесса: если mutex poisoned — пропускаем tick;
+            // если `try_wait` вернул Err — тоже выходим с exit code 1 (не
+            // продолжаем работать с процессом, который не удалось опросить).
+            let child_exit = match child_arc.lock() {
+                Ok(mut g) => match g.try_wait() {
+                    Ok(Some(s)) => Some(Ok(s)),
+                    Ok(None) => None, // ещё жив
+                    Err(e) => Some(Err(e)),
+                },
+                Err(_) => None,
+            };
+            match child_exit {
+                Some(Ok(s)) => break Ev::Exited(s),
+                Some(Err(e)) => {
                     eprintln!("light dev: ошибка ожидания дочернего процесса: {e}");
                     break Ev::Exited(ExitStatus::from_raw(1));
+                }
+                None => {
+                    // Mutex poisoned или process ещё жив.
+                    if child_arc.lock().is_err() {
+                        eprintln!("light dev: child_arc poisoned (пропуск опроса)");
+                    }
                 }
             }
             thread::sleep(Duration::from_millis(50));
@@ -868,9 +1036,78 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
             Ev::Exited(status) => {
                 done_flag.store(true, Ordering::Relaxed);
                 let _ = watcher.join();
+                // Если rebuild ещё идёт — тоже убиваем (Ctrl+C-сценарий).
+                if let Ok(mut g) = rebuild_arc.lock()
+                    && let Some(mut r) = g.take()
+                {
+                    let _ = r.kill();
+                    let _ = r.wait();
+                }
                 let code = status.code().unwrap_or(1);
                 eprintln!("light dev: приложение завершилось с кодом {code}");
                 return Ok(code);
+            }
+            Ev::RebuildDone(exit_code) => {
+                // Фоновая сборка закончилась. State-machine решает: swap или keep-old.
+                let outcome = sm.poll_outcome(exit_code);
+                if let RebuildOutcome::Success = outcome {
+                    // === SWAP: SAVE_STATE → kill old → spawn new из hot-bin ===
+                    let took = sm
+                        .started_at
+                        .map(|t| Instant::now().saturating_duration_since(t))
+                        .unwrap_or_default();
+                    eprintln!("light dev: rebuild succeeded (took {took:?}), swapping…");
+                    if let Err(e) = request_save_state(DEVTOOLS_PORT) {
+                        eprintln!(
+                            "light dev: не удалось отправить SAVE_STATE перед swap: {e} \
+                             (состояние может быть не сохранено)"
+                        );
+                    }
+                    // Короткая пауза: даём UI-потоку время обработать команду
+                    // и записать файл, прежде чем уберём процесс.
+                    thread::sleep(Duration::from_millis(200));
+                    // Берём pid старого процесса до kill (для лога «pid X -> Y»).
+                    let old_pid = child_arc.lock().map(|g| g.id()).unwrap_or(0);
+                    // Убиваем старый app (через MutexGuard, чтобы освободить
+                    // после kill + wait; `kill_child` принимает `&mut Child`).
+                    if let Ok(mut g) = child_arc.lock() {
+                        kill_child(&mut g);
+                    } else {
+                        eprintln!("light dev: child_arc poisoned — не смогла убить old");
+                    }
+                    // Spawn нового из target/hot/debug/.
+                    match Command::new(&hot_bin)
+                        .stdin(Stdio::inherit())
+                        .stdout(Stdio::inherit())
+                        .stderr(Stdio::inherit())
+                        .spawn()
+                    {
+                        Ok(c) => {
+                            let new_pid = c.id();
+                            if let Ok(mut g) = child_arc.lock() {
+                                *g = c;
+                            } else {
+                                eprintln!(
+                                    "light dev: child_arc poisoned — не записала новый process"
+                                );
+                            }
+                            // Сбрасываем watcher в is_starting: он сам решит,
+                            // когда закрывать окно (порт 9229 открылся либо
+                            // дедлайн STARTUP_IGNORE прошёл).
+                            let _ = state_tx.send(WatchState::starting());
+                            eprintln!("light dev: swap done (pid {old_pid} -> {new_pid})");
+                        }
+                        Err(e) => {
+                            eprintln!("light dev: не удалось запустить новое приложение: {e}");
+                            done_flag.store(true, Ordering::Relaxed);
+                            let _ = watcher.join();
+                            return Ok(1);
+                        }
+                    }
+                }
+                // RebuildOutcome::Failed(_): старый процесс остаётся; stderr
+                // cargo уже на консоли. Watcher НЕ сбрасываем (старое app
+                // работает, is_starting не нужен).
             }
             Ev::Restart(kind) => match kind {
                 ChangeKind::Html => {
@@ -892,40 +1129,61 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     }
                 }
                 ChangeKind::Source => {
-                    // Source-чнейдж (.rs / Cargo.toml) → полная пересборка +
-                    // рестарт. Специфичное сообщение (без эвристики
-                    // «обнаружены изменения»).
-                    eprintln!(
-                        "light dev: Source change → RESTART (пересборка) — \
-                         сохраняю состояние и перезапускаю…"
-                    );
-                    if let Err(e) = request_save_state(DEVTOOLS_PORT) {
-                        eprintln!(
-                            "light dev: не удалось отправить SAVE_STATE: {e} \
-                            (состояние может быть не сохранено)"
-                        );
+                    // Source-чнейдж (.rs / Cargo.toml) → seamless rebuild.
+                    //
+                    // 1) Если уже идёт сборка — убиваем её (новый save важнее).
+                    //    Лог «cancelled in-flight rebuild (new save)».
+                    // 2) Поднимаем flag + таймер в state-machine.
+                    // 3) Запускаем `cargo build --target-dir target/hot` в фоне
+                    //    (non-blocking), сохраняем Child в rebuild_arc.
+                    // 4) Главный цикл продолжит опрашивать — на Ev::RebuildDone
+                    //    сделает swap (success) или промолчит (failure).
+                    let had_in_flight = {
+                        let old = rebuild_arc.lock().ok().and_then(|mut g| g.take());
+                        old.map(|mut c| {
+                            let _ = c.kill();
+                            let _ = c.wait();
+                            true
+                        })
+                        .unwrap_or(false)
+                    };
+                    if had_in_flight {
+                        eprintln!("light dev: cancelled in-flight rebuild (new save)");
                     }
-                    // Короткая пауза: даём UI-потоку время обработать команду и
-                    // записать файл, прежде чем уберём процесс.
-                    thread::sleep(Duration::from_millis(200));
-                    kill_child(&mut child);
-                    // Пересоздаём дочерний процесс и сбрасываем наблюдателя в
-                    // is_starting: новое приложение снова сначала соберётся/запустится,
-                    // поэтому окно игнорирования открывается заново.
-                    match spawn_cmd(args, &cwd).spawn() {
+                    eprintln!("light dev: rebuild started (old app still running)");
+                    sm.start();
+                    // Собираем команду для background build.
+                    let hot_target = package_root.join("target").join("hot");
+                    let mut cmd = Command::new("cargo");
+                    cmd.arg("build");
+                    if let Some(p) = &args.package {
+                        cmd.args(["-p", p]);
+                    }
+                    cmd.args([
+                        "--features",
+                        "devtools",
+                        "--target-dir",
+                        &hot_target.to_string_lossy(),
+                    ]);
+                    cmd.args(&args.extra_cargo_args);
+                    cmd.stdin(Stdio::inherit())
+                        .stdout(Stdio::inherit())
+                        .stderr(Stdio::inherit());
+                    // Запускаем; если spawn упал — считаем ошибкой (old живёт).
+                    match cmd.spawn() {
                         Ok(c) => {
-                            child = c;
-                            // Сбрасываем watcher в is_starting: он сам решит,
-                            // когда закрывать окно (порт 9229 открылся либо
-                            // дедлайн STARTUP_IGNORE прошёл).
-                            let _ = state_tx.send(WatchState::starting());
-                            eprintln!("light dev: приложение перезапущено");
+                            if let Ok(mut g) = rebuild_arc.lock() {
+                                *g = Some(c);
+                            } else {
+                                eprintln!(
+                                    "light dev: rebuild_arc poisoned — не записала новый build"
+                                );
+                            }
                         }
                         Err(e) => {
-                            eprintln!("light dev: не удалось перезапустить приложение: {e}");
-                            done_flag.store(true, Ordering::Relaxed);
-                            let _ = watcher.join();
-                            return Ok(1);
+                            eprintln!("light dev: не удалось запустить `cargo build`: {e}");
+                            // Сбрасываем флаг: сборка не стартовала, old остаётся.
+                            sm.poll_outcome(1);
                         }
                     }
                 }
@@ -937,8 +1195,9 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ChangeKind, WatchAction, WatchState, classify_change, file_hash, handle_watch_event,
-        parse_dev_command, resolve_package_root, resolve_startup_completion, wait_port_available,
+        ChangeKind, RebuildOutcome, RebuildStateMachine, WatchAction, WatchState, bin_name,
+        classify_change, file_hash, handle_watch_event, hot_bin_path, parse_dev_command,
+        resolve_package_root, resolve_startup_completion, wait_port_available,
     };
     use std::io::Write as _;
     use std::net::TcpListener;
@@ -1404,5 +1663,109 @@ mod tests {
 
         // Cleanup.
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    // ===================== ТЗ 0.14.2-B: seamless rebuild state machine ======
+
+    /// **ТЗ 6.1**: `start()` поднимает `in_progress` и задаёт `started_at`.
+    #[test]
+    fn rebuild_started_flag() {
+        let mut sm = RebuildStateMachine::default();
+        assert!(!sm.in_progress, "начальное состояние: in_progress=false");
+        assert!(
+            sm.started_at.is_none(),
+            "начальное состояние: started_at=None"
+        );
+        sm.start();
+        assert!(sm.in_progress, "после start(): in_progress=true");
+        assert!(
+            sm.started_at.is_some(),
+            "после start(): started_at=Some(Instant)"
+        );
+    }
+
+    /// **ТЗ 6.2**: `poll_outcome(0)` → Success (swap будет выполнен).
+    /// `started_at` остаётся (для лога «took N s»); `in_progress` сбрасывается.
+    #[test]
+    fn rebuild_success_triggers_swap() {
+        let mut sm = RebuildStateMachine::default();
+        sm.start();
+        let Some(started) = sm.started_at else {
+            panic!("expected started_at to be set after start()");
+        };
+        let outcome = sm.poll_outcome(0);
+        assert_eq!(outcome, RebuildOutcome::Success);
+        assert!(!sm.in_progress, "после poll_outcome: in_progress=false");
+        assert_eq!(
+            sm.started_at,
+            Some(started),
+            "started_at сохраняется для лога"
+        );
+    }
+
+    /// **ТЗ 6.3**: `poll_outcome(N)` при N != 0 → Failed(N) (old живёт).
+    /// `started_at` остаётся (для возможного последующего пересбора).
+    #[test]
+    fn rebuild_failure_keeps_old() {
+        let mut sm = RebuildStateMachine::default();
+        sm.start();
+        let Some(started) = sm.started_at else {
+            panic!("expected started_at to be set after start()");
+        };
+        let outcome = sm.poll_outcome(2);
+        assert_eq!(outcome, RebuildOutcome::Failed(2));
+        assert!(!sm.in_progress, "после poll_outcome: in_progress=false");
+        assert_eq!(sm.started_at, Some(started), "started_at сохраняется");
+    }
+
+    /// **ТЗ 6.4**: новый save во время in-flight сборки → убить старую,
+    /// `start()` заново (flag + fresh timer).
+    ///
+    /// Юнит на уровне SM: проверяем, что после `reset()`+`start()` флаг
+    /// возвращается к `true`, а `started_at` обновляется. Убийство процесса
+    /// выполняется в main-loop (через `rebuild_arc`) — это integration test.
+    #[test]
+    fn new_save_cancels_in_flight() {
+        let mut sm = RebuildStateMachine::default();
+        sm.start();
+        assert!(sm.in_progress);
+        let first_start = sm.started_at.unwrap();
+        // Имитация: новый save пришёл, старую сборку убили, новая запускается.
+        sm.start();
+        assert!(sm.in_progress, "после нового start(): in_progress=true");
+        assert_ne!(
+            sm.started_at,
+            Some(first_start),
+            "started_at должен быть обновлён (новый запуск)"
+        );
+    }
+
+    // ===================== ТЗ 0.14.2-B: bin_name / hot_bin_path =============
+
+    /// Бинарник: `-` заменяется на `_`. Windows: `.exe` в конце.
+    #[test]
+    fn bin_name_dashes_to_underscores() {
+        assert_eq!(bin_name("my-app"), "my_app");
+        assert_eq!(bin_name("my-app-x"), "my_app_x");
+        assert_eq!(bin_name("simple"), "simple");
+    }
+
+    /// Путь к бинарнику: `<root>/target/hot/debug/<bin_name>`.
+    /// Windows: добавляет `.exe`; unix: без расширения.
+    #[test]
+    fn hot_bin_path_layout() {
+        let p = hot_bin_path(Path::new("/tmp/pkg"), "my-app");
+        let s = p.to_string_lossy().to_string();
+        if cfg!(windows) {
+            assert!(
+                s.ends_with(r"\target\hot\debug\my_app.exe"),
+                "windows layout, got: {s}"
+            );
+        } else {
+            assert!(
+                s.ends_with("/target/hot/debug/my_app"),
+                "unix layout, got: {s}"
+            );
+        }
     }
 }
