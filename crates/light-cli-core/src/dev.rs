@@ -1,16 +1,27 @@
 //! Горячая перезагрузка приложения Light: супервизор `light dev`.
 //!
 //! Запускает приложение (`cargo run --features devtools`) как дочерний процесс,
-//! следит за исходниками (`src/`, `templates/`, `Cargo.toml`), а при изменении
-//! — сохраняет состояние приложения (команда `SAVE_STATE` через TCP-сервер
-//! DevTools на порту 9229), убивает процесс и перезапускает его. При следующем
-//! запуске приложение восстанавливает состояние из `.light/state.json`
-//! (см. модуль `devtools` в `light-fw-core`).
+//! следит за исходниками (`src/`, `templates/`, `Cargo.toml`). Две реакции:
+//! * **HTML** (файлы `*.html`) → команда `RELOAD_TEMPLATE` через TCP-сервер
+//!   DevTools на порту 9229: приложение перечитывает HTML-шаблон с диска и
+//!   перерисовывает UI **без пересборки**. При неудачной отправки (app умер,
+//!   порт недоступен — os error 10061) **не триггерим полную пересборку**:
+//!   ждём до 3 с (poll каждые 200 мс), пока TCP снова станет доступен, и
+//!   повторяем `RELOAD_TEMPLATE`.
+//! * **Source** (файлы `*.rs` / `Cargo.toml`) → полная пересборка + рестарт:
+//!   сохраняем состояние (`SAVE_STATE`), убиваем процесс, перезапускаем.
+//!
+//! Race-защита: во время initial build (окно `is_starting`) изменения не
+//! приводят к немедленным действиям — они накапливаются в `pending_html` /
+//! `pending_source`. После закрытия окна (порт 9229 открылся либо прошёл
+//! дедлайн `STARTUP_IGNORE`) накопленное применяется с приоритетом Source >
+//! Html (пересборка важнее reload). HTML-чнейдж во время initial build
+//! **не** приводит к пустому restart — это ReloadHtml после старта.
 //!
 //! Надёжный мониторинг файлов использует `notify::PollWatcher` — периодическое
 //! опросование файловой системы, которое работает на любых ФС, включая UNC и
 //! сетевые диски, где нативный watcher (`recommended_watcher`) события не ловит.
-//! Отложенный (debounce ~150 мс) повторный запуск координирует отдельный поток,
+//! Дебаунс (100 мс для HTML, 500 мс для Source) координирует отдельный поток,
 //! чтобы кратковременные серии событий не запускали много перезагрузок.
 
 #[cfg(unix)]
@@ -36,8 +47,13 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// открылся (например, сборка зависла), по истечении этого дедлайна наблюдение
 /// всё равно возобновляется.
 const STARTUP_IGNORE: Duration = Duration::from_secs(30);
-/// Периодичность проверки открытия порта DevTools (9229) фоном.
-const PORT_PROBE: Duration = Duration::from_millis(250);
+/// Максимум времени ожидания восстановления TCP-доступа к порту 9229 после
+/// неудачной отправки `RELOAD_TEMPLATE` (приложение могло умереть или
+/// пересобраться). Каждые 200 мс пробуем TCP-подключение; если порт снова
+/// принимает соединения — повторяем `RELOAD_TEMPLATE` (без полной пересборки).
+const RELOAD_WAIT_MAX: Duration = Duration::from_secs(3);
+/// Период опроса TCP при ожидании восстановления после неудачного reload.
+const RELOAD_POLL_INTERVAL: Duration = Duration::from_millis(200);
 /// Дебаунс для изменений `.rs`/`Cargo.toml` (полная пересборка + рестарт).
 const RS_DEBOUNCE: Duration = Duration::from_millis(500);
 /// Дебаунс для изменений `.html` (runtime-перезагрузка шаблона без пересборки).
@@ -227,56 +243,165 @@ pub fn classify_change(path: &std::path::Path) -> Option<ChangeKind> {
 }
 
 /// Живое состояние наблюдателя: окно игнорирования при сборке/старте
-/// (`is_starting`) и накопленное «изменение было во время сборки»
-/// (`pending_change`), которое нужно применить сразу после сброса окна.
+/// (`is_starting`) и накопленные изменения, которые нужно применить сразу
+/// после сброса окна. HTML (runtime-reload) и Source (пересборка)
+/// разделяются отдельными флагами: HTML-чнейдж во время initial build
+/// не должен приводить к полному рестарту приложения.
 #[derive(Debug, Default)]
 pub struct WatchState {
     /// Игнорировать события (приложение ещё собирается или только стартует).
+    /// Во время этого окна прямые чейджи не вызывают действия — вместо этого
+    /// они накапливаются в [`Self::pending_html`] / [`Self::pending_source`].
     pub is_starting: bool,
-    /// Зафиксировано изменение во время `is_starting`; применить после сброса.
-    pub pending_change: bool,
+    /// Зафиксировано изменение HTML-шаблона во время `is_starting`. После
+    /// закрытия окна → `RELOAD_TEMPLATE` (без пересборки).
+    pub pending_html: bool,
+    /// Зафиксировано изменение Rust-исходника/`Cargo.toml` во время
+    /// `is_starting`. После закрытия окна → полная пересборка + рестарт.
+    pub pending_source: bool,
 }
 
 impl WatchState {
-    /// Создаёт новое состояние: окно игнорирования включено.
+    /// Создаёт новое состояние: окно игнорирования включено, pending-флаги
+    /// сняты.
     pub fn starting() -> Self {
         Self {
             is_starting: true,
-            pending_change: false,
+            pending_html: false,
+            pending_source: false,
         }
     }
+
+    /// Есть ли накопленное изменение, которое нужно применить после закрытия
+    /// окна `is_starting`?
+    pub fn has_pending(&self) -> bool {
+        self.pending_html || self.pending_source
+    }
+
+    /// Сбрасывает оба pending-флага.
+    pub fn clear_pending(&mut self) {
+        self.pending_html = false;
+        self.pending_source = false;
+    }
+}
+
+/// Результат обработки одного события наблюдателя: тип реакции (или её
+/// отсутствие), либо сигнал, что накопленное изменение требует применения.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WatchAction {
+    /// Отправить `RELOAD_TEMPLATE` (без убийства процесса).
+    ReloadHtml,
+    /// Полная пересборка + рестарт процесса.
+    Restart,
+    /// Применить накопленное изменение (вызывается при закрытии окна
+    /// `is_starting` либо когда pending-флаг оказался снятым ранее).
+    ApplyPending,
+    /// Действия нет (событие нерелевантно или просто запомнено).
+    None,
 }
 
 /// Логика обработки одного события наблюдателя с учётом состояния
 /// [`WatchState`]. Отделена от потоков, чтобы юнит-тестить без запуска
 /// процесса и файлового watcher'а.
 ///
-/// Возвращает `true`, если после события следует отправить сигнал рестарта
-/// (только если изменение реально произошло и окно игнорирования закрыто).
+/// Правила (ТЗ 0.14.2-A-fix):
+/// * `Html` + `is_starting` → запоминаем в `pending_html`, без действия;
+/// * `Source` + `is_starting` → запоминаем в `pending_source`, без действия;
+/// * `Html` + `!is_starting` → [`WatchAction::ReloadHtml`];
+/// * `Source` + `!is_starting` → [`WatchAction::Restart`];
+/// * если перед событием были накоплены pending-флаги и окно уже закрыто —
+///   они применяются первым ([`WatchAction::ApplyPending`]): приоритет у
+///   source (рестарт), html (reload) вторым.
 ///
-/// Правила:
-/// * во время `is_starting` событие не приводит к рестарту, но запоминается —
-///   флаг `pending_change` поднимается (защита от гонки: пользователь мог
-///   править файл, пока компилятор ещё собирает `light-fw-core`, а порт 9229
-///   не слушается);
-/// * после сброса `is_starting` накопленный `pending_change` применяется сразу
-///   и сбрасывается — один перезапуск за накопленную серию изменений;
-/// * вне окна любое подходящее событие даёт рестарт.
-pub fn handle_watch_event(state: &mut WatchState, is_relevant: bool) -> bool {
-    if !is_relevant {
-        return false;
+/// Возвращает [`WatchAction::None`], если событие нерелевантно (ни `Html`,
+/// ни `Source`).
+pub fn handle_watch_event(state: &mut WatchState, kind: Option<ChangeKind>) -> WatchAction {
+    let Some(kind) = kind else {
+        return WatchAction::None;
+    };
+    // Если до этого было накоплено изменение, а окно уже закрыто — применяем
+    // его первым (один перезапуск за накопленную серию). Приоритет Source >
+    // Html: источник всегда требует пересборки, HTML может подождать reload.
+    if state.has_pending() && !state.is_starting {
+        state.clear_pending();
+        return WatchAction::ApplyPending;
     }
     if state.is_starting {
-        // Изменение во время сборки: не рестартуем сейчас, но помним о нём.
-        state.pending_change = true;
-        false
-    } else if state.pending_change {
-        // Окно закрылось, но до этого был зафиксирован чейдж — применяем.
-        state.pending_change = false;
-        true
+        // Изменение во время сборки: не реагируем сейчас, но помним о нём.
+        match kind {
+            ChangeKind::Html => state.pending_html = true,
+            ChangeKind::Source => state.pending_source = true,
+        }
+        WatchAction::None
     } else {
-        // Прямой чейдж вне окна.
-        true
+        match kind {
+            ChangeKind::Html => WatchAction::ReloadHtml,
+            ChangeKind::Source => WatchAction::Restart,
+        }
+    }
+}
+
+/// Решает, какое действие применить при закрытии окна `is_starting` (порт
+/// DevTools открылся либо прошёл дедлайн `STARTUP_IGNORE`). Приоритет:
+/// Source (полная пересборка) > Html (runtime-reload) > None.
+pub fn resolve_startup_completion(state: &WatchState) -> Option<ChangeKind> {
+    if state.pending_source {
+        Some(ChangeKind::Source)
+    } else if state.pending_html {
+        Some(ChangeKind::Html)
+    } else {
+        None
+    }
+}
+
+/// Ожидает восстановления TCP-доступа к порту `port` в течение `max` (poll
+/// каждые `interval`). Возвращает `true`, если порт принял соединение,
+/// иначе `false`. Используется для повторной отправки `RELOAD_TEMPLATE`
+/// после неудачного (например, app умер) — без полной пересборки.
+pub fn wait_port_available(port: u16, max: Duration, interval: Duration) -> bool {
+    let start = Instant::now();
+    loop {
+        if is_port_open(port) {
+            return true;
+        }
+        if start.elapsed() >= max {
+            return false;
+        }
+        thread::sleep(interval);
+    }
+}
+
+/// Пытается отправить `RELOAD_TEMPLATE`; при неудаче (app умер, порт
+/// недоступен) ждёт до [`RELOAD_WAIT_MAX`], пока TCP снова станет доступен
+/// (poll каждые [`RELOAD_POLL_INTERVAL`]), и повторяет отправку. Не триггерит
+/// полную пересборку: HTML-чнейдж — это runtime-reload, не rebuild.
+///
+/// Возвращает `Ok(())` при успехе (включая повторную попытку), `Err` — если
+/// и после ожидания порт так и не стал доступен.
+pub fn request_reload_template_with_retry(port: u16) -> std::result::Result<(), std::io::Error> {
+    if let Ok(()) = request_reload_template(port) {
+        return Ok(());
+    }
+    // Неудача: приложение могло умереть или зависнуть. Ждём, пока TCP снова
+    // станет доступен, и повторяем RELOAD_TEMPLATE (без пересборки).
+    eprintln!(
+        "light dev: RELOAD_TEMPLATE не удался (app недоступен?) — \
+         жду до {:?}, чтобы повторить (не запуская пересборку)…",
+        RELOAD_WAIT_MAX
+    );
+    if wait_port_available(port, RELOAD_WAIT_MAX, RELOAD_POLL_INTERVAL) {
+        eprintln!("light dev: порт DevTools снова доступен — повторяю RELOAD_TEMPLATE");
+        request_reload_template(port)
+    } else {
+        eprintln!(
+            "light dev: порт DevTools {} так и не открылся за {:?} — \
+             HTML-чнейдж будет потерян, до следующего изменения",
+            port, RELOAD_WAIT_MAX
+        );
+        Err(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "port unavailable after reload wait",
+        ))
     }
 }
 
@@ -375,31 +500,71 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                 eprintln!("light dev: не удалось следить за {}: {e}", path.display());
             }
         }
-        // Начальное состояние: is_starting = true. Главное окно наблюдателя
-        // закрывается, когда главный поток шлёт обновление (порт 9229 открыт
-        // либо дедлайн STARTUP_IGNORE прошёл).
+        // Начальное состояние: is_starting = true. Watcher сам решает, когда
+        // закрывать окно: как только порт DevTools открылся либо прошёл
+        // дедлайн STARTUP_IGNORE (защита от вечной блокировки при зависшей
+        // сборке). Principal-поток лишь сбрасывает state в `starting()` при
+        // перезапуске процесса.
         let mut state = match state_rx.recv() {
             Ok(s) => s,
             Err(_) => return,
         };
+        // Момент запуска приложения: используется для дедлайна STARTUP_IGNORE.
+        // Пересбрасывается при каждом новом запуске дочернего процесса (главный
+        // поток шлёт `WatchState::starting()` через state_rx).
+        let mut start_at = Instant::now();
         // Сбрасывает дебаунс; актуально только вне окна `is_starting`.
         // Отдельный таймер для каждого типа изменения (Html vs Source).
         let mut last_html: Option<Instant> = None;
         let mut last_rs: Option<Instant> = None;
+        // Приоритет pending-флагов (Source > Html): если оба были накоплены,
+        // применяем source (пересборка важнее reload).
+        let apply_pending = |state: &mut WatchState,
+                             tx: &mpsc::Sender<(Instant, ChangeKind)>|
+         -> Option<ChangeKind> {
+            let kind = resolve_startup_completion(state)?;
+            let _ = tx.send((Instant::now(), kind));
+            state.clear_pending();
+            Some(kind)
+        };
         loop {
             // 1) Завершение от основного потока.
             if done_flag_watch.load(Ordering::Relaxed) {
                 break;
             }
-            // 2) Обновление состояния от главного потока. Прерываем цикл
-            //    немедленно и применяем накопленный pending_change сразу.
+            // 2) Обновление состояния от главного потока (при перезапуске
+            //    приложение сбрасывает state в `starting()`).
             if let Ok(new_state) = state_rx.try_recv() {
                 state = new_state;
-                if !state.is_starting && state.pending_change {
-                    eprintln!("light dev: применяю изменение, зафиксированное во время сборки");
-                    let _ = restart_tx.send((Instant::now(), ChangeKind::Source));
-                    state.pending_change = false;
-                    last_rs = Some(Instant::now());
+                start_at = Instant::now();
+                last_html = None;
+                last_rs = None;
+                continue;
+            }
+            // 3) Окно игнорирования: порт 9229 открылся или дедлайн прошёл.
+            //    Применяем накопленный pending (если есть) как ReloadHtml /
+            //    Restart — без эвристики «обнаружены изменения».
+            if state.is_starting {
+                let port_open = is_port_open(DEVTOOLS_PORT);
+                let deadline_reached = start_at.elapsed() >= STARTUP_IGNORE;
+                if port_open || deadline_reached {
+                    let reason = if port_open {
+                        "порт DevTools открыт"
+                    } else {
+                        &format!("дедлайн {:?} истёк", STARTUP_IGNORE)
+                    };
+                    eprintln!(
+                        "light dev: окно игнорирования снято ({reason}), \
+                         очередь pending (HTML={}, Source={})",
+                        state.pending_html, state.pending_source
+                    );
+                    if let Some(kind) = apply_pending(&mut state, &restart_tx) {
+                        match kind {
+                            ChangeKind::Html => last_html = Some(Instant::now()),
+                            ChangeKind::Source => last_rs = Some(Instant::now()),
+                        }
+                    }
+                    state.is_starting = false;
                 }
                 continue;
             }
@@ -413,33 +578,54 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                         .iter()
                         .find(|p| watch_paths_copy.iter().any(|w| p.starts_with(w)))
                         .and_then(|p| classify_change(p));
-                    let Some(kind) = kind else {
+                    if kind.is_none() {
                         continue;
+                    }
+                    let label = match kind {
+                        Some(ChangeKind::Html) => "HTML",
+                        Some(ChangeKind::Source) => "Source",
+                        None => "?",
                     };
                     eprintln!(
-                        "light dev: change detected at {:?} ({:?}){}",
+                        "light dev: change detected at {:?} ({label}){}",
                         event.paths,
-                        kind,
                         if state.is_starting {
                             " (во время сборки — запомню)"
                         } else {
                             ""
                         }
                     );
-                    if handle_watch_event(&mut state, true) {
-                        let _ = restart_tx.send((Instant::now(), kind));
-                        match kind {
-                            ChangeKind::Html => last_html = Some(Instant::now()),
-                            ChangeKind::Source => last_rs = Some(Instant::now()),
+                    match handle_watch_event(&mut state, kind) {
+                        WatchAction::None => {
+                            // Изменение во время сборки: просто запомнили
+                            // (pending_html / pending_source подняты внутри
+                            // handle_watch_event).
                         }
-                    } else if state.is_starting {
-                        // Изменение во время сборки: пока просто помним.
-                        // pending_change уже поставлен в handle_watch_event.
-                    } else if state.pending_change {
-                        state.pending_change = false;
-                        match kind {
-                            ChangeKind::Html => last_html = Some(Instant::now()),
-                            ChangeKind::Source => last_rs = Some(Instant::now()),
+                        WatchAction::ApplyPending => {
+                            // Окно было закрыто, а pending остался: применяем.
+                            if let Some(akind) = apply_pending(&mut state, &restart_tx) {
+                                eprintln!("light dev: применяю pending (kind={:?})", akind);
+                                match akind {
+                                    ChangeKind::Html => last_html = Some(Instant::now()),
+                                    ChangeKind::Source => last_rs = Some(Instant::now()),
+                                }
+                            }
+                        }
+                        WatchAction::ReloadHtml => {
+                            eprintln!(
+                                "light dev: HTML change → RELOAD_TEMPLATE \
+                                 (без пересборки)"
+                            );
+                            let _ = restart_tx.send((Instant::now(), ChangeKind::Html));
+                            last_html = Some(Instant::now());
+                        }
+                        WatchAction::Restart => {
+                            eprintln!(
+                                "light dev: Source change → RESTART \
+                                 (пересборка)"
+                            );
+                            let _ = restart_tx.send((Instant::now(), ChangeKind::Source));
+                            last_rs = Some(Instant::now());
                         }
                     }
                 }
@@ -447,8 +633,8 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     eprintln!("light dev: ошибка наблюдателя: {e}");
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    // Дебаунс: серия чейджей вне окна — один рестарт.
-                    if !state.is_starting && !state.pending_change {
+                    // Дебаунс: серия чейджей вне окна — одно действие.
+                    if !state.is_starting && !state.has_pending() {
                         if let Some(t) = last_html
                             && t.elapsed() >= HTML_DEBOUNCE
                         {
@@ -468,43 +654,11 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         }
     });
 
-    // Фоновая проверка открытия порта DevTools (9229). Как только приложение
-    // стало принимать команды — снимаем окно игнорирования наблюдателя.
-    // Завершается после первого успеха (порт уже слушается).
-    {
-        let state_probe_tx = state_tx.clone();
-        let done_probe_flag = done_flag.clone();
-        thread::spawn(move || {
-            let start = Instant::now();
-            loop {
-                if done_probe_flag.load(Ordering::Relaxed) {
-                    break;
-                }
-                if is_port_open(DEVTOOLS_PORT) {
-                    eprintln!(
-                        "light dev: порт DevTools {DEVTOOLS_PORT} открыт — слежу за изменениями"
-                    );
-                    let _ = state_probe_tx.send(WatchState {
-                        is_starting: false,
-                        pending_change: true,
-                    });
-                    break;
-                }
-                if start.elapsed() >= STARTUP_IGNORE {
-                    // Дедлайн обработает главный поток; этот тред молча
-                    // завершается.
-                    break;
-                }
-                thread::sleep(PORT_PROBE);
-            }
-        });
-    }
-
     loop {
         // Дедлайн защиты от вечной блокировки: если порт 9229 так и не
-        // открылся за STARTUP_IGNORE (сборка зависла), закрываем окно
-        // игнорирования наблюдателя, чтобы он снова начал ловить чейджи.
-        let mut clear_deadline: Option<Instant> = Some(Instant::now() + STARTUP_IGNORE);
+        // открылся за STARTUP_IGNORE (сборка зависла), watcher сам закроет
+        // окно игнорирования (он владеет pending-флагами и знает, что
+        // применить). Главный поток здесь ничего не решает.
         // Внутренний цикл опроса: выходим в наружный цикл по первому событию
         // (перезапуск от наблюдателя либо завершение дочернего процесса).
         enum Ev {
@@ -512,21 +666,6 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
             Exited(std::process::ExitStatus),
         }
         let ev = loop {
-            // Тик дедлайна: один раз за каждый прогон внутреннего цикла.
-            if let Some(deadline) = clear_deadline
-                && Instant::now() >= deadline
-            {
-                eprintln!(
-                    "light dev: порт DevTools {} не открылся за {:?} — снимаю окно \
-                     игнорирования наблюдателя",
-                    DEVTOOLS_PORT, STARTUP_IGNORE
-                );
-                let _ = state_tx.send(WatchState {
-                    is_starting: false,
-                    pending_change: true,
-                });
-                clear_deadline = None;
-            }
             if let Ok((_ts, kind)) = restart_rx.try_recv() {
                 break Ev::Restart(kind);
             }
@@ -550,14 +689,30 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
             }
             Ev::Restart(kind) => match kind {
                 ChangeKind::Html => {
-                    eprintln!("light dev: HTML-шаблон изменён — reload без пересборки…");
-                    if let Err(e) = request_reload_template(DEVTOOLS_PORT) {
-                        eprintln!("light dev: не удалось отправить RELOAD_TEMPLATE: {e}");
+                    // HTML-чнейдж → runtime-reload (RELOAD_TEMPLATE) без
+                    // убийства процесса. При неудаче (app умер, порт недоступен)
+                    // НЕ триггерим полную пересборку: ждём, пока TCP снова
+                    // станет доступен (poll каждые 200 мс, до 3 с), и повторяем
+                    // RELOAD_TEMPLATE. Если так и не поднимется — чнейдж
+                    // потеряется до следующего изменения (без лишних 4-5 сек
+                    // на пустой restart).
+                    eprintln!("light dev: HTML change → RELOAD_TEMPLATE (без пересборки)…");
+                    if let Err(e) = request_reload_template_with_retry(DEVTOOLS_PORT) {
+                        eprintln!(
+                            "light dev: RELOAD_TEMPLATE так и не был доставлен: {e} \
+                             (HTML-чнейдж потерян до следующего изменения)"
+                        );
+                    } else {
+                        eprintln!("light dev: RELOAD_TEMPLATE доставлен — продолжаю watch");
                     }
                 }
                 ChangeKind::Source => {
+                    // Source-чнейдж (.rs / Cargo.toml) → полная пересборка +
+                    // рестарт. Специфичное сообщение (без эвристики
+                    // «обнаружены изменения»).
                     eprintln!(
-                        "light dev: обнаружены изменения — сохраняю состояние и перезапускаю…"
+                        "light dev: Source change → RESTART (пересборка) — \
+                         сохраняю состояние и перезапускаю…"
                     );
                     if let Err(e) = request_save_state(DEVTOOLS_PORT) {
                         eprintln!(
@@ -575,10 +730,9 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     match spawn_cmd(args, &cwd).spawn() {
                         Ok(c) => {
                             child = c;
-                            // Сбрасываем наблюдателя в is_starting. Дедлайн
-                            // `clear_deadline` — новый каждый прогон внешнего цикла
-                            // (в начале тела `let mut ... = Some(now + STARTUP_IGNORE)`),
-                            // поэтому явного сброса здесь не нужно.
+                            // Сбрасываем watcher в is_starting: он сам решит,
+                            // когда закрывать окно (порт 9229 открылся либо
+                            // дедлайн STARTUP_IGNORE прошёл).
                             let _ = state_tx.send(WatchState::starting());
                             eprintln!("light dev: приложение перезапущено");
                         }
@@ -598,70 +752,176 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ChangeKind, WatchState, classify_change, handle_watch_event, parse_dev_command,
-        resolve_package_root,
+        ChangeKind, WatchAction, WatchState, classify_change, handle_watch_event,
+        parse_dev_command, resolve_package_root, resolve_startup_completion, wait_port_available,
     };
+    use std::net::TcpListener;
     use std::path::Path;
+    use std::time::{Duration, Instant};
 
-    /// Событие вне watched-путей: рестарта нет, состояние не меняется.
+    // ===================== handle_watch_event / resolve =====================
+
+    /// Нерелевантное событие (kind=None): ни действий, ни изменения флагов.
     #[test]
-    fn watch_event_ignored_outside_watched_paths() {
+    fn watch_event_irrelevant_does_nothing() {
         let mut s = WatchState::starting();
-        assert!(!handle_watch_event(&mut s, false));
+        assert_eq!(handle_watch_event(&mut s, None), WatchAction::None);
         assert!(s.is_starting);
-        assert!(!s.pending_change);
+        assert!(!s.pending_html);
+        assert!(!s.pending_source);
     }
 
-    /// Изменение во время is_starting: рестарт не отправляется, но
-    /// pending_change запоминается.
+    /// **ТЗ 4.1**: HTML-чнейдж во время `is_starting` → `pending_html=true`,
+    /// `pending_source=false`. При закрытии окна → ReloadHtml (НЕ restart).
     #[test]
-    fn watch_event_during_startup_sets_pending() {
+    fn html_during_start_pending_as_html() {
         let mut s = WatchState::starting();
-        assert!(!handle_watch_event(&mut s, true));
+        assert_eq!(
+            handle_watch_event(&mut s, Some(ChangeKind::Html)),
+            WatchAction::None
+        );
         assert!(s.is_starting);
-        assert!(s.pending_change);
+        assert!(s.pending_html);
+        assert!(!s.pending_source);
+        // Окно закрывается (порт 9229 открылся либо дедлайн прошёл):
+        // применение → Html (runtime-reload), не Source (пересборка).
+        assert_eq!(resolve_startup_completion(&s), Some(ChangeKind::Html));
     }
 
-    /// Серия изменений во время is_starting: pending_change остаётся true
-    /// (не «всплывает»), рестартов не происходит.
+    /// **ТЗ 4.2**: Source-чнейдж во время `is_starting` → `pending_source=true`,
+    /// `pending_html=false`. При закрытии окна → Source (пересборка).
     #[test]
-    fn watch_event_multiple_during_startup_still_no_restart() {
+    fn source_during_start_pending_as_source() {
         let mut s = WatchState::starting();
-        assert!(!handle_watch_event(&mut s, true));
-        assert!(!handle_watch_event(&mut s, true));
-        assert!(!handle_watch_event(&mut s, true));
+        assert_eq!(
+            handle_watch_event(&mut s, Some(ChangeKind::Source)),
+            WatchAction::None
+        );
         assert!(s.is_starting);
-        assert!(s.pending_change);
+        assert!(!s.pending_html);
+        assert!(s.pending_source);
+        assert_eq!(resolve_startup_completion(&s), Some(ChangeKind::Source));
     }
 
-    /// После закрытия is_starting (и применения pending_change) прямой
-    /// чейдж даёт рестарт.
+    /// **ТЗ 4.3**: HTML-чнейдж ПОСЛЕ закрытия `is_starting` → немедленный
+    /// `ReloadHtml` (не restart). Это ключевой фикс race: HTML-чнейдж не
+    /// должен приводить к полной пересборке.
     #[test]
-    fn watch_event_direct_after_startup_clear() {
+    fn html_after_start_emits_reload() {
         let mut s = WatchState {
             is_starting: false,
-            pending_change: false,
+            pending_html: false,
+            pending_source: false,
         };
-        assert!(handle_watch_event(&mut s, true));
+        assert_eq!(
+            handle_watch_event(&mut s, Some(ChangeKind::Html)),
+            WatchAction::ReloadHtml
+        );
         assert!(!s.is_starting);
-        assert!(!s.pending_change);
+        assert!(!s.pending_html);
+        assert!(!s.pending_source);
     }
 
-    /// Ключевая сценарий ТЗ: изменение во время сборки → закрытие окна →
-    /// накопленное изменение применяется одним рестартом.
+    /// Source-чнейдж после закрытия окна → немедленный Restart.
     #[test]
-    fn watch_event_pending_applied_after_window_close() {
-        let mut s = WatchState::starting();
-        // Чейдж во время сборки.
-        assert!(!handle_watch_event(&mut s, true));
-        assert!(s.pending_change);
-        // Главный поток закрывает окно (порт открыт / дедлайн прошёл).
-        s.is_starting = false;
-        // Наблюдатель видит, что pending_change есть, и применяет его.
-        assert!(handle_watch_event(&mut s, true));
-        assert!(!s.pending_change);
-        assert!(!s.is_starting);
+    fn source_after_start_emits_restart() {
+        let mut s = WatchState {
+            is_starting: false,
+            pending_html: false,
+            pending_source: false,
+        };
+        assert_eq!(
+            handle_watch_event(&mut s, Some(ChangeKind::Source)),
+            WatchAction::Restart
+        );
     }
+
+    /// Приоритет при закрытии окна: Source > Html (пересборка важнее reload).
+    #[test]
+    fn startup_priority_source_over_html() {
+        let mut s = WatchState::starting();
+        let _ = handle_watch_event(&mut s, Some(ChangeKind::Html));
+        let _ = handle_watch_event(&mut s, Some(ChangeKind::Source));
+        assert!(s.pending_html && s.pending_source);
+        assert_eq!(resolve_startup_completion(&s), Some(ChangeKind::Source));
+    }
+
+    /// Без pending-флагов при закрытии окна — `None` (действий нет).
+    #[test]
+    fn startup_no_pending_returns_none() {
+        let s = WatchState::starting();
+        assert_eq!(resolve_startup_completion(&s), None);
+    }
+
+    /// Если перед событием был pending и окно уже закрыто — `ApplyPending`
+    /// (один перезапуск за накопленную серию).
+    #[test]
+    fn event_with_stale_pending_returns_apply_pending() {
+        let mut s = WatchState {
+            is_starting: false,
+            pending_html: true,
+            pending_source: false,
+        };
+        assert_eq!(
+            handle_watch_event(&mut s, Some(ChangeKind::Source)),
+            WatchAction::ApplyPending
+        );
+        // Флаги сброшены.
+        assert!(!s.pending_html && !s.pending_source);
+    }
+
+    // ===================== wait_port_available / reload retry ==============
+
+    /// **ТЗ 4.4** (логика мока TCP): порт стал доступен до дедлайна →
+    /// `wait_port_available` возвращает `true` раньше, чем истёк `max`.
+    /// Не запускает пересборку: просто подтверждает, что повторная попытка
+    /// `RELOAD_TEMPLATE` возможна.
+    #[test]
+    fn wait_port_available_becomes_open_within_max() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().unwrap().port();
+        // Порт уже открыт — должно вернуть true мгновенно (без ожидания max).
+        let start = Instant::now();
+        assert!(wait_port_available(
+            port,
+            Duration::from_millis(500),
+            Duration::from_millis(20)
+        ));
+        // Задержка < max: подтверждается, что мы не ждали всё время.
+        assert!(
+            start.elapsed() < Duration::from_millis(500),
+            "wait_port_available вернул слишком поздно"
+        );
+    }
+
+    /// **ТЗ 4.4** (часть 2): порт так и не открылся → `false` через ~`max`.
+    /// В production это означает: `request_reload_template_with_retry` вернёт
+    /// `Err` — без триггера полной пересборки (HTML-чнейдж просто потеряется
+    /// до следующего изменения).
+    ///
+    /// Проверяем поведение (не wall-clock время): если функция вернула `false`,
+    /// значит цикл закончился по дедлайну; если бы она «зависла» или «сработала
+    /// раньше», мы бы получили `true` или panic по timeout. Дополнительная
+    /// проверка на wall-clock сознательно опущена — на Windows под нагрузкой
+    /// `thread::sleep` не даёт точного верхнего bound.
+    #[test]
+    fn wait_port_available_never_opens_times_out() {
+        // Берём свободный порт: listen'им и сразу drop'аем слушателя, чтобы
+        // порт гарантированно не принимал соединения.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        // Короткий дедлайн (80 мс), быстрый poll (10 мс) — тест завершится
+        // быстро и надёжно. Функция должна вернуть false.
+        let result =
+            wait_port_available(port, Duration::from_millis(80), Duration::from_millis(10));
+        assert!(
+            !result,
+            "wait_port_available должен вернуть false для закрытого порта"
+        );
+    }
+
+    // ===================== parse / classify / package_root ==================
 
     /// Без имени пакета корнем становится текущий каталог (быстрый путь без
     /// запуска `cargo metadata`).
