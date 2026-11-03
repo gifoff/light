@@ -216,6 +216,35 @@ fn is_port_open(port: u16) -> bool {
     TcpStream::connect(("127.0.0.1", port)).is_ok()
 }
 
+/// Хэш содержимого файла (`u64`) для дедупликации событий notify.
+///
+/// Один «логический» записывающий вызов (например, сохранение в редакторе)
+/// генерирует несколько событий `PollWatcher` — `Modify`, `Modify(Data)`,
+/// `Modify(Metadata)` — с **одинаковым** содержимым. Дебаунс по времени (100/500
+/// мс) эту серию не схватывает, потому что вторая серия приходит ПОСЛЕ debounce.
+/// Хэш содержимого позволяет отфильтровать повторы: если `hash == last_hashes[&path]`
+/// — событие игнорируется как повтор того же содержимого.
+///
+/// Возвращает `None`, если файл нельзя прочитать (например, только что удалён
+/// или ещё пишется); в этом случае событие НЕ дедуплицируется и обрабатывается
+/// как изменение (консервативно).
+pub fn file_hash(path: &Path) -> Option<u64> {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    use std::io::Read;
+
+    let mut buf = Vec::new();
+    let mut f = std::fs::File::open(path).ok()?;
+    // Читаем всё содержимое. Файлы, за которыми мы следим, — исходники
+    // (`.rs`, `.html`, `Cargo.toml`), так что объём небольшой (KB–MB).
+    if f.read_to_end(&mut buf).is_err() {
+        return None;
+    }
+    let mut hasher = DefaultHasher::new();
+    buf.hash(&mut hasher);
+    Some(hasher.finish())
+}
+
 /// Тип изменения файла для классификации hot-reload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeKind {
@@ -517,6 +546,12 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         // Отдельный таймер для каждого типа изменения (Html vs Source).
         let mut last_html: Option<Instant> = None;
         let mut last_rs: Option<Instant> = None;
+        // Дедупликация по хэшу содержимого: один «логический» save генерирует
+        // несколько событий notify (Modify + Modify(Data) + Modify(Metadata))
+        // с одинаковым содержимым. Хэш защищает от повторной обработки;
+        // дебаунс — от быстрых серий записи (редактор пишет файл по частям).
+        let mut last_hashes: std::collections::HashMap<PathBuf, u64> =
+            std::collections::HashMap::new();
         // Приоритет pending-флагов (Source > Html): если оба были накоплены,
         // применяем source (пересборка важнее reload).
         let apply_pending = |state: &mut WatchState,
@@ -571,13 +606,52 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
             // 3) События наблюдателя.
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(Ok(event)) => {
-                    // Классифицируем: берём первый релевантный путь и
-                    // определяем тип (Html / Source / None — нерелевантно).
-                    let kind = event
-                        .paths
-                        .iter()
-                        .find(|p| watch_paths_copy.iter().any(|w| p.starts_with(w)))
-                        .and_then(|p| classify_change(p));
+                    // Для каждого пути из события:
+                    //  1) если путь не в watch_paths → skip;
+                    //  2) хэшируем содержимое файла;
+                    //  3) если хэш == последнему сохранённому для этого пути
+                    //     → ИГНОРИРОВАТЬ (повторное событие того же содержимого,
+                    //     например Modify(Data) / Modify(Metadata) после Modify);
+                    //  4) иначе обновляем last_hashes и классифицируем как
+                    //     настоящее изменение.
+                    //
+                    // Если хотя бы один путь дал новое содержимое — обрабатываем
+                    // событие. Берём первый такой путь для классификации (Html /
+                    // Source / None). Это решает проблему «2 RELOAD_TEMPLATE на
+                    // одно изменение»: вторые/третьи события notify с тем же
+                    // хэшем отфильтруются здесь, до debounce.
+                    let mut effective_path: Option<&PathBuf> = None;
+                    for path in &event.paths {
+                        if !watch_paths_copy.iter().any(|w| path.starts_with(w)) {
+                            continue;
+                        }
+                        let hash = match file_hash(path) {
+                            Some(h) => h,
+                            // Файл недоступен (удалён / ещё пишется): не
+                            // дедуплицируем — обрабатываем как изменение.
+                            None => {
+                                effective_path = Some(path);
+                                break;
+                            }
+                        };
+                        match last_hashes.get(path) {
+                            Some(&last) if last == hash => {
+                                // Повторное событие того же содержимого:
+                                // игнорируем.
+                                eprintln!(
+                                    "light dev: повторное событие notify для {:?} \
+                                     (хэш не изменился) — игнорирую",
+                                    path
+                                );
+                                continue;
+                            }
+                            _ => {
+                                last_hashes.insert(path.clone(), hash);
+                                effective_path = Some(path);
+                            }
+                        }
+                    }
+                    let kind = effective_path.and_then(|p| classify_change(p));
                     if kind.is_none() {
                         continue;
                     }
@@ -752,9 +826,10 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ChangeKind, WatchAction, WatchState, classify_change, handle_watch_event,
+        ChangeKind, WatchAction, WatchState, classify_change, file_hash, handle_watch_event,
         parse_dev_command, resolve_package_root, resolve_startup_completion, wait_port_available,
     };
+    use std::io::Write as _;
     use std::net::TcpListener;
     use std::path::Path;
     use std::time::{Duration, Instant};
@@ -1023,5 +1098,78 @@ mod tests {
     #[test]
     fn classify_no_extension_returns_none() {
         assert_eq!(classify_change(Path::new("README")), None);
+    }
+
+    // ===================== file_hash (дедупликация) ========================
+
+    /// **ТЗ 2.1**: одно и то же содержимое даёт одинаковый хэш (повторное
+    /// событие игнорируется), новое содержимое — другой хэш (обрабатывается).
+    ///
+    /// Сценарий из ТЗ:
+    ///   - записать "a" → hash1
+    ///   - записать "a" ещё раз → hash2 == hash1 (ИГНОРИРУЕТСЯ)
+    ///   - записать "b" → hash3 != hash1 (ОБРАБАТЫВАЕТСЯ)
+    #[test]
+    fn file_hash_same_content_same_hash() {
+        let dir = std::env::temp_dir().join("light_dev_test_file_hash");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("sample.html");
+        // Убедимся, что файл не существует с предыдущих тестов.
+        let _ = std::fs::remove_file(&path);
+
+        // Записываем "a".
+        let mut f = std::fs::File::create(&path).expect("create file");
+        f.write_all(b"a").expect("write 'a'");
+        f.sync_all().expect("sync");
+        drop(f);
+        let hash1 = file_hash(&path).expect("hash1 must be Some");
+
+        // Записываем "a" ещё раз (симулируем повторное событие notify).
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .expect("reopen");
+        f.set_len(0).expect("truncate");
+        f.write_all(b"a").expect("rewrite 'a'");
+        f.sync_all().expect("sync");
+        drop(f);
+        let hash2 = file_hash(&path).expect("hash2 must be Some");
+
+        // Одно и то же содержимое → одинаковый хэш.
+        assert_eq!(
+            hash1, hash2,
+            "одинаковое содержимое должно давать одинаковый хэш"
+        );
+
+        // Записываем "b" (новое содержимое).
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .expect("reopen");
+        f.set_len(0).expect("truncate");
+        f.write_all(b"b").expect("write 'b'");
+        f.sync_all().expect("sync");
+        drop(f);
+        let hash3 = file_hash(&path).expect("hash3 must be Some");
+
+        // Разное содержимое → разные хэши (крайне маловероятно совпадение
+        // у DefaultHasher для двух байтов, но формально проверяем).
+        assert_ne!(hash1, hash3, "разное содержимое должно дать разный хэш");
+
+        // Cleanup.
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// Файл, которого нет → `None` (не дедуплицируется, обрабатывается как
+    /// изменение — консервативно).
+    #[test]
+    fn file_hash_missing_file_returns_none() {
+        let dir = std::env::temp_dir().join("light_dev_test_file_hash_missing");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("does_not_exist.html");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(file_hash(&path), None);
+        let _ = std::fs::remove_dir(&dir);
     }
 }
