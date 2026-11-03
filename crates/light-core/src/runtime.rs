@@ -209,7 +209,8 @@ fn wrap_nodes<C: Component + ?Sized>(
     nodes: &[light_fw_html::Node],
     component: &C,
 ) -> Option<VElement> {
-    let children = build_children(nodes, ROOT_KEY, component)?;
+    let column_kind = NodeKind::Column;
+    let children = build_children(nodes, ROOT_KEY, &column_kind, component)?;
     Some(VElement::container(ROOT_KEY, NodeKind::Column, children))
 }
 
@@ -295,7 +296,7 @@ fn build_element<C: Component + ?Sized>(
     };
     let leaf = match &kind {
         ElementKind::Container(node_kind) => {
-            let children = build_children(&element.children, key, component)?;
+            let children = build_children(&element.children, key, node_kind, component)?;
             VElement::container(intern_key(key), node_kind.clone(), children)
         }
         ElementKind::TextLeaf => build_text_field(element, key, component)?,
@@ -340,6 +341,7 @@ fn build_element<C: Component + ?Sized>(
 fn build_children<C: Component + ?Sized>(
     nodes: &[light_fw_html::Node],
     base: &str,
+    parent_kind: &NodeKind,
     component: &C,
 ) -> Option<Vec<VElement>> {
     let mut out = Vec::with_capacity(nodes.len());
@@ -353,8 +355,8 @@ fn build_children<C: Component + ?Sized>(
                 }
                 let key = child_key(base, index);
                 eprintln!(
-                    "light: build Text content={:?} width=Auto (runtime)",
-                    content
+                    "light: build Text content={:?} parent={:?} (runtime)",
+                    content, parent_kind
                 );
                 let mut text = VElement::leaf(
                     intern_key(&key),
@@ -362,9 +364,10 @@ fn build_children<C: Component + ?Sized>(
                         content: content.clone(),
                     },
                 );
-                // Растянуть Text по ширине родителя, чтобы text_wrap работал
-                // на полной ширине контейнера (аналог static-layout stretch).
-                if matches!(text.style.width, Size::Auto) {
+                // Растянуть Text по ширине родителя ТОЛЬКО в Column:
+                // в Button/Row/TitleBar/Window — Auto (иначе circular layout).
+                if matches!(parent_kind, NodeKind::Column) && matches!(text.style.width, Size::Auto)
+                {
                     let mut s = text.style;
                     s.width = Size::Percent(100.0);
                     text = text.with_style(s);
