@@ -139,6 +139,11 @@ pub trait Component: Any {
     /// [`Component::invoke_handler`], что позволяет сгенерированному макросом
     /// коду донести имена пользовательских методов до этой точки.
     fn dispatch_by_name(&self, handler: &str, event: Event) -> bool {
+        // Не-Click события (Mousemove, Mouseenter и т. д.) не должны
+        // запускать @click-обработчики по имени.
+        if !matches!(event, Event::Click) {
+            return false;
+        }
         match handler {
             "close" => {
                 self.close();
@@ -302,5 +307,101 @@ pub trait Component: Any {
     /// список пуст.
     fn windows(&self) -> Vec<fn() -> Box<dyn Component>> {
         Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::any::Any;
+    use std::cell::Cell;
+
+    use super::Component;
+    use crate::vdom::{Event, VElement};
+
+    /// Тестовый компонент: не переопределяет `dispatch_by_name` (тестируем
+    /// базовую реализацию с Click-фильтром), перехватывает только
+    /// `invoke_handler` для пользовательских имён.
+    struct FakeComp {
+        handler_called: Cell<bool>,
+    }
+
+    impl FakeComp {
+        fn new() -> Self {
+            Self {
+                handler_called: Cell::new(false),
+            }
+        }
+    }
+
+    impl Default for FakeComp {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl Component for FakeComp {
+        fn render(&self) -> VElement {
+            VElement::container("", crate::vdom::NodeKind::Column, Vec::new())
+        }
+
+        fn invoke_handler(&self, handler: &str, event: Event) -> bool {
+            if handler == "increment" && matches!(event, Event::Click) {
+                self.handler_called.set(true);
+                return true;
+            }
+            false
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// `dispatch_by_name("close", Mousemove)` → `false`.
+    #[test]
+    fn mousemove_does_not_trigger_builtin_close() {
+        let c = FakeComp::default();
+        // close() шлёт WindowCommand через глобальный канал; в unit-тесте
+        // главное — что базовая реализация НЕ доходит до self.close().
+        let result = c.dispatch_by_name("close", Event::Mousemove { x: 1.0, y: 1.0 });
+        assert!(
+            !result,
+            "non-Click events must not trigger builtin handlers"
+        );
+    }
+
+    /// `dispatch_by_name("minimize", Mouseenter)` → `false`.
+    #[test]
+    fn mouseenter_does_not_trigger_builtin_minimize() {
+        let c = FakeComp::default();
+        let result = c.dispatch_by_name("minimize", Event::Mouseenter);
+        assert!(
+            !result,
+            "non-Click events must not trigger builtin handlers"
+        );
+    }
+
+    /// `dispatch_by_name("increment", Mousemove)` → `false`, обработчик не вызван.
+    #[test]
+    fn mousemove_does_not_trigger_user_handler() {
+        let c = FakeComp::default();
+        let result = c.dispatch_by_name("increment", Event::Mousemove { x: 2.0, y: 3.0 });
+        assert!(!result, "user handler must not fire on Mousemove");
+        assert!(
+            !c.handler_called.get(),
+            "invoke_handler must not be called on Mousemove"
+        );
+    }
+
+    /// `dispatch_by_name("increment", Click)` → `true`, обработчик вызван.
+    #[test]
+    fn click_triggers_user_handler() {
+        let c = FakeComp::default();
+        let result = c.dispatch_by_name("increment", Event::Click);
+        assert!(result, "user handler must fire on Click");
+        assert!(
+            c.handler_called.get(),
+            "invoke_handler must be called on Click"
+        );
     }
 }

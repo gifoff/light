@@ -469,3 +469,52 @@ fn unknown_tag_rejected() {
     );
     assert!(result.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// dispatch_by_name: фильтрация по типу события (регрессия A-fix7)
+// ---------------------------------------------------------------------------
+
+/// Тестовый компонент: не переопределяет `dispatch_by_name` (тестируем
+/// базовую реализацию с Click-фильтром), перехватывает `invoke_handler`.
+struct CountingHandler;
+
+impl Component for CountingHandler {
+    fn render(&self) -> VElement {
+        VElement::container("", NodeKind::Column, Vec::new())
+    }
+    fn invoke_handler(&self, handler: &str, event: Event) -> bool {
+        // Базовая реализация dispatch_by_name уже проверяет Click;
+        // здесь только учитываем точное имя.
+        handler == "increment" && matches!(event, Event::Click)
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+/// dispatch_by_name("increment", Mousemove) → false (обработчик НЕ вызван).
+#[test]
+fn dispatch_by_name_rejects_mousemove() {
+    let c = CountingHandler;
+    let result = c.dispatch_by_name("increment", Event::Mousemove { x: 5.0, y: 3.0 });
+    assert!(
+        !result,
+        "non-Click events must not trigger @click handlers by name"
+    );
+}
+
+/// dispatch_by_name("close", Mouseenter) → false (встроенный метод НЕ вызван).
+#[test]
+fn dispatch_by_name_rejects_mouseenter_on_builtin() {
+    let c = CountingHandler;
+    let result = c.dispatch_by_name("close", Event::Mouseenter);
+    assert!(!result, "builtin 'close' must not fire on non-Click events");
+}
+
+/// dispatch_by_name("increment", Click) → true (обработчик вызван).
+#[test]
+fn dispatch_by_name_accepts_click() {
+    let c = CountingHandler;
+    let result = c.dispatch_by_name("increment", Event::Click);
+    assert!(result, "Click events must trigger @click handlers by name");
+}
