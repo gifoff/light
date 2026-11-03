@@ -1,6 +1,6 @@
 //! Горячая перезагрузка приложения Light: супервизор `light dev`.
 //!
-//! Запускает приложение (`cargo run --features devtools`) как дочерний процесс,
+//! Запускает приложение (`target/hot/debug/<bin>`) как дочерний процесс,
 //! следит за исходниками (`src/`, `templates/`, `Cargo.toml`). Две реакции:
 //! * **HTML** (файлы `*.html`) → команда `RELOAD_TEMPLATE` через TCP-сервер
 //!   DevTools на порту 9229: приложение перечитывает HTML-шаблон с диска и
@@ -62,7 +62,7 @@ const HTML_DEBOUNCE: Duration = Duration::from_millis(100);
 /// Разобранные параметры команды `light dev`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DevArgs {
-    /// Пакет воркспейса, который запускается (`cargo run -p <package>`).
+    /// Пакет воркспейса, который запускается (`target/hot/debug/<bin>`).
     pub package: Option<String>,
     /// Дополнительные флаги cargo, передаваемые после имени пакета
     /// (например, `--release`).
@@ -157,6 +157,27 @@ pub fn resolve_package_root(package: Option<&str>, cwd: &Path) -> PathBuf {
             cwd.to_path_buf()
         }
     }
+}
+
+/// Определяет корень воркспейса через `cargo metadata --no-deps`.
+///
+/// Возвращает `workspace_root` из JSON-вывода. Для одиночного крейта (без
+/// workspace) поле всё равно есть — `workspace_root == package_root`.
+/// Если `cargo metadata` недоступен или вывод не парсится — `None` (fallback
+/// на `package_root` вызывающим).
+pub fn resolve_workspace_root(cwd: &Path) -> Option<PathBuf> {
+    let output = Command::new("cargo")
+        .args(["metadata", "--no-deps", "--format-version", "1"])
+        .current_dir(cwd)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let meta: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    meta.get("workspace_root")
+        .and_then(|r| r.as_str())
+        .map(PathBuf::from)
 }
 
 /// Строит список путей для наблюдения: `src/` и `templates/` (только если
@@ -483,18 +504,20 @@ pub fn kill_child(child: &mut Child) {
 
 // ===================== ТЗ 0.14.2-B: seamless rebuild =========================
 
-/// Имя бинарника пакета: имя пакета с заменой `-` на `_`.
+/// Имя бинарника пакета: **имя пакета без изменений** (cargo не заменяет `-`).
 ///
-/// Например `example-devtools-demo` → `example_devtools_demo.exe`
-/// (Windows) или `example_devtools_demo` (unix). Путь в debug-каталоге:
-/// `<root>/target/hot/debug/<bin_name>.exe`.
+/// Cargo кладёт бинарник в `target/debug/<package-name>` (двери сохраняются):
+/// `example-devtools-demo` → `example-devtools-demo.exe` (Windows) или
+/// `example-devtools-demo` (unix). Путь в debug-каталоге:
+/// `<root>/target/hot/debug/<package-name>.exe`.
 pub fn bin_name(package: &str) -> String {
-    package.replace('-', "_")
+    package.to_string()
 }
 
 /// Абсолютный путь к собранным артефактам (`target/hot/debug/<bin>`).
 ///
-/// `<root>` — корень пакета (напр. `examples/devtools-demo`). Windows: `.exe`
+/// `<root>` — корень, в котором лежит `target/` (для workspace-члена это
+/// `workspace_root`, для одиночного крейта — `package_root`). Windows: `.exe`
 /// на конце, unix: без расширения.
 pub fn hot_bin_path(pkg_root: &Path, package: &str) -> PathBuf {
     let mut p = pkg_root
@@ -573,14 +596,25 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     // Корень пакета: если передан `package`, ищем его через `cargo metadata`,
     // иначе — текущий каталог. Именно этот корень передаётся в `watch_paths`.
     let package_root = resolve_package_root(args.package.as_deref(), &cwd);
-    // Имя бинарника: пакет + замена `-` → `_`. ТЗ 0.14.2-B: запускаем уже
-    // собранный артефакт из `target/hot/debug/` (вместо `cargo run`).
+    // ТЗ 0.14.2-B-fix: для workspace-членов артефакты cargo кладутся в
+    // workspace_root/target, а не в package_root/target. Берём workspace_root
+    // (если доступен) как корень для target/hot и bin_path; fallback —
+    // package_root (одиночный крейт без workspace).
+    let target_root = resolve_workspace_root(&cwd).unwrap_or_else(|| {
+        eprintln!(
+            "light dev: `cargo metadata` недоступен — target_dir из package_root {:?}",
+            package_root
+        );
+        package_root.clone()
+    });
+    eprintln!("light dev: workspace_root = {:?}", target_root);
+    // Имя бинарника: пакет + замена `-` → `_`. Запускаем уже собранный
+    // артефакт из `target/hot/debug/` (вместо `cargo run`).
     let bin = bin_name(args.package.as_deref().unwrap_or("app"));
-    let hot_bin = hot_bin_path(&package_root, &bin);
-    eprintln!(
-        "light dev: binary target: {:?} (package: {:?})",
-        hot_bin, args.package
-    );
+    let hot_target = target_root.join("target").join("hot");
+    let hot_bin = hot_bin_path(&target_root, &bin);
+    eprintln!("light dev: target_dir = {:?}", hot_target);
+    eprintln!("light dev: binary path = {:?}", hot_bin);
 
     // === ФАЗА A: warm-up build ===
     // Блокирующий `cargo build` в отдельный target-dir (`target/hot`). При
@@ -593,10 +627,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
             cmd.args(["-p", package]);
         }
         cmd.args(["--features", "devtools"]);
-        cmd.args([
-            "--target-dir",
-            &package_root.join("target").join("hot").to_string_lossy(),
-        ]);
+        cmd.args(["--target-dir", &hot_target.to_string_lossy()]);
         cmd.args(&args.extra_cargo_args);
         cmd.stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
@@ -615,6 +646,18 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                 eprintln!("light dev: не удалось запустить `cargo build`: {e} — exit 1");
                 return Ok(1);
             }
+        }
+        // ТЗ 0.14.2-B-fix 4: после успешного build проверим, что бинарник
+        // действительно лежит там, где мы его ищем. Если нет — путь расхожился
+        // (напр. workspace_root != package_root), и запуск даст os error 2.
+        if std::fs::metadata(&hot_bin).is_err() {
+            eprintln!(
+                "light dev: BUG — build succeeded but binary not at {:?}. \
+                 Search in {:?}...",
+                hot_bin,
+                hot_target.join("debug")
+            );
+            return Ok(1);
         }
     }
 
@@ -1152,8 +1195,8 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     }
                     eprintln!("light dev: rebuild started (old app still running)");
                     sm.start();
-                    // Собираем команду для background build.
-                    let hot_target = package_root.join("target").join("hot");
+                    // Собираем команду для background build. `hot_target` —
+                    // тот же путь, что и в warm-up (workspace_root-based).
                     let mut cmd = Command::new("cargo");
                     cmd.arg("build");
                     if let Some(p) = &args.package {
@@ -1742,15 +1785,15 @@ mod tests {
 
     // ===================== ТЗ 0.14.2-B: bin_name / hot_bin_path =============
 
-    /// Бинарник: `-` заменяется на `_`. Windows: `.exe` в конце.
+    /// Бинарник: имя пакета без изменений (cargo не заменяет `-`). Windows: `.exe`.
     #[test]
-    fn bin_name_dashes_to_underscores() {
-        assert_eq!(bin_name("my-app"), "my_app");
-        assert_eq!(bin_name("my-app-x"), "my_app_x");
+    fn bin_name_preserves_dashes() {
+        assert_eq!(bin_name("my-app"), "my-app");
+        assert_eq!(bin_name("my-app-x"), "my-app-x");
         assert_eq!(bin_name("simple"), "simple");
     }
 
-    /// Путь к бинарнику: `<root>/target/hot/debug/<bin_name>`.
+    /// Путь к бинарнику: `<root>/target/hot/debug/<package-name>`.
     /// Windows: добавляет `.exe`; unix: без расширения.
     #[test]
     fn hot_bin_path_layout() {
@@ -1758,12 +1801,12 @@ mod tests {
         let s = p.to_string_lossy().to_string();
         if cfg!(windows) {
             assert!(
-                s.ends_with(r"\target\hot\debug\my_app.exe"),
+                s.ends_with(r"\target\hot\debug\my-app.exe"),
                 "windows layout, got: {s}"
             );
         } else {
             assert!(
-                s.ends_with("/target/hot/debug/my_app"),
+                s.ends_with("/target/hot/debug/my-app"),
                 "unix layout, got: {s}"
             );
         }
