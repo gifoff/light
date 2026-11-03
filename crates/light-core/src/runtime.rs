@@ -15,6 +15,8 @@
 //! время выполнения и выключают runtime-рендер целиком.
 
 #[cfg(feature = "runtime-templates")]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "runtime-templates")]
 use std::time::SystemTime;
 use std::{
     collections::HashMap,
@@ -25,10 +27,9 @@ use crate::{
     component::{Component, WindowConfig},
     vdom::{
         Align, ButtonType, Edges, NodeKind, Offset, Overflow, Position, RequiredIndicator, Resize,
-        SelectOption, Size, Style, VElement, intern_key, parse_align_items, parse_align_x,
-        parse_align_y, parse_bool, parse_color, parse_justify, parse_offset, parse_overflow,
-        parse_position, parse_required_indicator, parse_resize, parse_size_or_auto,
-        parse_white_space,
+        SelectOption, Size, Style, VElement, intern_key, parse_align_items, parse_bool,
+        parse_color, parse_justify, parse_offset, parse_overflow, parse_position,
+        parse_required_indicator, parse_resize, parse_size_or_auto, parse_white_space,
     },
 };
 
@@ -50,6 +51,31 @@ fn cache() -> MutexGuard<'static, HashMap<&'static str, (std::time::Duration, VE
     CACHE.lock().unwrap_or_else(|guard| guard.into_inner())
 }
 
+/// Отмечен ли уже факт отката к статическому дереву (однократная диагностика).
+#[cfg(feature = "runtime-templates")]
+static FALLBACK_LOGGED: AtomicBool = AtomicBool::new(false);
+
+/// Записывает однократный лог о том, что runtime-шаблон не разобрался и
+/// используется статическое дерево из бинарника.
+#[cfg(feature = "runtime-templates")]
+fn log_fallback_once() {
+    if FALLBACK_LOGGED
+        .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+        .is_ok()
+    {
+        eprintln!("light: runtime template failed to parse — falling back to static VDOM");
+    }
+}
+
+/// Логирует ошибку разбора конкретного атрибута элемента (для `eprintln!` —
+/// без `?`, чтобы не требовать `Option<!>` — нестабильный тип).
+fn parse_fail(element: &str, attr_name: &str, attr_value: &str) {
+    eprintln!(
+        "light: runtime parse failed at {:?} (attr {:?}={:?})",
+        element, attr_name, attr_value
+    );
+}
+
 /// Читает HTML-шаблон с диска и разбирает его в [`VElement`], используя mtime-кэш.
 ///
 /// `path` — `'static` путь к файлу (генерируется макросом); `fallback` — текст
@@ -69,28 +95,48 @@ pub fn render_dynamic<C: Component + ?Sized>(
 ) -> Option<VElement> {
     #[cfg(feature = "runtime-templates")]
     {
-        let Ok(metadata) = std::fs::metadata(path) else {
-            return parse_template(fallback, component);
+        let result = match std::fs::metadata(path) {
+            Ok(metadata) => {
+                let mtime = metadata
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok());
+                match mtime {
+                    Some(mtime) => {
+                        let mut cache = cache();
+                        if let Some((cached_mtime, cached)) = cache.get(path)
+                            && *cached_mtime == mtime
+                        {
+                            return Some(cached.clone());
+                        }
+                        match std::fs::read_to_string(path) {
+                            Ok(html) => match parse_template(&html, component) {
+                                Some(element) => {
+                                    cache.insert(path, (mtime, element.clone()));
+                                    Some(element)
+                                }
+                                None => {
+                                    log_fallback_once();
+                                    // Fallback: встроенный в бинарник шаблон.
+                                    parse_template(fallback, component)
+                                }
+                            },
+                            Err(error) => {
+                                eprintln!("light: failed to read template {path:?}: {error}");
+                                log_fallback_once();
+                                parse_template(fallback, component)
+                            }
+                        }
+                    }
+                    None => parse_template(fallback, component),
+                }
+            }
+            Err(_) => parse_template(fallback, component),
         };
-        let Some(mtime) = metadata
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
-        else {
-            return parse_template(fallback, component);
-        };
-        let mut cache = cache();
-        if let Some((cached_mtime, cached)) = cache.get(path)
-            && *cached_mtime == mtime
-        {
-            return Some(cached.clone());
+        if result.is_none() {
+            log_fallback_once();
         }
-        let Ok(html) = std::fs::read_to_string(path) else {
-            return parse_template(fallback, component);
-        };
-        let element = parse_template(&html, component)?;
-        cache.insert(path, (mtime, element.clone()));
-        Some(element)
+        result
     }
     #[cfg(not(feature = "runtime-templates"))]
     {
@@ -114,7 +160,14 @@ pub fn render_dynamic<C: Component + ?Sized>(
 ///
 /// Неподдерживаемые конструкции возвращают `None` — без panics.
 pub fn parse_template<C: Component + ?Sized>(html: &str, component: &C) -> Option<VElement> {
-    let nodes = light_fw_html::parse(html).ok()?;
+    let nodes = match light_fw_html::parse(html) {
+        Ok(nodes) => nodes,
+        Err(_) => {
+            let head: String = html.chars().take(80).collect();
+            eprintln!("light: runtime parse failed at <document> (attr html={head:?})");
+            return None;
+        }
+    };
     match nodes.len() {
         0 => Some(VElement::container("", NodeKind::Column, Vec::new())),
         1 => {
@@ -183,6 +236,7 @@ fn build_element<C: Component + ?Sized>(
 ) -> Option<VElement> {
     for attr in &element.attrs {
         if is_unsupported_directive(&attr.name) {
+            parse_fail(&element.name, &attr.name, &attr.value);
             return None;
         }
     }
@@ -192,7 +246,10 @@ fn build_element<C: Component + ?Sized>(
             let node_kind = match direction {
                 None => NodeKind::Column,
                 Some("horizontal") => NodeKind::Row,
-                Some(_) => return None,
+                Some(bad) => {
+                    parse_fail(&element.name, "direction", bad);
+                    return None;
+                }
             };
             (ElementKind::Container(node_kind), None)
         }
@@ -218,7 +275,10 @@ fn build_element<C: Component + ?Sized>(
         "checkbox" => (ElementKind::Checkbox, None),
         "radio" => (ElementKind::Radio, None),
         "select" => (ElementKind::Select, None),
-        _ => return None,
+        _ => {
+            parse_fail(&element.name, "tag", &element.name);
+            return None;
+        }
     };
     let leaf = match &kind {
         ElementKind::Container(node_kind) => {
@@ -230,7 +290,7 @@ fn build_element<C: Component + ?Sized>(
         ElementKind::Radio => build_radio(element, key, component)?,
         ElementKind::Select => build_select(element, key, component)?,
     };
-    let style = build_style(&element.attrs, default_font, component)?;
+    let style = build_style(&element.name, &element.attrs, default_font, component)?;
     let (raw_tag, raw_attrs) = collect_meta(&element.attrs, &element.name);
     let tag = intern_key(&raw_tag);
     let attrs = raw_attrs
@@ -263,14 +323,42 @@ fn build_children<C: Component + ?Sized>(
                 out.push(VElement::leaf(intern_key(&key), NodeKind::Text { content }));
             }
             light_fw_html::Node::Element(element) => {
-                let key = child_key(base, index);
-                let child = build_element(element, &key, None, component)?;
+                let positional = child_key(base, index);
+                // Ключ узла для диспетчеризации: явный `key` (литерал) имеет
+                // приоритет; если его нет, берётся нормализованное имя
+                // обработчика `@click` (без скобок) — так статический код макроса
+                // может дотянуться до него через [`Component::invoke_handler`] и
+                // [`Component::dispatch_by_name`] (встроенные имена `close`/`minimize`
+                // и т. п. резолвятся в базовом хвосте трейта). Иначе — позиционный.
+                let explicit_key = attr_value(&element.attrs, "key")
+                    .map(str::trim)
+                    .filter(|k| !k.is_empty() && !k.starts_with(':'));
+                let click_name = attr_value(&element.attrs, "@click").map(normalize_click);
+                let key = explicit_key
+                    .or(click_name.as_deref().filter(|n| !n.is_empty()))
+                    .unwrap_or(&positional);
+                let child = build_element(element, key, None, component)?;
                 out.push(child);
             }
         }
         index += 1;
     }
     Some(out)
+}
+
+/// Имя обработчика `@click` для диспетчеризации по имени.
+///
+/// Убирает скобки вызова (`"increment()"` → `"increment"`), пробельные
+/// символы вокруг и ведущее `this.` — генерируемый макросом
+/// [`Component::dispatch_by_name`] сопоставляет именно это имя.
+fn normalize_click(handler: &str) -> String {
+    let trimmed = handler.trim();
+    let trimmed = trimmed.strip_prefix("this.").unwrap_or(trimmed);
+    trimmed
+        .strip_suffix("()")
+        .map(str::trim)
+        .unwrap_or(trimmed)
+        .to_owned()
 }
 
 /// Текстовый узел: литеральные сегменты склеиваются, `{{ поле }}` разрешается
@@ -325,7 +413,13 @@ fn build_text_field<C: Component + ?Sized>(
     let disabled = resolve_disabled(&element.attrs, component)?;
     let multiline = attr_value(&element.attrs, "textarea").is_some();
     let resize = match attr_value(&element.attrs, "resize") {
-        Some(r) => parse_resize_value(r)?,
+        Some(r) => {
+            let parsed = parse_resize_value(r);
+            if parsed.is_none() {
+                parse_fail(&element.name, "resize", r);
+            }
+            parsed?
+        }
         None => Resize::default(),
     };
     Some(VElement::leaf(
@@ -465,6 +559,7 @@ fn collect_options(_children: &[light_fw_html::Node]) -> Option<Vec<SelectOption
 /// Строит [`Style`] из атрибутов элемента. `default_font` задаёт размер шрифта
 /// заголовкам `h1`–`h5`, если атрибут `font-size` не задан.
 fn build_style<C: Component + ?Sized>(
+    tag: &str,
     attrs: &[light_fw_html::Attr],
     default_font: Option<f32>,
     _component: &C,
@@ -503,22 +598,51 @@ fn build_style<C: Component + ?Sized>(
     for attr in attrs {
         let name = attr.name.as_str();
         let value = attr.value.as_str();
+        // Логирует `parse_fail` при `None` и прокидывает значение дальше.
+        // Четыре монотипных замыкания — по одному на каждый тип значения
+        // (`f32`, `Size`, `u32`, `i32`), так как Rust не разрешает генерики
+        // в замыкании без явной аннотации, а явная аннотация делает вызов
+        // громоздким (см. замечание о generic-inference trap).
+        let strict = |v: Option<f32>| -> Option<f32> {
+            if v.is_none() {
+                parse_fail(tag, name, value);
+            }
+            v
+        };
+        let strict_size = |n: &str, v: &str, s: Option<Size>| -> Option<Size> {
+            if s.is_none() {
+                parse_fail(tag, n, v);
+            }
+            s
+        };
+        let strict_color = |n: &str, v: &str, c: Option<u32>| -> Option<u32> {
+            if c.is_none() {
+                parse_fail(tag, n, v);
+            }
+            c
+        };
+        let strict_i32 = |n: &str, v: &str, i: Option<i32>| -> Option<i32> {
+            if i.is_none() {
+                parse_fail(tag, n, v);
+            }
+            i
+        };
         match name {
-            "width" => width = parse_size(value)?,
-            "height" => height = parse_size(value)?,
-            "min-width" => min_width = Some(parse_size(value)?),
-            "max-width" => max_width = Some(parse_size(value)?),
-            "min-height" => min_height = Some(parse_size(value)?),
-            "max-height" => max_height = Some(parse_size(value)?),
-            "flex-grow" => flex_grow = parse_flex(value)?,
-            "flex-shrink" => flex_shrink = parse_flex(value)?,
+            "width" => width = strict_size(name, value, parse_size(value))?,
+            "height" => height = strict_size(name, value, parse_size(value))?,
+            "min-width" => min_width = strict_size(name, value, parse_size(value)),
+            "max-width" => max_width = strict_size(name, value, parse_size(value)),
+            "min-height" => min_height = strict_size(name, value, parse_size(value)),
+            "max-height" => max_height = strict_size(name, value, parse_size(value)),
+            "flex-grow" => flex_grow = strict(parse_flex(value))?,
+            "flex-shrink" => flex_shrink = strict(parse_flex(value))?,
             "flex" => {
                 let parts: Vec<&str> = value.split_whitespace().collect();
                 if !parts.is_empty() {
-                    flex_grow = parse_flex(parts[0])?;
+                    flex_grow = strict(parse_flex(parts[0]))?;
                 }
                 if parts.len() > 1 {
-                    flex_shrink = parse_flex(parts[1])?;
+                    flex_shrink = strict(parse_flex(parts[1]))?;
                 }
             }
             "position" => position = parse_position(value),
@@ -526,30 +650,52 @@ fn build_style<C: Component + ?Sized>(
             "overflow-x" => overflow_x = Some(parse_overflow(value)),
             "overflow-y" => overflow_y = Some(parse_overflow(value)),
             "white-space" => white_space = Some(parse_white_space(value)),
-            "position-x" => align_x = parse_align_x(value),
-            "position-y" => align_y = parse_align_y(value),
+            // `left`/`center`/`right` (и `top`/`center`/`bottom`) принимаются
+            // в любом регистре; любое другое значение не является ошибкой —
+            // родитель выравнивает его через `align-items`.
+            "position-x" => {
+                let t = value.trim().to_ascii_lowercase();
+                align_x = match t.as_str() {
+                    "left" => Align::Start,
+                    "center" => Align::Center,
+                    "right" => Align::End,
+                    _ => Align::Start,
+                }
+            }
+            "position-y" => {
+                let t = value.trim().to_ascii_lowercase();
+                align_y = match t.as_str() {
+                    "top" => Align::Start,
+                    "center" => Align::Center,
+                    "bottom" => Align::End,
+                    _ => Align::Start,
+                }
+            }
             "position-offset-x" => offset_x = parse_offset(value),
             "position-offset-y" => offset_y = parse_offset(value),
             "justify-content" => justify_content = parse_justify(value),
             "align-items" => align_items = parse_align_items(value),
-            "padding" => set_edges_all(&mut padding, parse_px_strict(value)?),
-            "margin" => set_edges_all(&mut margin, parse_px_strict(value)?),
+            "padding" => set_edges_all(&mut padding, strict(parse_px_strict(value))?),
+            "margin" => set_edges_all(&mut margin, strict(parse_px_strict(value))?),
             "padding-top" | "padding-right" | "padding-bottom" | "padding-left" => {
-                set_edge_side(&mut padding, name, parse_px_strict(value)?)
+                set_edge_side(&mut padding, name, strict(parse_px_strict(value))?)
             }
             "margin-top" | "margin-right" | "margin-bottom" | "margin-left" => {
-                set_edge_side(&mut margin, name, parse_px_strict(value)?)
+                set_edge_side(&mut margin, name, strict(parse_px_strict(value))?)
             }
-            "border-size" => border_size = parse_px_strict(value)?,
-            "font-size" => font_size = Some(parse_px_strict(value)?),
-            "background" => background = Some(parse_color(value)?),
-            "font-color" => font_color = Some(parse_color(value)?),
-            "border-color" => border_color = Some(parse_color(value)?),
+            "border-size" => border_size = strict(parse_px_strict(value))?,
+            "font-size" => font_size = strict(parse_px_strict(value)),
+            "background" => background = strict_color(name, value, parse_color(value)),
+            "font-color" => font_color = strict_color(name, value, parse_color(value)),
+            "border-color" => border_color = strict_color(name, value, parse_color(value)),
             "visible" => visible = !matches!(value, "false" | "0" | "no"),
             "required" => required = !matches!(value, "false" | "0" | "no"),
             "required-indicator" => required_indicator = parse_required_indicator(value),
-            "z" => z = value.trim().parse::<i32>().ok()?,
-            other if other.starts_with(':') => return None,
+            "z" => z = strict_i32(name, value, value.trim().parse::<i32>().ok()).unwrap_or(0),
+            other if other.starts_with(':') => {
+                parse_fail(tag, other, value);
+                return None;
+            }
             _ => {}
         }
     }

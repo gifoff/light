@@ -60,13 +60,15 @@ impl Dashboard {
         self.set_tasks_open(false);
     }
 
-    fn open_tasks_view(&self) {
+    fn open_tasks_view(&self) -> bool {
         self.set_tasks_open(true);
+        true
     }
 
-    fn back_to_overview(&self) {
+    fn back_to_overview(&self) -> bool {
         self.set_tasks_open(false);
         self.set_active_tab("overview".to_owned());
+        true
     }
 
     fn all_tasks(&self) -> Vec<String> {
@@ -138,9 +140,9 @@ impl Dashboard {
         self.progress_width(88)
     }
 
-    fn pick_avatar(&self) {
+    fn pick_avatar(&self) -> bool {
         let Some(path) = light::file_dialog::pick_image_file() else {
-            return;
+            return true;
         };
         match load_avatar(&path) {
             Ok(image) => {
@@ -149,17 +151,20 @@ impl Dashboard {
             }
             Err(error) => self.set_avatar_error(error),
         }
+        true
     }
 
-    fn open_profile_modal(&self) {
+    fn open_profile_modal(&self) -> bool {
         self.set_profile_draft(self.profile_name());
         self.set_avatar_error(String::new());
         self.set_profile_modal_open(true);
+        true
     }
 
-    fn close_profile_modal(&self) {
+    fn close_profile_modal(&self) -> bool {
         self.set_profile_modal_open(false);
         self.set_profile_draft(String::new());
+        true
     }
 
     fn profile_name_invalid(&self) -> bool {
@@ -174,23 +179,26 @@ impl Dashboard {
         !self.avatar_error().is_empty()
     }
 
-    fn save_profile(&self) {
+    fn save_profile(&self) -> bool {
         let name = self.profile_draft().trim().to_owned();
         if !is_valid_name(&name) {
-            return;
+            return true;
         }
         self.set_profile_name(name);
         self.set_profile_modal_open(false);
         self.set_profile_draft(String::new());
+        true
     }
 
-    fn open_task_modal(&self) {
+    fn open_task_modal(&self) -> bool {
         self.set_modal_open(true);
+        true
     }
 
-    fn close_task_modal(&self) {
+    fn close_task_modal(&self) -> bool {
         self.set_modal_open(false);
         self.set_new_task(String::new());
+        true
     }
 
     fn can_create_task(&self) -> bool {
@@ -201,10 +209,10 @@ impl Dashboard {
         !self.can_create_task()
     }
 
-    fn create_task(&self) {
+    fn create_task(&self) -> bool {
         let title = self.new_task().trim().to_owned();
         if title.is_empty() {
-            return;
+            return true;
         }
         let mut tasks = self.tasks();
         tasks.insert(0, title);
@@ -212,6 +220,7 @@ impl Dashboard {
         self.set_open_tasks(self.open_tasks() + 1);
         self.set_new_task(String::new());
         self.set_modal_open(false);
+        true
     }
 
     fn bar_height(&self, index: usize) -> String {

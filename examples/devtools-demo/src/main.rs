@@ -16,8 +16,9 @@ struct App {
 }
 
 impl App {
-    fn increment(&self) {
+    fn increment(&self) -> bool {
         self.set_count(self.count() + 1);
+        true
     }
 
     fn status(&self) -> String {
@@ -26,6 +27,20 @@ impl App {
         } else {
             format!("Счётчик: {}", self.count())
         }
+    }
+
+    fn minimize(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.minimize();
+        }
+        true
+    }
+
+    fn close(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.close();
+        }
+        true
     }
 }
 

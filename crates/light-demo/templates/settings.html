@@ -2,7 +2,7 @@
     <titlebar width='100%' background='#333333DD' border-color='#D5DAE3'>
         <div font-size='18' font-color='#FFFFFF'>Настройки</div>
         <div position-x="right" direction='horizontal'>
-            <button @click='Dom::window().map(|window| window.close())'>X</button>
+            <button @click='close'>X</button>
         </div>
     </titlebar>
     <div direction='vertical' padding='16'>
@@ -11,6 +11,6 @@
         <text v-model="theme" placeholder="Тема" />
         <div>Тема: {{ theme }}</div>
         <div>Общий счётчик: {{ shared.count }}</div>
-        <button @click='Dom::window().map(|window| window.close())'>Закрыть</button>
+        <button @click='close'>Закрыть</button>
     </div>
 </window>

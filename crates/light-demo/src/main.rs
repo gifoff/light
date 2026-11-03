@@ -49,9 +49,17 @@ struct Dialog {
 }
 
 impl Dialog {
-    fn bump_shared(&self) {
+    fn bump_shared(&self) -> bool {
         let shared = self.shared();
         shared.set_count(shared.count() + 1);
+        true
+    }
+
+    fn close(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.close();
+        }
+        true
     }
 }
 
@@ -64,9 +72,24 @@ struct Inspector {
 }
 
 impl Inspector {
-    fn bump_shared(&self) {
+    fn bump_shared(&self) -> bool {
         let shared = self.shared();
         shared.set_count(shared.count() + 1);
+        true
+    }
+
+    fn minimize(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.minimize();
+        }
+        true
+    }
+
+    fn close(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.close();
+        }
+        true
     }
 }
 
@@ -79,6 +102,15 @@ struct Settings {
     theme: String,
     #[default(shared())]
     shared: Shared,
+}
+
+impl Settings {
+    fn close(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.close();
+        }
+        true
+    }
 }
 
 /// Корневой компонент: шаблон `templates/main.html` включает секции
@@ -112,22 +144,68 @@ struct App {
 }
 
 impl App {
-    fn increment(&self) {
+    fn increment(&self) -> bool {
         let counter = self.counter();
         counter.set_count(counter.count() + 1);
+        true
     }
 
-    fn reset(&self) {
+    fn reset(&self) -> bool {
         self.counter().set_count(0);
+        true
     }
 
-    fn toggle_greeting(&self) {
+    fn toggle_greeting(&self) -> bool {
         self.set_show_greeting(!self.show_greeting());
+        true
     }
 
-    fn bump_shared(&self) {
+    fn bump_shared(&self) -> bool {
         let shared = self.shared();
         shared.set_count(shared.count() + 1);
+        true
+    }
+
+    fn minimize(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.minimize();
+        }
+        true
+    }
+
+    fn toggle_maximize(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.toggle_maximize();
+        }
+        true
+    }
+
+    fn close(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.close();
+        }
+        true
+    }
+
+    fn open_modal(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.open_modal();
+        }
+        true
+    }
+
+    fn open_window(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.open_window();
+        }
+        true
+    }
+
+    fn open_settings(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.open("settings");
+        }
+        true
     }
 }
 

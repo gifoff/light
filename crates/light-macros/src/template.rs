@@ -266,24 +266,67 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
-    // Runtime-диспетчеризация: ветви `dispatch_by_name` для @click-обработчиков.
-    // Используем последовательные `if` вместо `match`, потому что ключи могут быть
-    // произвольными выражениями (`intern_key(format!(…))`), а не строковыми литералами.
-    let dispatch_arms = click_handlers.iter().map(|(key, call)| {
-        quote! {
-            if __key == #key { #call; return true; }
-        }
-    });
-    let dispatch_by_name_method = if click_handlers.is_empty() {
+    // Runtime-диспетчеризация: ветви `dispatch` (по ключу узла из статического
+    // дерева) и `invoke_handler`. Ключи могут быть произвольными выражениями
+    // (`intern_key(format!(…))`), поэтому в `dispatch` — `if`-цепочка.
+    //
+    // `invoke_handler` получает две ветки на каждый `@click`: по ИМЕНИ
+    // обработчика (так runtime-дерево дотянется при отсутствии явного `key`) и
+    // по КЛЮЧУ узла (явный `key="inc_btn"` — runtime key, ≠ имени). Дедупликация
+    // не нужна: два узла с одним и тем же именем дают одну рабочую ветку.
+    // Runtime-дерево использует имя обработчика (без скобок) как ключ узла,
+    // поэтому `invoke_handler` дублирует каждую ветку `@click` по имени и по
+    // ключу узла. Ключи могут быть произвольными выражениями
+    // (`intern_key(format!(…))`), поэтому в `dispatch` — `if`-цепочка
+    // (собранная в `arms` выше, в `push_events`).
+    // Ветки `invoke_handler`: две формы на каждый `@click`.
+    //   1. Имя обработчика (базовый, без скобок) — точный литерал:
+    //      runtime-дерево использует имя обработчика как ключ узла, если
+    //      явный `key` не задан (`@click="increment"` → runtime key "increment").
+    //   2. Ключ узла (token `&'static str`) — сравнение с аргументом:
+    //      покрывает случай явного `key="inc_btn"`, когда статический
+    //      `dispatch` уже обработал клик, а runtime-дерево всё равно хочет
+    //      диспетчеризовать по своему ключу (DevTools).
+    //
+    // `#call` возвращается из `handler_call` в двух формах:
+    //   - аргументные  → полновесный вызов  `self.open('settings')`;
+    //   - безаргументные → путь              `self.increment` (вызов ниже).
+    // Хвост ветки `match` обязан вернуть `bool`, поэтому для безаргументных
+    // обрабатываем `{ #call() }` (явный вызов) и для аргументных просто `#call`.
+    // Дедупликация по имени не нужна: два узла с одним именем дают одну ветку.
+    let invoke_arms: Vec<TokenStream> = click_handlers
+        .iter()
+        .flat_map(|(key, (call, name))| {
+            let name_lit = LitStr::new(name, Span::call_site());
+            // Простая эвристика: наличие `(` в token stream означает, что
+            // `handler_call` уже вернул полный вызов (с аргументами).
+            let is_full_call = call.to_string().contains('(');
+            let body: TokenStream = if is_full_call {
+                // Уже полный вызов: `#call` — это, например, `self.open('x')`.
+                quote! { #call }
+            } else {
+                // Путь: добавляем явный вызов.
+                quote! { #call() }
+            };
+            vec![
+                quote! {
+                    #name_lit => { #body }
+                },
+                quote! {
+                    _ if #key == __handler => { #body }
+                },
+            ]
+        })
+        .collect();
+    let invoke_handler_method = if click_handlers.is_empty() {
         quote! {}
     } else {
         quote! {
-            fn dispatch_by_name(&self, __key: &str, __event: ::light::vdom::Event) -> bool {
-                if !matches!(__event, ::light::vdom::Event::Click) {
-                    return false;
+            fn invoke_handler(&self, __handler: &str, __event: ::light::vdom::Event) -> bool {
+                match __handler {
+                    #(#invoke_arms)*
+                    _ => false,
                 }
-                #(#dispatch_arms)*
-                false
             }
         }
     };
@@ -308,9 +351,18 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     };
 
     // Пользовательские проверки полей (`:validator`) и форм (`@validate`).
-    let field_validator_arms = field_validators
-        .iter()
-        .map(|(key, call)| quote!(#key => #call,));
+    let field_validator_arms = field_validators.iter().map(|(key, call)| {
+        // `:validator` всегда передаёт `__value: &str` — явный аргумент,
+        // поэтому `handler_call` возвращает полновесный вызов. Хвост ветки
+        // обязан вернуть `Result<(), String>` (возврат метода), поэтому
+        // хвост без точки с запятой.
+        let body = if call.to_string().contains('(') {
+            quote! { #call }
+        } else {
+            quote! { #call(__value) }
+        };
+        quote!(#key => #body,)
+    });
     let validate_field_method = quote! {
         fn validate_field(
             &self,
@@ -324,8 +376,17 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
     let form_validator_arms = form_validators.iter().map(|(key, call)| {
+        // `@validate` не передаёт аргументы: если в шаблоне метод указан
+        // без скобок (`@validate="collect_errors"`), `handler_call`
+        // возвращает путь. Чтобы хвост ветки имел тип `Option<Vec<_>>`,
+        // вызов добавляется явно при отсутствии скобок.
+        let body: TokenStream = if call.to_string().contains('(') {
+            quote! { #call }
+        } else {
+            quote! { #call() }
+        };
         quote! {
-            #key => ::std::option::Option::Some(match #call {
+            #key => ::std::option::Option::Some(match #body {
                 ::std::result::Result::Ok(()) => ::std::vec::Vec::new(),
                 ::std::result::Result::Err(__errors) => __errors,
             }),
@@ -424,12 +485,12 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 use ::light::dom::Dom;
                 #[allow(unused_imports)]
                 use ::light::vdom::{VNode as _, VWindow as _};
+                let mut __handled = false;
                 #(#arms)*
-                if ::light::FEATURE_RUNTIME_TEMPLATES {
-                    self.dispatch_by_name(__key, __event)
-                } else {
-                    false
-                }
+                !__handled
+                    || (
+                        ::light::FEATURE_RUNTIME_TEMPLATES && self.dispatch_by_name(__key, __event)
+                    )
             }
 
             #modal_method
@@ -440,7 +501,7 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             #inspect_state_method
             #inject_state_method
             #eval_field_method
-            #dispatch_by_name_method
+            #invoke_handler_method
         }
     })
 }
@@ -583,7 +644,10 @@ struct Generator {
     form_validators: Vec<(String, TokenStream)>,
     /// Обработчики `@click` для runtime-диспетчеризации: `(ключ узла как токен,
     /// вызов метода)`. Токен ключа — выражение типа `&'static str`.
-    click_handlers: Vec<(TokenStream, TokenStream)>,
+    /// Ветви `@click` для runtime-диспетчеризации: (ключ узла из статического
+    /// дерева, (вызов метода, имя обработчика без скобок)). Имя используется в
+    /// `invoke_handler`, где runtime-дерево дотягивается до обработчика по имени.
+    click_handlers: Vec<(TokenStream, (TokenStream, String))>,
 }
 
 /// Ключ узла: известный на этапе компиляции либо вычисляемый во время работы
@@ -1038,19 +1102,32 @@ impl Generator {
         let branches = self.event_branches(element)?;
         if !branches.is_empty() {
             self.arms.push(quote! {
-                if __key == #key { #(#branches)* }
+                if __key == #key {
+                    #(#branches)*
+                    __handled = true;
+                }
             });
         }
-        // Запоминаем @click для runtime-диспетчеризации (фича `runtime-templates`).
+        // Запоминаем @click для runtime-диспетчеризации (фича `runtime-templates`):
+        // имя обработчика (без скобок вызова) сопоставляется в `invoke_handler`.
+        // Ключи не дедуплицируются: у двух узлов с одним и тем же именем — один
+        // рабочий обработчик, что нужно для runtime-дерева, где имя = ключ узла.
         if let Some(handler) = attr_value(&element.attrs, "@click")
             && is_plain_click_handler(handler)
         {
+            let name = normalize_click_name(handler);
             let call = self.handler_call(handler, None)?;
-            self.click_handlers.push((key.clone(), call));
+            self.click_handlers.push((key.clone(), (call, name)));
         }
         Ok(())
     }
 
+    /// Имя обработчика `@click` для runtime-диспетчеризации по имени.
+    ///
+    /// Убирает скобки вызова (`"increment()"` → `"increment"`), пробельные
+    /// символы вокруг и ведущее `this.` — в runtime-дереве это имя становится
+    /// ключом узла, а статический код макроса дотягивается до него через
+    /// [`Component::invoke_handler`](crate::component::Component).
     /// Ветви `if`-проверок для всех событийных директив элемента.
     fn event_branches(&self, element: &Element) -> syn::Result<Vec<TokenStream>> {
         let mut branches = Vec::new();
@@ -1064,9 +1141,12 @@ impl Generator {
             if let Some(handler) = attr_value(&element.attrs, attr_name) {
                 let call = self.handler_call(handler, None)?;
                 let variant = Ident::new(variant, Span::call_site());
+                // `#call` — либо полновесный вызов (для аргументных), либо путь
+                // (`self.increment`) для безаргументных: вызов добавляется явно.
                 branches.push(quote! {
                     if ::std::matches!(&__event, ::light::vdom::Event::#variant) {
-                        #call; return true;
+                        #call();
+                        return true;
                     }
                 });
             }
@@ -1075,9 +1155,11 @@ impl Generator {
             if let Some(handler) = attr_value(&element.attrs, attr_name) {
                 let call = self.handler_call(handler, Some(quote!(*__button)))?;
                 let variant = Ident::new(variant, Span::call_site());
+                // `#call` — уже полновесный вызов (с явным аргументом).
                 branches.push(quote! {
                     if let ::light::vdom::Event::#variant(__button) = &__event {
-                        #call; return true;
+                        #call;
+                        return true;
                     }
                 });
             }
@@ -1086,7 +1168,8 @@ impl Generator {
             let call = self.handler_call(handler, Some(quote!(*__x, *__y)))?;
             branches.push(quote! {
                 if let ::light::vdom::Event::Mousemove { x: __x, y: __y } = &__event {
-                    #call; return true;
+                    #call;
+                    return true;
                 }
             });
         }
@@ -1096,7 +1179,8 @@ impl Generator {
                 let variant = Ident::new(variant, Span::call_site());
                 branches.push(quote! {
                     if let ::light::vdom::Event::#variant(__info) = &__event {
-                        #call; return true;
+                        #call;
+                        return true;
                     }
                 });
             }
@@ -1135,6 +1219,12 @@ impl Generator {
             }
             None => (call, Vec::new()),
         };
+        // Был ли явный вызов в шаблоне: `@click="open('x')"` — да,
+        // `@click="increment"` или `@click="increment()"` — нет. Для явного
+        // вызова генерируется `#expr(#args)` (или `#expr` при пустых
+        // скобках), для имени метода — `#expr` (метод-ссылка, вызов делает
+        // runtime).
+        let is_explicit_call = call.contains('(');
         let path = path.strip_prefix("this.").unwrap_or(path).trim();
         let segments = split_path(path)?;
         let last = segments.len().saturating_sub(1);
@@ -1146,15 +1236,16 @@ impl Generator {
         let mut expr = quote!(self);
         for (position, segment) in segments.iter().enumerate() {
             let ident = to_ident(segment)?;
-            if args.is_some() && position == last {
+            if position == last {
                 expr = quote!(#expr.#ident);
             } else {
                 expr = quote!(#expr.#ident());
             }
         }
-        Ok(match args {
-            Some(args) => quote!(#expr(#args)),
-            None => expr,
+        Ok(match (is_explicit_call, args) {
+            (true, Some(args)) => quote!(#expr(#args)),
+            (true, None) => expr,
+            (false, _) => expr,
         })
     }
 
@@ -2373,10 +2464,29 @@ fn is_plain_ident(text: &str) -> bool {
 
 /// Обработчик `@click`, подходящий для runtime-диспетчеризации: простой
 /// идентификатор (без аргументов, без `::`, без пробелов), опционально с
-/// префиксом `this.`. Сложные выражения не диспетчеризуются во runtime.
+/// префиксом `this.` и/или пустыми скобками вызова — `increment`,
+/// `this.increment()` и т. п. Сложные выражения не диспетчеризуются во runtime.
 fn is_plain_click_handler(handler: &str) -> bool {
-    let trimmed = handler.trim().trim_start_matches("this.");
-    is_plain_ident(trimmed)
+    let trimmed = handler.trim();
+    let body = trimmed.strip_prefix("this.").unwrap_or(trimmed);
+    let name = body.strip_suffix("()").unwrap_or(body);
+    is_plain_ident(name.trim())
+}
+
+/// Имя обработчика `@click` для runtime-диспетчеризации по имени.
+///
+/// Убирает скобки вызова (`"increment()"` → `"increment"`), пробельные
+/// символы вокруг и ведущее `this.` — в runtime-дереве это имя становится
+/// ключом узла, а статический код макроса дотягивается до него через
+/// [`Component::invoke_handler`](crate::component::Component).
+fn normalize_click_name(handler: &str) -> String {
+    let trimmed = handler.trim();
+    let trimmed = trimmed.strip_prefix("this.").unwrap_or(trimmed);
+    trimmed
+        .strip_suffix("()")
+        .map(str::trim)
+        .unwrap_or(trimmed)
+        .to_owned()
 }
 
 /// Является ли тип поля структуры примитивным, который всегда реализует

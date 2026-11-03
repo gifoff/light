@@ -435,7 +435,9 @@ fn simple_click_handler_accepted() {
         fn render(&self) -> VElement {
             VElement::container("", NodeKind::Column, Vec::new())
         }
-        fn dispatch_by_name(&self, handler: &str, _event: Event) -> bool {
+        // Макрос не подключён: `invoke_handler` перехватывает имя, не попавшее
+        // в стандартные (close/minimize/…).
+        fn invoke_handler(&self, handler: &str, _event: Event) -> bool {
             handler == "increment"
         }
         fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -450,8 +452,11 @@ fn simple_click_handler_accepted() {
     )
     .expect("parse");
     assert_eq!(el.children.len(), 1);
-    // Клик обрабатывается через dispatch_by_name.
+    // Клик диспетчеризуется по имени обработчика через dispatch_by_name
+    // (базовый хвост) → invoke_handler.
     assert!(c.dispatch_by_name("increment", Event::Click));
+    // Чужое имя — нет.
+    assert!(!c.dispatch_by_name("other", Event::Click));
 }
 
 /// Неизвестный тег → None.

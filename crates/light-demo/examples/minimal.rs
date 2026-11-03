@@ -11,6 +11,13 @@ struct Minimal {
     name: String,
 }
 
+impl Minimal {
+    fn click(&self) -> bool {
+        self.set_name("Привет, мир!".to_owned());
+        true
+    }
+}
+
 fn main() -> light::Result<()> {
     light::run(Minimal::new())
 }

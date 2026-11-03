@@ -42,9 +42,17 @@ impl A11yForm {
     }
 
     /// Вызывается только после успешной проверки `required` и `:validator`.
-    fn submit(&self) {
+    fn submit(&self) -> bool {
         self.set_message(format!("Спасибо, {}! Форма отправлена.", self.name()));
         self.set_accent("#2E7D32".to_owned());
+        true
+    }
+
+    fn close(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.close();
+        }
+        true
     }
 }
 

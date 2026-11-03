@@ -9,20 +9,22 @@ struct TodoApp {
 }
 
 impl TodoApp {
-    fn add(&self) {
+    fn add(&self) -> bool {
         let draft = self.draft();
         let task = draft.trim();
         if task.is_empty() {
-            return;
+            return false;
         }
         let mut items = self.items();
         items.push(task.to_owned());
         self.set_items(items);
         self.set_draft(String::new());
+        true
     }
 
-    fn clear(&self) {
+    fn clear(&self) -> bool {
         self.set_items(Vec::new());
+        true
     }
 
     fn is_empty(&self) -> bool {

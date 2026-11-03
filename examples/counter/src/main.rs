@@ -7,16 +7,19 @@ struct Counter {
 }
 
 impl Counter {
-    fn increment(&self) {
+    fn increment(&self) -> bool {
         self.set_count(self.count() + 1);
+        true
     }
 
-    fn decrement(&self) {
+    fn decrement(&self) -> bool {
         self.set_count(self.count() - 1);
+        true
     }
 
-    fn reset(&self) {
+    fn reset(&self) -> bool {
         self.set_count(0);
+        true
     }
 
     fn is_zero(&self) -> bool {

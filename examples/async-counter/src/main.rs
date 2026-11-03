@@ -60,9 +60,9 @@ struct App {
 }
 
 impl App {
-    fn start_async(&self) {
+    fn start_async(&self) -> bool {
         if self.loading() {
-            return;
+            return true;
         }
 
         self.set_loading(true);
@@ -90,14 +90,16 @@ impl App {
 
         // Флаг отмены, полученный от задачи, доживёт до отмены.
         self.set_cancel_flag(Some(CancelFlag(handle.cancel_flag())));
+        true
     }
 
-    fn cancel_async(&self) {
+    fn cancel_async(&self) -> bool {
         if let Some(flag) = self.cancel_flag.get() {
             flag.0.store(true, Ordering::SeqCst);
         }
         self.set_cancel_flag(None);
         self.set_loading(false);
+        true
     }
 }
 

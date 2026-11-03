@@ -2,10 +2,10 @@
     <titlebar @dblclick="Dom::window().map(|window| window.toggle_maximize())" width='100%' background='#333333DD' border-color='#D5DAE3'>
         <div font-size='24' font-color='#FFFFFF'>Light Demo</div>
         <div position-x="right" direction='horizontal'>
-            <button @click='Dom::window().map(|window| window.minimize())'>_</button>
-            <button @click='Dom::window().map(|window| window.toggle_maximize())' v-if='!is_maximized'>[ ]</button>
-            <button @click='Dom::window().map(|window| window.toggle_maximize())' v-if='is_maximized'>[X]</button>
-            <button @click='Dom::window().map(|window| window.close())'>X</button>
+            <button @click='minimize'>_</button>
+            <button @click='toggle_maximize' v-if='!is_maximized'>[ ]</button>
+            <button @click='toggle_maximize' v-if='is_maximized'>[X]</button>
+            <button @click='close'>X</button>
         </div>
     </titlebar>
     <div direction='vertical' padding='12'>

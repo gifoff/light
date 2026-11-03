@@ -18,53 +18,74 @@
 //!
 //! ## Пример
 //!
-//! ```no_run
-//! # extern crate light_fw_core as light;
-//! use light::prelude::*;
+//! Компонент описывается структурой с реактивными полями и атрибутом
+//! `#[template("путь.html")]`, который компилирует HTML-шаблон в реализацию
+//! [`Component`] на этапе сборки. Шаблон хранится рядом с исходниками
+//! (например, `templates/counter.html`) и может содержать директивы:
 //!
-//! #[template("templates/doc_example.html")]
+//! * `{{ поле }}` — интерполяция значения;
+//! * `@click="метод"` — обработчик клика (в т.ч. `close()`, `minimize()`,
+//!   `toggle_maximize()`, `open_modal()` для операций с окном; имена методов
+//!   без скобок поддерживаются: `@click="increment"`);
+//! * `v-model="поле"` — связывание значения текстового поля с полем
+//!   структуры;
+//! * `:disabled="свойство"`, `:attr="значение"` — динамические атрибуты;
+//! * `v-if="условие"` — условный рендер;
+//! * `key="идентификатор"` — ключ узла для runtime-дерева (без него ключ
+//!   совпадает с именем обработчика или порядковым номером позиции);
+//! * `position-x="left|center|right"`, `position-y="top|center|bottom"` —
+//!   выравнивание; незнакомые значения безопасно фоллбэктятся в выравнивание
+//!   по началу (с диагностической строкой `light: runtime parse failed at …`).
+//!
+//! Пример компонента (шаблон `templates/counter.html`):
+//!
+//! ```rust
+//! # extern crate light_fw_core as light;
+//! # use light::prelude::*;
+//!
+//! #[template("templates/counter.html")]
 //! #[proxy]
-//! struct App {
+//! struct Counter {
 //!     title: String,
 //!     count: i64,
-//!     name: String,
-//!     show_greeting: bool,
 //! }
 //!
-//! impl App {
-//!     fn increment(&self) {
+//! impl Counter {
+//!     fn increment(&self) -> bool {
 //!         self.set_count(self.count() + 1);
+//!         true
+//!     }
+//!
+//!     fn reset(&self) -> bool {
+//!         self.set_count(0);
+//!         true
 //!     }
 //!
 //!     fn is_zero(&self) -> bool {
 //!         self.count() == 0
 //!     }
-//!
-//!     fn reset(&self) {
-//!         self.set_count(0);
-//!     }
-//!
-//!     fn toggle_greeting(&self) {
-//!         self.set_show_greeting(!self.show_greeting());
-//!     }
 //! }
+//! ```
 //!
+//! Запуск окна:
+//!
+//! ```rust,no_run
+//! # extern crate light_fw_core as light;
+//! # use light::prelude::*;
+//! # #[template("templates/counter.html")]
+//! # #[proxy]
+//! # struct Counter { title: String, count: i64 }
+//! # impl Counter {
+//! #     fn increment(&self) -> bool { self.set_count(self.count() + 1); true }
+//! #     fn reset(&self) -> bool { self.set_count(0); true }
+//! #     fn is_zero(&self) -> bool { self.count() == 0 }
+//! # }
 //! # #[cfg(not(feature = "window"))]
 //! # fn main() {}
 //! # #[cfg(feature = "window")]
 //! fn main() -> light::Result<()> {
-//!     light::run(App::new())
+//!     light::run(Counter::new())
 //! }
-//! ```
-//!
-//! Шаблон `templates/doc_example.html`:
-//!
-//! ```html
-//! <div>
-//!     <text>{{ title }}</text>
-//!     <button @click="increment" :disabled="is_zero">+1 ({{ count }})</button>
-//!     <button @click="reset">Сброс</button>
-//! </div>
 //! ```
 //!
 //! ## Инструменты разработки

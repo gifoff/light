@@ -88,25 +88,27 @@ struct Main {
 impl Main {
     /// Увеличение счётчика (вызывается из асинхронной задачи).
     #[allow(dead_code)]
-    pub fn increment(&self) {
+    pub fn increment(&self) -> bool {
         self.set_count(self.count.get() + 1);
+        true
     }
 
     /// Открывает второе главное окно ([`Second`]) через
     /// `WindowCommand::OpenWindow` (использует `Component::window_factory`).
-    pub fn open_second(&self) {
+    pub fn open_second(&self) -> bool {
         request(WindowCommand::OpenWindow);
+        true
     }
 
     /// Запуск асинхронной задачи: 30 итераций × 100 мс (≈ 3 с).
     /// Счётчик увеличивается ровно на 1 после завершения цикла.
     /// Все обновления идут только в это окно через `post_update_to`
     /// с токеном текущего окна.
-    pub fn start_async(&self) {
+    pub fn start_async(&self) -> bool {
         // Если уже есть активная задача — отменяем её и не запускаем новую.
         if let Some(existing) = self.cancel_flag.get().clone() {
             existing.set_cancel(true);
-            return;
+            return true;
         }
 
         // Создаём флаг отмены и сохраняем его в компонент.
@@ -119,7 +121,7 @@ impl Main {
             Some(t) => t,
             None => {
                 eprintln!("async-runtime: current_window_token() == None in Main::start_async");
-                return;
+                return true;
             }
         };
 
@@ -148,6 +150,7 @@ impl Main {
                 m.set_cancel_flag(None);
             });
         });
+        true
     }
 
     /// Загрузка: есть ли активный асинхронный процесс.
@@ -176,10 +179,11 @@ impl Main {
 
     /// Отмена текущей асинхронной задачи.
     #[allow(dead_code)]
-    pub fn cancel_async(&self) {
+    pub fn cancel_async(&self) -> bool {
         if let Some(flag) = self.cancel_flag.get().clone() {
             flag.set_cancel(true);
         }
+        true
     }
 }
 
@@ -210,8 +214,9 @@ struct Second {
 impl Second {
     /// Увеличение счётчика по кнопке.
     #[allow(dead_code)]
-    pub fn increment(&self) {
+    pub fn increment(&self) -> bool {
         self.set_count(self.count.get() + 1);
+        true
     }
 
     /// Запуск асинхронной задачи: 30 итераций × 100 мс (≈ 3 с).
@@ -219,11 +224,11 @@ impl Second {
     /// Все обновления идут только в это окно через `post_update_to`
     /// с токеном текущего окна.
     #[allow(dead_code)]
-    pub fn start_async(&self) {
+    pub fn start_async(&self) -> bool {
         // Если уже есть активная задача — отменяем её и не запускаем новую.
         if let Some(existing) = self.cancel_flag.get().clone() {
             existing.set_cancel(true);
-            return;
+            return true;
         }
 
         // Создаём флаг отмены и сохраняем его в компонент.
@@ -236,7 +241,7 @@ impl Second {
             Some(t) => t,
             None => {
                 eprintln!("async-runtime: current_window_token() == None in Second::start_async");
-                return;
+                return true;
             }
         };
 
@@ -265,6 +270,7 @@ impl Second {
                 m.set_cancel_flag(None);
             });
         });
+        true
     }
 
     /// Загрузка: есть ли активный асинхронный процесс.
@@ -293,10 +299,11 @@ impl Second {
 
     /// Отмена текущей асинхронной задачи.
     #[allow(dead_code)]
-    pub fn cancel_async(&self) {
+    pub fn cancel_async(&self) -> bool {
         if let Some(flag) = self.cancel_flag.get().clone() {
             flag.set_cancel(true);
         }
+        true
     }
 }
 

@@ -17,12 +17,21 @@ struct A11yDialog {
 }
 
 impl A11yDialog {
-    fn confirm(&self) {
+    fn confirm(&self) -> bool {
         self.set_message("Элемент удалён.".to_owned());
+        true
     }
 
-    fn cancel(&self) {
+    fn cancel(&self) -> bool {
         self.set_message("Удаление отменено.".to_owned());
+        true
+    }
+
+    fn close(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.close();
+        }
+        true
     }
 }
 

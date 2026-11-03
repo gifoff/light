@@ -29,12 +29,14 @@ struct CounterApp {
 }
 
 impl CounterApp {
-    fn increment(&self) {
+    fn increment(&self) -> bool {
         self.set_count(self.count() + 1);
+        true
     }
 
-    fn reset(&self) {
+    fn reset(&self) -> bool {
         self.set_count(0);
+        true
     }
 
     /// Кнопка «+1» блокируется при достижении максимума.
@@ -249,12 +251,14 @@ struct ToggleApp {
 }
 
 impl ToggleApp {
-    fn hide(&self) {
+    fn hide(&self) -> bool {
         self.set_visible(false);
+        true
     }
 
-    fn toggle_lock(&self) {
+    fn toggle_lock(&self) -> bool {
         self.set_locked(!self.locked());
+        true
     }
 }
 
@@ -320,8 +324,9 @@ impl PagesApp {
         self.page() == "about"
     }
 
-    fn show_about(&self) {
+    fn show_about(&self) -> bool {
         self.set_page("about".to_owned());
+        true
     }
 }
 
@@ -498,12 +503,14 @@ struct EventsApp {
 }
 
 impl EventsApp {
-    fn click(&self) {
+    fn click(&self) -> bool {
         self.set_mouse("click".to_owned());
+        true
     }
 
-    fn double_click(&self) {
+    fn double_click(&self) -> bool {
         self.set_mouse("dblclick".to_owned());
+        true
     }
 
     fn down(&self, button: MouseButton) {
@@ -582,6 +589,15 @@ struct ModalParent {
     ready: bool,
 }
 
+impl ModalParent {
+    fn open_modal(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.open_modal();
+        }
+        true
+    }
+}
+
 #[test]
 fn modal_component_is_provided_by_template_arg() {
     let app = ModalParent::new();
@@ -617,8 +633,9 @@ struct VisibleApp {
 }
 
 impl VisibleApp {
-    fn toggle(&self) {
+    fn toggle(&self) -> bool {
         self.set_shown(!self.shown());
+        true
     }
 }
 
@@ -828,6 +845,15 @@ struct WindowParent {
     ready: bool,
 }
 
+impl WindowParent {
+    fn open_window(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.open_window();
+        }
+        true
+    }
+}
+
 #[test]
 fn window_factory_is_provided_by_template_arg() {
     let parent = WindowParent::new();
@@ -855,12 +881,30 @@ struct WindowSettings {
     ready: bool,
 }
 
+impl WindowSettings {
+    fn close(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.close();
+        }
+        true
+    }
+}
+
 /// Родитель из `templates/windows_parent.html` со списком
 /// `windows = [WindowSettings]`.
 #[template("tests/templates/windows_parent.html", windows = [WindowSettings])]
 #[proxy]
 struct WindowsParent {
     ready: bool,
+}
+
+impl WindowsParent {
+    fn open_settings(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.open("settings");
+        }
+        true
+    }
 }
 
 #[test]
@@ -1157,8 +1201,9 @@ fn explicit_key_addresses_dispatch() {
     }
 
     impl KeyApp {
-        fn increment(&self) {
+        fn increment(&self) -> bool {
             self.set_value(self.value() + 1);
+            true
         }
     }
 

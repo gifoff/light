@@ -41,7 +41,7 @@ impl Calculator {
         self.set_display(display);
     }
 
-    fn dot(&self) {
+    fn dot(&self) -> bool {
         if self.waiting() {
             self.set_current_input("0.".to_owned());
             if self.pending().is_empty() {
@@ -50,16 +50,17 @@ impl Calculator {
                 self.set_display(format!("{} 0.", self.display()));
             }
             self.set_waiting(false);
-            return;
+            return true;
         }
         let input = self.current_input();
         if !input.contains('.') {
             self.set_current_input(format!("{input}."));
             self.set_display(format!("{}.", self.display()));
         }
+        true
     }
 
-    fn op(&self, op: &str) {
+    fn op(&self, op: &str) -> bool {
         let current = self.current_value();
         if self.pending().is_empty() {
             self.set_accumulator(current);
@@ -67,7 +68,7 @@ impl Calculator {
             let left = self.accumulator();
             let Some(result) = apply(left, current, &self.pending()) else {
                 self.show_error();
-                return;
+                return true;
             };
             self.set_display(format_number(result));
             self.set_accumulator(result);
@@ -75,17 +76,18 @@ impl Calculator {
         self.set_pending(op.to_owned());
         self.set_waiting(true);
         self.set_display(format!("{} {}", self.display(), op)); // Добавляем оператор в формулу
+        true
     }
 
-    fn equals(&self) {
+    fn equals(&self) -> bool {
         if self.pending().is_empty() {
-            return;
+            return true;
         }
         let current = self.current_value();
         let left = self.accumulator();
         let Some(result) = apply(left, current, &self.pending()) else {
             self.show_error();
-            return;
+            return true;
         };
         let res_str = format_number(result);
         self.set_display(res_str.clone());
@@ -93,14 +95,16 @@ impl Calculator {
         self.set_accumulator(result);
         self.set_pending(String::new());
         self.set_waiting(true);
+        true
     }
 
-    fn clear(&self) {
+    fn clear(&self) -> bool {
         self.set_display("0".to_owned());
         self.set_current_input("0".to_owned());
         self.set_accumulator(0.0);
         self.set_pending(String::new());
         self.set_waiting(false);
+        true
     }
 
     fn current_value(&self) -> f64 {

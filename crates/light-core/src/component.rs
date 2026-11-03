@@ -133,11 +133,43 @@ pub trait Component: Any {
 
     /// Диспетчирует событие по имени обработчика для шаблонов в runtime.
     ///
-    /// Генерируемый макросом код переопределяет его, сопоставляя имён
-    /// нуларгументных обработчиков `@click` (`"increment" => { self.increment();
-    /// true }`). Вызывается из хвоста генерируемого [`dispatch`](Self::dispatch),
-    /// когда позиционный ключ узла не совпал с ни одной статической директивой.
-    fn dispatch_by_name(&self, _handler: &str, _event: Event) -> bool {
+    /// Имя — уже без скобок вызова (runtime-парсер срезает их). Сопоставляются
+    /// встроенные методы окна (`"close"`, `"minimize"`, `"toggle_maximize"`,
+    /// `"open_modal"`); остальные имена пробуются через
+    /// [`Component::invoke_handler`], что позволяет сгенерированному макросом
+    /// коду донести имена пользовательских методов до этой точки.
+    fn dispatch_by_name(&self, handler: &str, event: Event) -> bool {
+        match handler {
+            "close" => {
+                self.close();
+                true
+            }
+            "minimize" => {
+                self.minimize();
+                true
+            }
+            "toggle_maximize" => {
+                self.toggle_maximize();
+                true
+            }
+            "open_modal" => {
+                self.open_modal();
+                true
+            }
+            _ => self.invoke_handler(handler, event),
+        }
+    }
+
+    /// Вызывает пользовательский обработчик `@click` по имени.
+    ///
+    /// По умолчанию — `false` (имя неизвестно). Генерируемый макросом код
+    /// переопределяет его `match`-цепочкой на имена методов компонента,
+    /// найденных в статическом шаблоне. Имя сопоставляется как точный
+    /// литерал (`"increment"`) и как ключ узла (`key="inc_btn"`): runtime-
+    /// дерево использует имя обработчика в качестве ключа, а DevTools может
+    /// отправлять `CLICK <ключ>` для произвольного ключа. Вызывается только
+    /// после промаха встроенных методов.
+    fn invoke_handler(&self, _handler: &str, _event: Event) -> bool {
         false
     }
 
