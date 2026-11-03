@@ -7,6 +7,8 @@ description = "Dashboard example for Light with images, tabs and a modal"
 
 [features]
 devtools = ["light/devtools"]
+async-runtime = ["light/async-runtime"]
+dev-mode = ["light/dev-mode"]
 
 [dependencies]
 light = { workspace = true, features = [

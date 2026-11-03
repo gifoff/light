@@ -9,6 +9,8 @@ description = "DevTools TCP server demo for Light"
 default = []
 devtools = ["light/devtools"]
 async-runtime = ["light/async-runtime"]
+dev-mode = ["light/dev-mode"]
+runtime-templates = ["light/runtime-templates"]
 
 [dependencies]
 light = { workspace = true }

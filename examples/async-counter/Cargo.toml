@@ -7,6 +7,8 @@ publish = false
 
 [features]
 devtools = ["light/devtools"]
+async-runtime = ["light/async-runtime"]
+dev-mode = ["light/dev-mode"]
 
 [dependencies]
 light = { path = "../../crates/light", features = ["async-runtime", "async-await"] }
