@@ -676,7 +676,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         if let Some(package) = &args.package {
             cmd.args(["-p", package]);
         }
-        cmd.args(["--features", "devtools"]);
+        cmd.args(["--features", "dev-mode"]);
         cmd.args(["--target-dir", &build_target.to_string_lossy()]);
         cmd.args(&args.extra_cargo_args);
         cmd.stdin(Stdio::inherit())
@@ -1151,7 +1151,13 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     let _ = r.wait();
                 }
                 let code = status.code().unwrap_or(1);
-                eprintln!("light dev: приложение завершилось с кодом {code}");
+                if code == 0 {
+                    eprintln!(
+                        "light dev: app exited cleanly (window closed by user or session end)"
+                    );
+                } else {
+                    eprintln!("light dev: app crashed (exit code {code})");
+                }
                 return Ok(code);
             }
             Ev::RebuildDone(exit_code) => {
@@ -1291,7 +1297,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     }
                     cmd.args([
                         "--features",
-                        "devtools",
+                        "dev-mode",
                         "--target-dir",
                         &build_target.to_string_lossy(),
                     ]);

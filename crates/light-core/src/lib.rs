@@ -83,6 +83,13 @@ extern crate self as light;
 /// Флаг runtime-templates: доступен ли парсинг HTML-шаблонов во время выполнения.
 pub const FEATURE_RUNTIME_TEMPLATES: bool = cfg!(feature = "runtime-templates");
 
+/// Публичная константа для диагностики: включён ли hot HTML reload.
+#[cfg(feature = "runtime-templates")]
+pub const RUNTIME_TEMPLATES_ENABLED: bool = true;
+/// Публичная константа для диагностики: включён ли hot HTML reload.
+#[cfg(not(feature = "runtime-templates"))]
+pub const RUNTIME_TEMPLATES_ENABLED: bool = false;
+
 // Публичные зависимости, доступные под именем `::light::…` в сгенерированном
 // коде (макрос `#[template]`).
 #[cfg(feature = "devtools")]

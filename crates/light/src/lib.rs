@@ -196,6 +196,11 @@ pub fn run_with_config(
     component: impl Component + 'static,
 ) -> crate::Result<()> {
     let _ = config_path;
+    if light_fw_core::RUNTIME_TEMPLATES_ENABLED {
+        eprintln!("light: runtime-templates enabled (hot HTML reload active)");
+    } else {
+        eprintln!("light: runtime-templates DISABLED (hot HTML reload will not work)");
+    }
     #[cfg(feature = "devtools")]
     {
         let profile = load_profile(config_path);

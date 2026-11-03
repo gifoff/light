@@ -1,6 +1,6 @@
 //! Подкоманда `light dev`: горячая перезагрузка приложения Light.
 //!
-//! Запускает приложение (`cargo run -p <пакет> --features devtools`) и
+//! Запускает приложение (`cargo run -p <пакет> --features dev-mode`) и
 //! перезапускает его при изменении исходников, сохраняя состояние через
 //! DevTools (см. [`light_fw_cli_core::dev`]).
 
@@ -35,7 +35,7 @@ pub fn run(args: DevArgs) -> anyhow::Result<i32> {
     // тесты могли покрывать именно её).
     let parsed = parse_dev_command(&raw);
     eprintln!(
-        "light dev: запускаю `cargo run{} --features devtools {}`",
+        "light dev: запускаю `cargo run{} --features dev-mode {}`",
         parsed
             .package
             .as_ref()
