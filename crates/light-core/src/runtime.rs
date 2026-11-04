@@ -308,8 +308,12 @@ fn build_element<C: Component + ?Sized>(
         s.width = Size::Percent(100.0);
         elem = elem.with_style(s);
     }
-    // Button клипит содержимое по своим границам (аналог overflow:hidden в CSS).
-    if matches!(&kind, ElementKind::Container(NodeKind::Button { .. })) {
+    // Button клипит содержимое по своим границам (аналог overflow:hidden в CSS),
+    // но ТОЛЬКО при явном width: без width кнопка Auto по max-content и overflow
+    // ломает intrinsic-размер (схлопывается до min-content).
+    if matches!(&kind, ElementKind::Container(NodeKind::Button { .. }))
+        && attr_value(&element.attrs, "width").is_some()
+    {
         let mut s = elem.style;
         s.overflow_x = Overflow::Hidden;
         s.overflow_y = Overflow::Hidden;
