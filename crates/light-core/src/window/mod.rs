@@ -9,7 +9,7 @@
 //! (`Component::modal`). Команда адресуется окну по [`WindowToken`], который
 //! запоминается перед обработкой события.
 
-mod font;
+pub mod font;
 mod icon;
 #[cfg(feature = "image-support")]
 mod image;
@@ -118,6 +118,8 @@ pub fn run(component: impl Component + 'static) -> crate::Result<()> {
         crate::devtools::install_proxy(&proxy);
     }
     let result = event_loop.run_app(&mut app);
+    // ТЗ 0.14.3: сохраняем накопленную геометрию при выходе.
+    app.save_geometry_on_exit();
     result?;
     match app.error {
         Some(error) => Err(error),
@@ -426,7 +428,6 @@ impl WindowState {
         #[cfg(not(feature = "elements-select"))]
         let select_hover: Option<usize> = None;
         let background = self.config.background;
-        let font = self.font.font();
         let scale = self.scale;
         let menu = self.menu.as_ref();
         let (width, height) = self.surface.size();
@@ -435,7 +436,7 @@ impl WindowState {
             paint::render(
                 layout,
                 &mut canvas,
-                font,
+                self.font.as_ref(),
                 scale,
                 paint::Interaction {
                     focused,
@@ -449,7 +450,7 @@ impl WindowState {
                 background,
             );
             if let Some(menu) = menu {
-                paint::draw_context_menu(&mut canvas, menu, font, scale);
+                paint::draw_context_menu(&mut canvas, menu, self.font.as_ref(), scale);
             }
         }
     }
@@ -650,7 +651,7 @@ impl WindowState {
         let inset = node.style.inset().scaled(scale);
         let pad_x = crate::layout::FIELD_PAD_X * scale;
         let size = node.style.font_size.unwrap_or(crate::layout::FONT_SIZE) * scale;
-        let font = self.font.font();
+        let font = self.font.as_ref();
         let text_left = rect.x + inset.left + pad_x;
         let max_w = (rect.w - inset.horizontal() - 2.0 * pad_x).max(1.0);
         let lines = text::layout(font, value, size, max_w, *multiline);
@@ -1214,7 +1215,7 @@ impl WindowState {
         let size = node.style.font_size.unwrap_or(crate::layout::FONT_SIZE) * scale;
         let max_w = (node.rect.w - inset.horizontal() - 2.0 * pad_x).max(1.0);
         Some(text::layout(
-            self.font.font(),
+            self.font.as_ref(),
             &self.editing,
             size,
             max_w,
@@ -1829,9 +1830,102 @@ struct App {
     font: Rc<FontMetrics>,
     error: Option<Error>,
     redraw: Arc<Mutex<Vec<Arc<Window>>>>,
+    /// Геометрия корневого окна для seamless-swap: пишется с дебаунсом 500 мс
+    /// в `.light/window.json`, читается при следующем запуске.
+    window_geom: Option<WindowGeometry>,
+    window_geom_dirty: bool,
+    window_geom_last_write: std::time::Instant,
     /// Прокси цикла событий для доставки событий AccessKit.
     #[cfg(feature = "a11y-winit")]
     proxy: Option<EventLoopProxy<UserEvent>>,
+}
+
+/// Сохранённая геометрия окна (position + size + maximized flag).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct WindowGeometry {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub maximized: bool,
+}
+
+impl WindowGeometry {
+    /// Путь файла геометрии (`LIGHT_WINDOW_FILE` или `.light/window.json`).
+    fn file_path() -> std::path::PathBuf {
+        std::env::var_os("LIGHT_WINDOW_FILE")
+            .map(std::path::PathBuf::from)
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::PathBuf::from(".light/window.json"))
+    }
+
+    /// Читает геометрию из файла или переменной окружения `LIGHT_WINDOW_INIT`.
+    /// Возвращает `None`, если ни один источник не дал данных.
+    fn load() -> Option<Self> {
+        // Переменная окружения имеет приоритет над файлом.
+        if let Ok(json) = std::env::var("LIGHT_WINDOW_INIT")
+            && let Ok(geom) = serde_json::from_str::<Self>(&json)
+        {
+            return Some(geom);
+        }
+        let path = Self::file_path();
+        let raw = std::fs::read_to_string(&path).ok()?;
+        serde_json::from_str(&raw).ok()
+    }
+
+    /// Записывает геометрию в файл (создаёт каталог, если нужно).
+    fn save(&self) -> std::io::Result<()> {
+        let path = Self::file_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(
+            &path,
+            serde_json::to_string_pretty(self).map_err(std::io::Error::other)?,
+        )
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for WindowGeometry {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error as _;
+        let obj = serde_json::Value::deserialize(deserializer)?;
+        let get = |key: &str| obj.get(key);
+        let x = get("x").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let y = get("y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let width = get("width").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let height = get("height").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let maximized = get("maximized").and_then(|v| v.as_bool()).unwrap_or(false);
+        if width == 0 || height == 0 {
+            return Err(D::Error::custom("width/height must be non-zero"));
+        }
+        Ok(Self {
+            x,
+            y,
+            width,
+            height,
+            maximized,
+        })
+    }
+}
+
+impl serde::Serialize for WindowGeometry {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("WindowGeometry", 5)?;
+        state.serialize_field("x", &self.x)?;
+        state.serialize_field("y", &self.y)?;
+        state.serialize_field("width", &self.width)?;
+        state.serialize_field("height", &self.height)?;
+        state.serialize_field("maximized", &self.maximized)?;
+        state.end()
+    }
 }
 
 impl App {
@@ -1857,6 +1951,9 @@ impl App {
             font,
             error: None,
             redraw,
+            window_geom: None,
+            window_geom_dirty: false,
+            window_geom_last_write: std::time::Instant::now(),
             #[cfg(feature = "a11y-winit")]
             proxy: None,
         }
@@ -1999,6 +2096,29 @@ impl App {
             let y = parent_position.y + (parent_size.height as i32 - child_size.height as i32) / 2;
             window.set_outer_position(PhysicalPosition::new(x, y));
         }
+        // ТЗ 0.14.3: применяем сохранённую геометрию (position/size/maximized)
+        // до того, как дочернее центрирование или размер от config вступят в
+        // силу. Применяется только для корневого окна (parent == None).
+        if parent.is_none() {
+            let loaded_geom = self
+                .window_geom
+                .as_ref()
+                .cloned()
+                .or_else(WindowGeometry::load);
+            if let Some(geom) = &loaded_geom {
+                let _ = window
+                    .request_inner_size(LogicalSize::new(geom.width as f64, geom.height as f64));
+                window.set_outer_position(PhysicalPosition::new(geom.x, geom.y));
+                if geom.maximized {
+                    window.set_maximized(true);
+                }
+                eprintln!(
+                    "light: restored window geometry ({}, {}, {}x{}, maximized={})",
+                    geom.x, geom.y, geom.width, geom.height, geom.maximized
+                );
+                self.window_geom = Some(geom.clone());
+            }
+        }
         let size = window.inner_size();
         let width = size.width.max(1);
         let height = size.height.max(1);
@@ -2086,6 +2206,51 @@ impl App {
             window.window.request_redraw();
         }
         Ok(token)
+    }
+
+    /// Обновляет и (при необходимости) сохраняет геометрию корневого окна.
+    /// Вызывается при каждом `Moved`/`Resized` событии; запись в файл
+    /// дебаунсится на 500 мс.
+    fn flush_geometry(&mut self, id: WindowId) {
+        let Some(state) = self.windows.get(&id) else {
+            return;
+        };
+        // Пишем только для корневого окна (parent == None).
+        if state.parent.is_some() {
+            return;
+        }
+        let Ok(pos) = state.window.outer_position() else {
+            return;
+        };
+        let size = state.window.inner_size();
+        let geom = WindowGeometry {
+            x: pos.x,
+            y: pos.y,
+            width: size.width,
+            height: size.height,
+            maximized: state.window.is_maximized(),
+        };
+        self.window_geom = Some(geom.clone());
+        self.window_geom_dirty = true;
+        let now = std::time::Instant::now();
+        if now.duration_since(self.window_geom_last_write) >= std::time::Duration::from_millis(500)
+        {
+            if let Err(error) = geom.save() {
+                eprintln!("light: не удалось сохранить геометрию: {error}");
+            }
+            self.window_geom_dirty = false;
+            self.window_geom_last_write = now;
+        }
+    }
+
+    /// Сохраняет накопленную геометрию (вызывается при выходе).
+    fn save_geometry_on_exit(&self) {
+        if self.window_geom_dirty
+            && let Some(geom) = &self.window_geom
+            && let Err(error) = geom.save()
+        {
+            eprintln!("light: не удалось сохранить геометрию при выходе: {error}");
+        }
     }
 
     fn close_window(&mut self, event_loop: &ActiveEventLoop, id: WindowId) {
@@ -2321,8 +2486,24 @@ impl ApplicationHandler<UserEvent> for App {
         #[cfg(feature = "devtools")]
         let component = {
             let mut c = component;
-            if let Ok(Some(state)) = crate::devtools::load_state_file() {
-                c.inject_state(&state);
+            match crate::devtools::load_state_file() {
+                Ok(Some(state)) => {
+                    let fields = state.as_object().map(|m| m.len()).unwrap_or(0);
+                    c.inject_state(&state);
+                    eprintln!("light: state loaded ({fields} fields injected)");
+                }
+                Ok(None) => {
+                    eprintln!(
+                        "light: no state file at {:?}",
+                        crate::devtools::state_file_path()
+                    );
+                }
+                Err(_) => {
+                    eprintln!(
+                        "light: no state file at {:?}",
+                        crate::devtools::state_file_path()
+                    );
+                }
             }
             c
         };
@@ -2453,7 +2634,13 @@ impl ApplicationHandler<UserEvent> for App {
             return;
         };
         match event {
-            WindowEvent::Resized(_) => window.invalidate(),
+            WindowEvent::Resized(_) => {
+                window.invalidate();
+                self.flush_geometry(id);
+            }
+            WindowEvent::Moved { .. } => {
+                self.flush_geometry(id);
+            }
             WindowEvent::Focused(false) => window.on_unfocus(),
             WindowEvent::ModifiersChanged(modifiers) => window.modifiers = modifiers.state(),
             WindowEvent::CursorMoved { position, .. } => {

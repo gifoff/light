@@ -1,9 +1,7 @@
 //! Разбиение текста текстового поля на визуальные строки и отображение
 //! позиции каретки. Используется и отрисовкой, и обработкой ввода.
 
-use ab_glyph::FontVec;
-
-use super::font::{advance, line_height};
+use super::font::{FontMetrics, line_height};
 
 /// Одна визуальная строка текста.
 #[derive(Debug, Clone, PartialEq)]
@@ -17,15 +15,21 @@ pub struct Line {
 }
 
 /// Высота строки шрифта размером `size`.
-pub fn row_height(font: &FontVec, size: f32) -> f32 {
-    line_height(font, size)
+pub fn row_height(font: &FontMetrics, size: f32) -> f32 {
+    line_height(font.font(), size)
 }
 
 /// Разбивает `text` на визуальные строки.
 ///
 /// При `multiline` включается перенос длинных строк по ширине `max_width` и
 /// разделение по `\n`; иначе всё содержимое — одна строка.
-pub fn layout(font: &FontVec, text: &str, size: f32, max_width: f32, multiline: bool) -> Vec<Line> {
+pub fn layout(
+    font: &FontMetrics,
+    text: &str,
+    size: f32,
+    max_width: f32,
+    multiline: bool,
+) -> Vec<Line> {
     let mut lines = Vec::new();
     let mut current = String::new();
     let mut current_w = 0.0_f32;
@@ -43,7 +47,7 @@ pub fn layout(font: &FontVec, text: &str, size: f32, max_width: f32, multiline: 
             current_w = 0.0;
             continue;
         }
-        let w = advance(font, ch, size);
+        let w = font.advance_for(ch, size);
         if multiline && !current.is_empty() && current_w + w > max_width {
             lines.push(Line {
                 start,
@@ -66,10 +70,10 @@ pub fn layout(font: &FontVec, text: &str, size: f32, max_width: f32, multiline: 
 }
 
 /// Ширина первых `count` символов строки `text`.
-pub fn prefix_width(font: &FontVec, text: &str, size: f32, count: usize) -> f32 {
+pub fn prefix_width(font: &FontMetrics, text: &str, size: f32, count: usize) -> f32 {
     text.chars()
         .take(count)
-        .map(|ch| advance(font, ch, size))
+        .map(|ch| font.advance_for(ch, size))
         .sum()
 }
 

@@ -145,7 +145,6 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         })
         .collect::<Vec<_>>();
     let inject_state_method = quote! {
-        #[cfg(feature = "devtools")]
         fn inject_state(&mut self, state: &::light::serde_json::Value) {
             #(#inject_bodies)*
         }

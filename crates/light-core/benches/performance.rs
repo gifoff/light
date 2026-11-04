@@ -1,4 +1,3 @@
-use ab_glyph::FontVec;
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use light_fw_core as light;
 
@@ -102,22 +101,8 @@ fn bench_layout(c: &mut Criterion) {
     });
 }
 
-fn load_font() -> Option<FontVec> {
-    const FONT_PATHS: &[&str] = &[
-        r"C:\Windows\Fonts\segoeui.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
-    ];
-    for path in FONT_PATHS {
-        let Ok(bytes) = std::fs::read(path) else {
-            continue;
-        };
-        if let Ok(font) = FontVec::try_from_vec(bytes) {
-            return Some(font);
-        }
-    }
-    None
+fn load_font() -> Option<light::window::font::FontMetrics> {
+    light::window::font::FontMetrics::load().ok()
 }
 
 fn bench_render(c: &mut Criterion) {

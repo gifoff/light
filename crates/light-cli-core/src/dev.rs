@@ -226,6 +226,16 @@ pub fn state_file_path(root: &std::path::Path) -> PathBuf {
     }
 }
 
+/// Устанавливает `LIGHT_STATE_FILE` на `Command`, указывая на абсолютный путь
+/// `root/.light/state.json` (или значение переменной окружения, если задана).
+/// Без этого ребёнок читает относительный `.light/state.json` от своего CWD,
+/// который может не совпадать с корнем проекта.
+fn apply_state_env(cmd: &mut std::process::Command, root: &std::path::Path) {
+    let path = state_file_path(root);
+    eprintln!("light dev: state file for child: {:?}", path);
+    cmd.env("LIGHT_STATE_FILE", &path);
+}
+
 /// Отправляет команду `SAVE_STATE\n` в TCP-сервер DevTools на
 /// `127.0.0.1:<port>` и закрывает соединение. Ошибки (сервер не запущен,
 /// порт занят) не являются фатальными — просто проигнорируются.
@@ -1037,12 +1047,12 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         first_run_exe,
         fresh_bin_path(&build_target, &bin)
     );
-    let child = match Command::new(&first_run_exe)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
-    {
+    let mut child_cmd = Command::new(&first_run_exe);
+    child_cmd.stdin(Stdio::inherit());
+    child_cmd.stdout(Stdio::inherit());
+    child_cmd.stderr(Stdio::inherit());
+    apply_state_env(&mut child_cmd, &package_root);
+    let child = match child_cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
             eprintln!(
@@ -1501,6 +1511,11 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                             "light dev: не удалось отправить SAVE_STATE перед swap: {e} \
                              (состояние может быть не сохранено)"
                         );
+                    } else {
+                        eprintln!(
+                            "light dev: state saved to {:?}",
+                            state_file_path(&package_root)
+                        );
                     }
                     // Короткая пауза: даём UI-потоку время обработать команду
                     // и записать файл, прежде чем уберём процесс.
@@ -1528,12 +1543,12 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                         eprintln!("light dev: child_arc poisoned — не смогла убить old");
                     }
                     // c) Spawn нового из копии в hot-run.
-                    match Command::new(&new_run_exe)
-                        .stdin(Stdio::inherit())
-                        .stdout(Stdio::inherit())
-                        .stderr(Stdio::inherit())
-                        .spawn()
-                    {
+                    let mut new_cmd = Command::new(&new_run_exe);
+                    new_cmd.stdin(Stdio::inherit());
+                    new_cmd.stdout(Stdio::inherit());
+                    new_cmd.stderr(Stdio::inherit());
+                    apply_state_env(&mut new_cmd, &package_root);
+                    match new_cmd.spawn() {
                         Ok(c) => {
                             let new_pid = c.id();
                             if let Ok(mut g) = child_arc.lock() {

@@ -354,22 +354,59 @@ impl<'a> Canvas<'a> {
     /// Высота строки — `ascent - descent` (см. [`super::font::measure`]),
     /// поэтому базовая линия находится на `y + ascent`, а нижние выносные
     /// элементы доходят до `y + height`.
-    pub fn draw_text(&mut self, font: &FontVec, text: &str, x: f32, y: f32, color: u32, size: f32) {
+    ///
+    /// Поддерживает фолбэк-шрифты для эмодзи: символ, отсутствующий в
+    /// основном шрифте, ищется по цепочке фолбэков.
+    pub fn draw_text(
+        &mut self,
+        metrics: &super::font::FontMetrics,
+        text: &str,
+        x: f32,
+        y: f32,
+        color: u32,
+        size: f32,
+    ) {
         if text.is_empty() {
             return;
         }
+        let primary = metrics.font();
         let scale_px = PxScale::from(size);
-        let scaled = font.as_scaled(scale_px);
+        let scaled = primary.as_scaled(scale_px);
         let baseline = y + scaled.ascent();
         let mut pen = x;
         for ch in text.chars() {
-            let id = font.glyph_id(ch);
-            if let Some(glyph) = cached_glyph(font, id, size, pen, baseline) {
-                for &(gx, gy, cov) in &glyph.coverage {
-                    self.blend(glyph.min_x + gx as i32, glyph.min_y + gy as i32, color, cov);
+            match metrics.glyph_for(ch) {
+                Some((font_idx, id)) => {
+                    let font = &metrics.all_fonts()[font_idx];
+                    if let Some(glyph) = cached_glyph(font, id, size, pen, baseline) {
+                        for &(gx, gy, cov) in &glyph.coverage {
+                            self.blend(
+                                glyph.min_x + gx as i32,
+                                glyph.min_y + gy as i32,
+                                color,
+                                cov,
+                            );
+                        }
+                    }
+                    let scaled_f = font.as_scaled(PxScale::from(size));
+                    pen += scaled_f.h_advance(id);
+                }
+                None => {
+                    // Плейсхолдер: рисуем □ (U+25A1) из основного шрифта.
+                    let id = primary.glyph_id('\u{25A1}');
+                    if let Some(glyph) = cached_glyph(primary, id, size, pen, baseline) {
+                        for &(gx, gy, cov) in &glyph.coverage {
+                            self.blend(
+                                glyph.min_x + gx as i32,
+                                glyph.min_y + gy as i32,
+                                color,
+                                cov,
+                            );
+                        }
+                    }
+                    pen += scaled.h_advance(id);
                 }
             }
-            pen += scaled.h_advance(id);
         }
     }
 
@@ -502,7 +539,7 @@ fn mark_disabled_text(nodes: &[PlacedNode], index: usize, inherited: bool, out: 
 pub fn render(
     layout: &Layout,
     canvas: &mut Canvas,
-    font: &FontVec,
+    font: &super::font::FontMetrics,
     scale: f32,
     interaction: Interaction<'_>,
     background: u32,
@@ -593,9 +630,9 @@ pub fn render(
                                 let lines = crate::text_wrap::wrap_words(
                                     content,
                                     text_rect.w.max(1.0),
-                                    |line| measure(font, line, size).0,
+                                    |line| measure(font.font(), line, size).0,
                                 );
-                                let row_h = measure(font, "", size).1.max(1.0);
+                                let row_h = measure(font.font(), "", size).1.max(1.0);
                                 for (index, line) in lines.iter().enumerate() {
                                     canvas.draw_text(
                                         font,
@@ -736,7 +773,7 @@ pub fn render(
                             + inset.left
                             + CHECKBOX_BOX * scale
                             + CHECKBOX_GAP * scale
-                            + measure(font, label, size).0;
+                            + measure(font.font(), label, size).0;
                         draw_inline_required(
                             canvas,
                             font,
@@ -763,7 +800,7 @@ pub fn render(
                             + inset.left
                             + CHECKBOX_BOX * scale
                             + CHECKBOX_GAP * scale
-                            + measure(font, label, size).0;
+                            + measure(font.font(), label, size).0;
                         draw_inline_required(
                             canvas,
                             font,
@@ -946,7 +983,7 @@ fn draw_focus_ring(canvas: &mut Canvas, rect: Rect, scale: f32) {
 /// Рисует индикатор обязательности текстового поля/списка в правом верхнем углу.
 fn draw_field_required(
     canvas: &mut Canvas,
-    font: &FontVec,
+    font: &super::font::FontMetrics,
     rect: Rect,
     scale: f32,
     size: f32,
@@ -955,7 +992,7 @@ fn draw_field_required(
     match indicator {
         crate::vdom::RequiredIndicator::None => {}
         crate::vdom::RequiredIndicator::Asterisk => {
-            let (width, _) = measure(font, "*", size);
+            let (width, _) = measure(font.font(), "*", size);
             canvas.draw_text(
                 font,
                 "*",
@@ -976,7 +1013,7 @@ fn draw_field_required(
 #[cfg(any(feature = "elements-checkbox", feature = "elements-radio"))]
 fn draw_inline_required(
     canvas: &mut Canvas,
-    font: &FontVec,
+    font: &super::font::FontMetrics,
     text_end_x: f32,
     rect: Rect,
     scale: f32,
@@ -986,7 +1023,7 @@ fn draw_inline_required(
     match indicator {
         crate::vdom::RequiredIndicator::None => {}
         crate::vdom::RequiredIndicator::Asterisk => {
-            let (_, text_h) = measure(font, "*", size);
+            let (_, text_h) = measure(font.font(), "*", size);
             canvas.draw_text(
                 font,
                 "*",
@@ -1008,7 +1045,7 @@ fn draw_inline_required(
 #[cfg(feature = "elements-checkbox")]
 fn draw_checkbox(
     canvas: &mut Canvas,
-    font: &FontVec,
+    font: &super::font::FontMetrics,
     rect: Rect,
     inset: crate::vdom::Edges,
     scale: f32,
@@ -1039,7 +1076,7 @@ fn draw_checkbox(
     } else {
         style.font_color.unwrap_or(COLOR_TEXT)
     };
-    let (_, text_h) = measure(font, label, size);
+    let (_, text_h) = measure(font.font(), label, size);
     canvas.draw_text(
         font,
         label,
@@ -1055,7 +1092,7 @@ fn draw_checkbox(
 #[cfg(feature = "elements-radio")]
 fn draw_radio(
     canvas: &mut Canvas,
-    font: &FontVec,
+    font: &super::font::FontMetrics,
     rect: Rect,
     inset: crate::vdom::Edges,
     scale: f32,
@@ -1082,7 +1119,7 @@ fn draw_radio(
     } else {
         style.font_color.unwrap_or(COLOR_TEXT)
     };
-    let (_, text_h) = measure(font, label, size);
+    let (_, text_h) = measure(font.font(), label, size);
     canvas.draw_text(
         font,
         label,
@@ -1098,7 +1135,7 @@ fn draw_radio(
 #[cfg(feature = "elements-select")]
 fn draw_select(
     canvas: &mut Canvas,
-    font: &FontVec,
+    font: &super::font::FontMetrics,
     rect: Rect,
     inset: crate::vdom::Edges,
     scale: f32,
@@ -1133,7 +1170,7 @@ fn draw_select(
     } else {
         style.font_color.unwrap_or(COLOR_TEXT)
     };
-    let (_, text_h) = measure(font, label, size);
+    let (_, text_h) = measure(font.font(), label, size);
     let text_rect = Rect::new(
         rect.x + inset.left,
         rect.y,
@@ -1173,7 +1210,7 @@ fn draw_select(
 #[cfg(feature = "elements-select")]
 fn draw_select_popup(
     canvas: &mut Canvas,
-    font: &FontVec,
+    font: &super::font::FontMetrics,
     rect: Rect,
     options: &[crate::vdom::SelectOption],
     value: &str,
@@ -1199,7 +1236,7 @@ fn draw_select_popup(
         } else {
             MENU_TEXT
         };
-        let (_, text_h) = measure(font, &option.label, size);
+        let (_, text_h) = measure(font.font(), &option.label, size);
         canvas.draw_text(
             font,
             &option.label,
@@ -1215,7 +1252,7 @@ fn draw_select_popup(
 #[allow(clippy::too_many_arguments)]
 fn render_field(
     canvas: &mut Canvas,
-    font: &FontVec,
+    font: &super::font::FontMetrics,
     rect: Rect,
     inset: crate::vdom::Edges,
     scale: f32,
@@ -1232,7 +1269,7 @@ fn render_field(
     let text_left = rect.x + inset.left + pad_x;
     let text_max_w = (rect.w - inset.horizontal() - 2.0 * pad_x).max(1.0);
     let row_h = super::text::row_height(font, size);
-    let line_box_h = measure(font, "", size).1;
+    let line_box_h = measure(font.font(), "", size).1;
     let inner = Rect::new(
         rect.x + border,
         rect.y + border,
@@ -1325,7 +1362,7 @@ fn render_field(
 #[allow(clippy::too_many_arguments)]
 fn draw_selection(
     canvas: &mut Canvas,
-    font: &FontVec,
+    font: &super::font::FontMetrics,
     line: &super::text::Line,
     selection: Option<(usize, usize)>,
     text_left: f32,
@@ -1366,7 +1403,7 @@ fn draw_grip(canvas: &mut Canvas, rect: Rect, scale: f32) {
 pub(super) fn draw_context_menu(
     canvas: &mut Canvas,
     menu: &super::ContextMenu,
-    font: &FontVec,
+    font: &super::font::FontMetrics,
     scale: f32,
 ) {
     let w = MENU_W * scale;
@@ -1390,7 +1427,7 @@ pub(super) fn draw_context_menu(
             MENU_TEXT_DISABLED
         };
         let size = FONT_SIZE * scale;
-        let (_, label_h) = measure(font, item.label, size);
+        let (_, label_h) = measure(font.font(), item.label, size);
         canvas.draw_text(
             font,
             item.label,
@@ -1403,19 +1440,20 @@ pub(super) fn draw_context_menu(
 }
 
 /// Обрезает строку по ширине и добавляет `…`, если она не помещается.
-fn ellipsized(font: &FontVec, text: &str, size: f32, max_width: f32) -> String {
-    if measure(font, text, size).0 <= max_width {
+fn ellipsized(font: &super::font::FontMetrics, text: &str, size: f32, max_width: f32) -> String {
+    let primary = font.font();
+    if measure(primary, text, size).0 <= max_width {
         return text.to_owned();
     }
     let ellipsis = "\u{2026}";
-    let ellipsis_width = measure(font, ellipsis, size).0;
+    let ellipsis_width = measure(primary, ellipsis, size).0;
     if ellipsis_width > max_width {
         return ellipsis.to_owned();
     }
     let mut end = 0;
     let mut width = 0.0;
     for (index, ch) in text.char_indices() {
-        let advance = super::font::advance(font, ch, size);
+        let advance = super::font::advance(primary, ch, size);
         if width + advance + ellipsis_width > max_width {
             break;
         }
@@ -1443,15 +1481,14 @@ mod tests {
         let Ok(metrics) = crate::window::font::FontMetrics::load() else {
             return;
         };
-        let font = metrics.font();
         let size = 20.0;
-        let (_, height) = measure(font, "Ag", size);
+        let (_, height) = measure(metrics.font(), "Ag", size);
         let (width, canvas_height) = (80u32, 60u32);
         let mut pixels = vec![0u8; (width * canvas_height * 4) as usize];
         let region = Rect::new(0.0, 0.0, width as f32, canvas_height as f32);
         let mut canvas = Canvas::new(&mut pixels, width, canvas_height, region);
         let top = 10.0;
-        canvas.draw_text(font, "Ag", 5.0, top, 0xFFFF_FFFF, size);
+        canvas.draw_text(&metrics, "Ag", 5.0, top, 0xFFFF_FFFF, size);
 
         let mut min_y = canvas_height;
         let mut max_y = 0;
@@ -1477,14 +1514,16 @@ mod tests {
         let Ok(metrics) = crate::window::font::FontMetrics::load() else {
             return;
         };
-        let font = metrics.font();
         let size = 16.0;
         let full = "very long label that must be truncated";
         let max = 90.0;
-        let line = ellipsized(font, full, size, max);
+        let line = ellipsized(&metrics, full, size, max);
 
         assert!(line.ends_with('\u{2026}'), "добавлено многоточие");
-        assert!(measure(font, &line, size).0 <= max, "строка помещается");
+        assert!(
+            measure(metrics.font(), &line, size).0 <= max,
+            "строка помещается"
+        );
     }
 
     #[test]

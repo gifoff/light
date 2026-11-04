@@ -9,8 +9,6 @@
 //! использует `softbuffer`: он не тянет графический API и даёт меньший
 //! бинарник. `wgpu` остаётся доступен для сравнения и как запасной путь.
 
-use ab_glyph::FontVec;
-
 use crate::Result;
 use crate::layout::{Point, Rect};
 use crate::window::paint::Canvas;
@@ -59,7 +57,14 @@ pub trait RendererBackend {
     ///
     /// Размер шрифта и сам шрифт передаются явно: текст растеризуется
     /// программно, без texture atlas и шейдеров.
-    fn draw_text(&mut self, font: &FontVec, text: &str, pos: Point, color: Color, size: f32) {
+    fn draw_text(
+        &mut self,
+        font: &crate::window::font::FontMetrics,
+        text: &str,
+        pos: Point,
+        color: Color,
+        size: f32,
+    ) {
         let (width, height) = self.size();
         let mut canvas = Canvas::new(
             self.frame_mut(),
