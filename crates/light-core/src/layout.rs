@@ -855,9 +855,15 @@ impl Layout {
                 if any_child {
                     content_w = cursor_x - inner_left - SPACING;
                 }
-                let w = flow.forced_w.unwrap_or_else(|| {
-                    style.resolve_width(content_w + btn_inset.horizontal(), avail_w)
-                });
+                // Auto-ширина Button — всегда по содержимому (max-content),
+                // независимо от forced_w (stretch_row_children не должен
+                // схлопывать кнопку). Явная ширина или проценты — forced_w
+                // переопределяет.
+                let w = match (style.width, flow.forced_w) {
+                    (Size::Auto, _) => content_w + btn_inset.horizontal(),
+                    (_, Some(fw)) => fw,
+                    (_, None) => style.resolve_width(content_w + btn_inset.horizontal(), avail_w),
+                };
                 let h = flow.forced_h.unwrap_or_else(|| {
                     style.resolve_height(
                         (content_h + btn_inset.vertical()).max(BUTTON_MIN_H),

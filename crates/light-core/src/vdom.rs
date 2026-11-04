@@ -2048,3 +2048,15 @@ fn diff_children(old: &VElement, new: &VElement, patch: &mut Patch) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_align_items_accepts_center() {
+        assert_eq!(parse_align_items("center"), Align::Center);
+        assert_eq!(parse_align_items("start"), Align::Start);
+        assert_eq!(parse_align_items("end"), Align::End);
+    }
+}
