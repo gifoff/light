@@ -195,19 +195,29 @@ impl FontMetrics {
     pub fn glyph_for(&self, ch: char) -> Option<(usize, GlyphId)> {
         // 1. Основной шрифт — первым, для любого символа.
         let id = self.fonts[0].glyph_id(ch);
-        if id.0 != 0 && self.fonts[0].outline(id).is_some() {
-            return Some((0, id));
+        if id.0 != 0 {
+            let cp = ch as u32;
+            let is_basic = matches!(
+                cp,
+                0x00..=0x7E | 0xA0..=0x2FF | 0x400..=0x4FF | 0x2000..=0x206F
+            );
+            // ТЗ 0.14.3-fix5: для basic символов достаточно наличия глифа:
+            // outline может быть None у whitespace (пробел), но advance > 0.
+            // Бывшая проверка outline().is_some() отправляла пробел в
+            // is_basic fallback → □.
+            if is_basic || self.fonts[0].outline(id).is_some() {
+                return Some((0, id));
+            }
         }
 
-        // 2. Basic-символы (пробел, латиница, кириллица, пунктуация)
-        //    не должны уходить в emoji fallback: там они → □.
+        // 2. Basic-символы без глифа в primary (id.0 == 0) или non-basic
+        //    с outline=None — честно □ (не уходим в emoji fallback).
         let cp = ch as u32;
         let is_basic = matches!(
             cp,
-            0x20..=0x7E | 0x00A0..=0x02FF | 0x0400..=0x04FF | 0x2000..=0x206F
+            0x00..=0x7E | 0xA0..=0x2FF | 0x400..=0x4FF | 0x2000..=0x206F
         );
         if is_basic {
-            // Фолбэк в primary не помог — честный □.
             let box_id = self.fonts[0].glyph_id('\u{25A1}');
             return (box_id.0 != 0).then_some((0, box_id));
         }
@@ -348,14 +358,17 @@ mod tests {
         }
     }
 
-    /// ТЗ 0.14.3-fix3 Task 1.2: пробел должен резолвиться из основного
-    /// шрифта (индекс 0), а не из emoji fallback.
+    /// ТЗ 0.14.3-fix3 Task 1.2 / fix5: whitespace-символы (пробел,
+    /// табуляция, nbsp) должны резолвиться из основного шрифта (индекс 0),
+    /// а не из emoji fallback или □-плейсхолдера.
     #[test]
-    fn space_uses_primary_font() {
+    fn whitespace_uses_primary_font() {
         let Ok(m) = FontMetrics::load() else {
             return;
         };
-        let (idx, _) = m.glyph_for(' ').unwrap();
-        assert_eq!(idx, 0);
+        for ch in [' ', '\t', '\u{00A0}'] {
+            let (idx, _) = m.glyph_for(ch).unwrap();
+            assert_eq!(idx, 0, "whitespace {:?} must be in primary", ch);
+        }
     }
 }
