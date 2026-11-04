@@ -1560,6 +1560,73 @@ cargo run --features devtools -p my-app
 Для примера `example-devtools-demo` достаточно `cargo run -p example-devtools-demo`
 — фича `devtools` уже включена в базовых зависимостях примера.
 
+### Горячая перезагрузка (Hot Reload)
+
+`light dev <пакет>` запускает приложение с автоматической перезагрузкой при
+изменении исходников или HTML-шаблонов. Архитектура:
+
+1. **Phase A** — блокирующая warm-up сборка в изолированном
+   `target/hot-build` (не трогает основную `target/`).
+2. **Phase B** — копирование свежего бинарника в `target/hot-run` и запуск
+   дочернего процесса.
+3. **Watcher** — наблюдает за `.rs` и `.html` файлами, debounce'ит изменения
+   (100 мс для HTML, 500 мс для исходников), пересобирает в фоне и
+   перезапускает процесс, сохраняя состояние через DevTools.
+
+```bash
+# Запуск с горячей перезагрузкой
+light dev example-devtools-demo
+
+# С подробными логами (debounce, hash-dedup, notify events)
+light dev --verbose example-devtools-demo
+
+# Полный сброс кэша dev-сборки перед стартом
+light dev --clean example-devtools-demo
+```
+
+#### Кэш и его инвалидация
+
+Hot-reload сохраняет артефакты сборки в `target/hot-build/` между запусками,
+чтобы повторный `light dev` не начинался с нуля (полная cold-сборка может
+занимать 40–50 секунд). Кэшируемые пути:
+
+- `target/hot-build/` — артефакты cargo-сборки dev-режима.
+- `target/hot-run/` — копии запускаемых бинарников (один на каждую
+  пересборку).
+- `.light/state.json` — состояние watcher (debounce, hash-dedup).
+
+Инвалидация происходит автоматически и вручную:
+
+1. **Auto-invalidation по версии light-fw-core.** При старте `light dev`
+   читает `.light/build-info.json` (формат:
+   `{"light-fw-core-version": "0.14.0", "cargo-lock-hash": "..."}`) и
+   сравнивает с версией из `Cargo.lock`. Если версия изменилась —
+   `target/hot-build` удаляется один раз, и пишется новый `build-info.json`.
+   Лог: `light dev: framework version changed → hot-build cache invalidated`.
+
+2. **Ручной сброс через `--clean`.** Флаг `light dev --clean <пакет>`
+   удаляет все четыре кэша (`hot-build`, `hot-run`, `state.json`,
+   `target/debug/deps/<пакет>*`) перед стартом. Лог:
+   `light dev: cleaned cache (hot-build, hot-run, state, deps)`.
+   Полезен при переезде между ветками, ручном редактировании
+   `light-fw-core` или подозрении на битый кэш.
+
+3. **Age-based чистка `hot-run`.** После каждой пересборки устаревшие
+   исполняемые файлы (mtime старше 1 часа или timestamp в имени ≠ сегодня)
+   удаляются автоматически. Лог:
+   `light dev: pruned N stale executables from hot-run`.
+
+4. **Манипуляция вручную.** Файл `.light/state.json` можно удалить в любой
+   момент — это не сломает кэш, просто сбросит состояние watcher. Файл
+   `.light/build-info.json` также можно удалить: при следующем запуске
+   `light dev` сравнит версию и при несоответствии пересоберёт hot-build.
+
+5. **Предупреждение о рассинхроне CLI.** Если установленная версия
+   `light-fw-cli` (бинарник `light`) отличается от версии `light-fw-core`
+   в `Cargo.lock` проекта, выводится предупреждение:
+   `⚠ light dev: installed CLI version {installed} differs from project {project}. Run \`cargo install --path crates/light-cli\``.
+   В этом случае кэш не инвалидируется автоматически — только предупреждение.
+
 ---
 
 ## DevTools

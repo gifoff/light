@@ -21,6 +21,12 @@ pub struct DevArgs {
     /// Включить подробные логи (debounce, hash-dedup, notify events).
     #[arg(long, default_value_t = false)]
     pub verbose: bool,
+    /// Полный сброс кэша dev-сборки перед стартом (hot-build, hot-run, state
+    /// и артефакты deps текущего пакета). Смысл — при смене версии фреймворка,
+    /// когда auto-invalidation уже не помогает (например, переезд между ветками
+    /// или ручная замена исходников light-fw-core).
+    #[arg(long, default_value_t = false)]
+    pub clean: bool,
     /// Дополнительные флаги cargo (включая `--`, если нужно передать аргументы
     /// самому приложению). Пример: `--release`.
     #[arg(trailing_var_arg = true)]
@@ -36,6 +42,9 @@ pub fn run(args: DevArgs) -> anyhow::Result<i32> {
     }
     if verbose {
         raw.push("--verbose".into());
+    }
+    if args.clean {
+        raw.push("--clean".into());
     }
     raw.extend(args.extra_cargo_args);
     // Повторно разбираем через чистую функцию `parse_dev_command`, чтобы

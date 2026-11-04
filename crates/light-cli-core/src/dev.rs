@@ -36,6 +36,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use notify::{Config, PollWatcher, RecursiveMode, Watcher as _};
+use sha2::Digest as _;
 
 const DEVTOOLS_PORT: u16 = 9229;
 /// Интервал опроса файловой системы [`PollWatcher`]. На UNC- и сетевых дисках
@@ -69,6 +70,10 @@ pub struct DevArgs {
     pub extra_cargo_args: Vec<String>,
     /// Включить подробные логи (debounce, hash-dedup, notify events).
     pub verbose: bool,
+    /// Полный сброс кэша dev-сборки перед стартом (hot-build, hot-run, state,
+    /// deps текущего пакета). Смысл — при смене версии фреймворка, когда
+    /// auto-invalidation уже не помогает.
+    pub clean: bool,
 }
 
 /// Чистый разбор сырых аргументов командной строки в [`DevArgs`].
@@ -106,6 +111,10 @@ pub fn parse_dev_command(raw: &[String]) -> DevArgs {
     for (i, arg) in raw.iter().enumerate() {
         if arg == "--verbose" {
             out.verbose = true;
+        } else if arg == "--clean" {
+            // Полный сброс кэша (TZ 0.14.4): не передаём в cargo, а обрабатываем
+            // до warm-up build.
+            out.clean = true;
         } else if i == 0 && !arg.starts_with('-') {
             out.package = Some(arg.clone());
         } else {
@@ -643,6 +652,186 @@ impl RebuildStateMachine {
     }
 }
 
+// ===================== TZ 0.14.4: умная инвалидация кэша hot-build/hot-run ===
+
+/// Путь файла информации о версии фреймворка, от которой зависит hot-build.
+///
+/// Формат: `{"light-fw-core-version": "0.14.0", "cargo-lock-hash": "..."}`
+/// (JSON, оба поля строки). Лежит в `<target_root>/.light/build-info.json`.
+pub fn build_info_path(target_root: &Path) -> PathBuf {
+    target_root.join(".light").join("build-info.json")
+}
+
+/// Читает и парсит `build-info.json`. Повреждённый файл — `None` (перезапишется),
+/// отсутствующий файл — `None` (первая сборка: кэш не инвалидируется, просто
+/// фиксируем текущую версию). Ошибки записи игнорируются: при неудаче запись
+/// кэш не сломает, но следующая сборка будет повторять попытку записи.
+pub fn save_build_info(path: &Path, version: &str, lock_hash: &str) {
+    if let Some(parent) = path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        eprintln!("light dev: не удалось создать каталог для build-info: {e}");
+        return;
+    }
+    let v = serde_json::json!({
+        "light-fw-core-version": version,
+        "cargo-lock-hash": lock_hash,
+    });
+    match serde_json::to_string_pretty(&v) {
+        Ok(s) => {
+            if let Err(e) = std::fs::write(path, s) {
+                eprintln!("light dev: не удалось записать build-info.json: {e}");
+            }
+        }
+        Err(e) => eprintln!("light dev: не удалось сериализовать build-info: {e}"),
+    }
+}
+
+/// Текущая версия `light-fw-core` в `Cargo.lock` проекта. Читаем `Cargo.lock`
+/// напрямую (без запуска `cargo metadata`): файл маленький, а `cargo metadata`
+/// иногда долго и может не сработать без сети.
+pub fn read_fw_core_version_from_lock(lock_path: &Path) -> Option<String> {
+    let data = std::fs::read_to_string(lock_path).ok()?;
+    parse_fw_core_version_from_lock_text(&data)
+}
+
+/// Парсит версию `light-fw-core` из текста `Cargo.lock` (только чистая функция,
+/// без I/O): ищем `[dependencies] name="light-fw-core"` ... `version="..."` и
+/// берём первый попавшийся блок.
+fn parse_fw_core_version_from_lock_text(text: &str) -> Option<String> {
+    // Ищем блок, начинающийся с `name = "light-fw-core"`, затем в нём ищем
+    // первую строку `version = "..."`.
+    let start = text.find("name = \"light-fw-core\"")?;
+    let after = &text[start..];
+    let end = after.find("\n\n").unwrap_or(after.len());
+    let block = &after[..end];
+    let ver_start = block.find("version = \"")? + "version = \"".len();
+    let rest = &block[ver_start..];
+    let ver_end = rest.find('"')?;
+    Some(rest[..ver_end].to_string())
+}
+
+/// Удаляет всё, что нужно для полного сброса кэша dev-сборки (ТЗ 0.14.4):
+/// `target/hot-build`, `target/hot-run`, `.light/state.json` и артефакты
+/// зависимостей текущего пакета из `target/debug/deps/` (только `<package>*`).
+/// Возвращает список удаляемых путей (для логирования и теста).
+pub fn clean_dev_cache(target_root: &Path, package: Option<&str>) -> std::vec::Vec<PathBuf> {
+    let mut removed = Vec::new();
+    // 1) target/hot-build
+    let hot_build = target_root.join("target").join("hot-build");
+    remove_path_quietly(&hot_build, &mut removed);
+    // 2) target/hot-run
+    let hot_run = target_root.join("target").join("hot-run");
+    remove_path_quietly(&hot_run, &mut removed);
+    // 3) .light/state.json
+    let state = target_root.join(".light").join("state.json");
+    remove_path_quietly(&state, &mut removed);
+    // 4) target/debug/deps/<package>*
+    if let Some(pkg) = package {
+        let deps = target_root.join("target").join("debug").join("deps");
+        if let Ok(entries) = std::fs::read_dir(&deps) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if name.starts_with(pkg) {
+                    remove_path_quietly(&entry.path(), &mut removed);
+                }
+            }
+        }
+    }
+    removed
+}
+
+/// Рекурсивно удаляет `path` (если он существует), тихо игнорируя ошибки
+/// (файл мог быть уже занят автовикором или ОС). Успешные удаления
+/// добавляются в `removed`.
+fn remove_path_quietly(path: &Path, removed: &mut Vec<PathBuf>) {
+    if !path.exists() {
+        return;
+    }
+    let kind = std::fs::symlink_metadata(path).map(|m| m.file_type()).ok();
+    if matches!(kind, Some(t) if t.is_dir()) {
+        if std::fs::remove_dir_all(path).is_ok() {
+            removed.push(path.to_path_buf());
+        }
+    } else if std::fs::remove_file(path).is_ok() {
+        removed.push(path.to_path_buf());
+    }
+}
+
+/// Убирает из `run_dir` устаревшие копии исполняемых файлов:
+/// * любой `.exe` с mtime старше `STALE_RUN_AGE`;
+/// * либо любой `.exe`, чей суффикс-timestamp (после `<bin>-`) **не совпадает**
+///   с «сегодня» (это защищает от старых артефактов, которые не успели
+///   подхватить автовикором).
+///
+/// Файл `keep` (сейчас работающий) НИКОГДА не удаляется, независимо от age.
+/// Возвращает число удалённых копий.
+pub fn prune_stale_run_exes(run_dir: &Path, keep: &Path) -> usize {
+    let now = SystemTime::now();
+    let today: u128 = now
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() / 86_400)
+        .unwrap_or(0) as u128;
+    let mut pruned = 0usize;
+    let Ok(entries) = std::fs::read_dir(run_dir) else {
+        return 0;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path == keep {
+            continue;
+        }
+        let is_exe = path.extension().and_then(|e| e.to_str()) == Some("exe");
+        if !is_exe {
+            continue;
+        }
+        let meta = match std::fs::metadata(&path) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let mtime = meta.modified().ok();
+        let old_by_age = mtime
+            .and_then(|t| now.duration_since(t).ok())
+            .map(|d| d >= STALE_RUN_AGE)
+            .unwrap_or(false);
+        // Суффикс timestamp: `<bin>-<ts>.exe` → ts в миллисекундах. День
+        // считается как floor(ts_ms / 86_400_000); сравним с «сегодня».
+        let stale_by_date = {
+            let file = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+            let stem = file.strip_suffix(".exe").unwrap_or(file);
+            match stem.rfind('-') {
+                None => false,
+                Some(dash_pos) => {
+                    let ts_str = &stem[dash_pos + 1..];
+                    ts_str
+                        .parse::<u128>()
+                        .map(|ts| (ts / 86_400_000) != today)
+                        .unwrap_or(false)
+                }
+            }
+        };
+        if (old_by_age || stale_by_date) && std::fs::remove_file(&path).is_ok() {
+            pruned += 1;
+        }
+    }
+    pruned
+}
+
+/// Лимит возраста (mtime) для старых копий в `target/hot-run`.
+const STALE_RUN_AGE: Duration = Duration::from_secs(3600);
+
+/// Детектирует рассинхрон между установленным CLI (`env!("CARGO_PKG_VERSION")`
+/// бинарника) и версией `light-fw-core`, зафиксированной в `Cargo.lock` проекта.
+/// Возвращает `(installed, project)` только если они различаются.
+pub fn check_cli_version_mismatch(installed: &str, lock_path: &Path) -> Option<(String, String)> {
+    let project = read_fw_core_version_from_lock(lock_path)?;
+    if project == installed {
+        None
+    } else {
+        Some((installed.to_string(), project))
+    }
+}
+
 /// Точка входа команды `light dev`: запускает дочерний процесс и цикл
 /// наблюдения. Возвращает код завершения приложения (не `anyhow`, чтобы ядро
 /// CLI не тягло зависимость, которой нет в его манифесте).
@@ -676,6 +865,65 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         "light dev: build_target = {:?}, run_dir = {:?}",
         build_target, run_dir
     );
+
+    // === TZ 0.14.4: управление кэшем до Phase A (warm-up build) ===
+    // Порядок: (a) `--clean` → полный сброс; (b) auto-invalidation по версии
+    // light-fw-core (build-info.json); (c) age-привка hot-run; (d) warning
+    // при рассинхроне CLI/core.
+    if args.clean {
+        let removed = clean_dev_cache(&target_root, args.package.as_deref());
+        eprintln!("light dev: cleaned cache (hot-build, hot-run, state, deps)");
+        let _ = removed.len();
+    }
+    // Auto-invalidation: сравниваем версию light-fw-core в Cargo.lock с тем,
+    // что зафиксировано в build-info.json. При смене — удаляем target/hot-build
+    // ОДИН РАЗ, чтобы fresh-артефакт пересобрался с новой версией.
+    let lock_path = target_root.join("Cargo.lock");
+    let info_path = build_info_path(&target_root);
+    if let Some(current_version) = read_fw_core_version_from_lock(&lock_path) {
+        let saved = std::fs::read_to_string(&info_path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .and_then(|v| {
+                v.get("light-fw-core-version")
+                    .and_then(|x| x.as_str())
+                    .map(String::from)
+            });
+        if saved.as_deref() != Some(current_version.as_str()) {
+            let hot_build = target_root.join("target").join("hot-build");
+            if hot_build.exists() {
+                if std::fs::remove_dir_all(&hot_build).is_ok() {
+                    eprintln!("light dev: framework version changed → hot-build cache invalidated");
+                } else {
+                    eprintln!("light dev: не удалось удалить target/hot-build после смены версии");
+                }
+            }
+            // Записываем текущую версию, чтобы следующая сборка была «чистой».
+            let lock_hash = std::fs::read_to_string(&lock_path)
+                .ok()
+                .map(|s| hex::encode(sha2::Sha256::digest(s.as_bytes())))
+                .unwrap_or_default();
+            save_build_info(&info_path, &current_version, &lock_hash);
+        }
+    } else {
+        eprintln!("light dev: light-fw-core не найден в Cargo.lock — skip auto-invalidation");
+    }
+    // Age-привка hot-run: на старте дочернего процесса ещё нет, но старые
+    // артефакты (от прошлого запуска) уже лежат в hot-run. Удаляем их, пока
+    // они не мешают. Возвращаем число удалённых.
+    let pruned = prune_stale_run_exes(&run_dir, Path::new("/nonexistent"));
+    if pruned > 0 {
+        eprintln!("light dev: pruned {pruned} stale executables from hot-run");
+    }
+    // Предупреждение при рассинхроне между установленным CLI и версией
+    // light-fw-core, зафиксированной в проекте.
+    if let Some((installed, project)) =
+        check_cli_version_mismatch(env!("CARGO_PKG_VERSION"), &lock_path)
+    {
+        eprintln!(
+            "⚠ light dev: installed CLI version {installed} differs from project {project}. Run `cargo install --path crates/light-cli`"
+        );
+    }
 
     // === ФАЗА A: warm-up build в target/hot-build ===
     // Блокирующий `cargo build` в отдельный target-dir. При ошибке — сразу
@@ -1247,8 +1495,16 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                                     "light dev: child_arc poisoned — не записала новый process"
                                 );
                             }
-                            // Чистим старые копии (кроме текущей run_exe).
+                            // Чистим старые копии (кроме текущей run_exe) +
+                            // age-привка: убиваем всё, что старше STALE_RUN_AGE
+                            // или чей суффикс-timestamp не совпадает с «сегодня».
                             cleanup_run_dir(&run_dir, &new_run_exe);
+                            let pruned = prune_stale_run_exes(&run_dir, &new_run_exe);
+                            if pruned > 0 {
+                                eprintln!(
+                                    "light dev: pruned {pruned} stale executables from hot-run"
+                                );
+                            }
                             // Сбрасываем watcher в is_starting: он сам решит,
                             // когда закрывать окно (порт 9229 открылся либо
                             // дедлайн STARTUP_IGNORE прошёл).
@@ -1359,9 +1615,10 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
 mod tests {
     use super::{
         ChangeKind, RebuildOutcome, RebuildStateMachine, WatchAction, WatchState, bin_name,
-        classify_change, cleanup_run_dir, copy_fresh_to_run, file_hash, fresh_bin_path,
-        handle_watch_event, parse_dev_command, resolve_package_root, resolve_startup_completion,
-        run_exe_path, wait_port_available,
+        build_info_path, classify_change, clean_dev_cache, cleanup_run_dir, copy_fresh_to_run,
+        file_hash, fresh_bin_path, handle_watch_event, parse_dev_command, prune_stale_run_exes,
+        read_fw_core_version_from_lock, resolve_package_root, resolve_startup_completion,
+        run_exe_path, save_build_info, wait_port_available,
     };
     use std::io::Write as _;
     use std::net::TcpListener;
@@ -2027,5 +2284,166 @@ mod tests {
         assert!(copied.exists(), "current should remain: {:?}", copied);
 
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // ===================== TZ 0.14.4: cache invalidation tests =====================
+
+    /// ТЗ 6.1: round-trip — `save_build_info` пишет JSON с двумя полями,
+    /// `read_fw_core_version_from_lock` читает версию из `Cargo.lock`.
+    #[test]
+    fn build_info_round_trip() {
+        let tmp = test_tmp_dir("build_info");
+        std::fs::create_dir_all(&tmp).expect("create tmp");
+
+        let info = build_info_path(&tmp);
+        save_build_info(&info, "0.14.0", "abc123hash");
+
+        // Проверяем, что файл существует и содержит обе версии.
+        let content = std::fs::read_to_string(&info).expect("read build-info.json");
+        assert!(content.contains("0.14.0"), "version in file: {content}");
+        assert!(content.contains("abc123hash"), "hash in file: {content}");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// ТЗ 6.1 (часть 2): `read_fw_core_version_from_lock` находит версию
+    /// light-fw-core в тексте Cargo.lock.
+    #[test]
+    fn read_fw_core_version_from_lock_text() {
+        let tmp = test_tmp_dir("lock_parse");
+        std::fs::create_dir_all(&tmp).expect("create tmp");
+        let lock = tmp.join("Cargo.lock");
+
+        // Фиктивный Cargo.lock с блоком light-fw-core.
+        let lock_content = r#"
+[[package]]
+name = "light-fw-core"
+version = "0.14.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "other-crate"
+version = "1.0.0"
+"#;
+        std::fs::write(&lock, lock_content).expect("write fake lock");
+
+        let version = read_fw_core_version_from_lock(&lock).expect("should find version");
+        assert_eq!(version, "0.14.0");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// ТЗ 6.2: `--clean` чистит правильные пути: hot-build, hot-run, state, deps.
+    #[test]
+    fn clean_dev_cache_removes_expected_paths() {
+        let tmp = test_tmp_dir("clean_cache");
+        // Создаём структуру: target/hot-build, target/hot-run, .light/state.json,
+        // target/debug/deps/<package>*.
+        let target = tmp.join("target");
+        let hot_build = target.join("hot-build");
+        let hot_run = target.join("hot-run");
+        let state_file = tmp.join(".light").join("state.json");
+        let deps = target.join("debug").join("deps");
+        let pkg_dep = deps.join("example-devtools-demo-abcdef.exe");
+
+        std::fs::create_dir_all(&hot_build).expect("create hot-build");
+        std::fs::create_dir_all(&hot_run).expect("create hot-run");
+        std::fs::create_dir_all(tmp.join(".light")).expect("create .light");
+        std::fs::create_dir_all(&deps).expect("create deps");
+        std::fs::write(&state_file, "{}").expect("write state");
+        std::fs::write(&pkg_dep, b"fake").expect("write dep");
+
+        // Убеждаемся, что файлы существуют до чистки.
+        assert!(hot_build.exists());
+        assert!(hot_run.exists());
+        assert!(state_file.exists());
+        assert!(pkg_dep.exists());
+
+        // Чистим.
+        let removed = clean_dev_cache(&tmp, Some("example-devtools-demo"));
+
+        // Проверяем, что все четыре пути удалены.
+        assert!(!hot_build.exists(), "hot-build should be removed");
+        assert!(!hot_run.exists(), "hot-run should be removed");
+        assert!(!state_file.exists(), "state.json should be removed");
+        assert!(!pkg_dep.exists(), "deps artifact should be removed");
+
+        // Проверяем, что в списке removed есть наши пути.
+        let removed_strs: Vec<String> = removed
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            removed_strs.iter().any(|s| s.contains("hot-build")),
+            "removed should contain hot-build: {removed_strs:?}"
+        );
+        assert!(
+            removed_strs.iter().any(|s| s.contains("hot-run")),
+            "removed should contain hot-run: {removed_strs:?}"
+        );
+        assert!(
+            removed_strs.iter().any(|s| s.contains("state.json")),
+            "removed should contain state.json: {removed_strs:?}"
+        );
+        assert!(
+            removed_strs
+                .iter()
+                .any(|s| s.contains("example-devtools-demo")),
+            "removed should contain dep artifact: {removed_strs:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// ТЗ 6.3: age-prune удаляет устаревшие .exe, но не текущий.
+    /// Активный exe имеет свежий timestamp; старый — «вчерашний» (date ≠ today).
+    #[test]
+    fn prune_stale_run_exes_respects_keep_and_age() {
+        let tmp = test_tmp_dir("prune_stale");
+        let run_dir = tmp.join("hot-run");
+        std::fs::create_dir_all(&run_dir).expect("create run dir");
+
+        // Активный exe: свежий timestamp (сейчас) — НЕ должен быть удалён.
+        let active = run_exe_path(&run_dir, "test-app");
+        std::fs::write(&active, b"active").expect("write active");
+
+        // Старый exe: «вчерашний» timestamp → date ≠ today → stale_by_date=true.
+        // Берём сейчас минус 24 часа в миллисекундах.
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let yesterday_ms = now_ms.saturating_sub(86_400_000); // 24 hours ago
+        let old_name = format!("test-app-{yesterday_ms}.exe");
+        let old_exe = run_dir.join(&old_name);
+        std::fs::write(&old_exe, b"old").expect("write old");
+
+        // Проверяем, что активный НЕ удалён, а старый — удалён.
+        let pruned = prune_stale_run_exes(&run_dir, &active);
+        assert!(
+            pruned >= 1,
+            "should prune at least 1 stale: pruned={pruned}"
+        );
+        assert!(active.exists(), "active should remain: {:?}", active);
+        assert!(!old_exe.exists(), "old should be removed: {:?}", old_exe);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// Вспомогательная: создаёт уникальный CWD-относительный каталог для теста.
+    fn test_tmp_dir(label: &str) -> PathBuf {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(format!(
+                ".light-dev-test-{}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos(),
+                label
+            ))
     }
 }
