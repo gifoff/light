@@ -26,6 +26,7 @@ const CANDIDATES: &[&str] = &[
 /// Цветные эмодзи-файлы, которые ищутся после основного шрифта.
 /// Порядок: Windows → Linux → macOS.
 const EMOJI_CANDIDATES: &[&str] = &[
+    "seguiemj.ttf",
     "segoeuiemoji.ttf",
     "segoeuisl.ttf",
     "NotoColorEmoji.ttf",

@@ -2438,12 +2438,25 @@ impl App {
             // файл `.light/state.json`. Ошибки записи логируем в stderr — UI
             // продолжает работать; инспектор уже получил ответ `ok`.
             crate::devtools::DevToolsCommand::SaveState => {
-                let Some(id) = self.tokens.get(&crate::control::active_window()).copied() else {
+                // Ищем окно по активному токену; если не найдено (stale token
+                // в dev-mode), фолбэкаем на первое корневое окно (parent = None).
+                let active_wid = self
+                    .tokens
+                    .get(&crate::control::active_window())
+                    .copied()
+                    .filter(|wid| self.windows.contains_key(wid));
+                let root_wid = active_wid.or_else(|| {
+                    self.windows
+                        .iter()
+                        .find(|(_, w)| w.parent.is_none())
+                        .map(|(wid, _)| *wid)
+                });
+                let Some((root_wid, window)) =
+                    root_wid.and_then(|wid| self.windows.get(&wid).map(|w| (wid, w)))
+                else {
                     return;
                 };
-                let Some(window) = self.windows.get(&id) else {
-                    return;
-                };
+                eprintln!("light: SaveState → window_id={root_wid:?}");
                 if let Err(error) =
                     crate::devtools::save_state_file(&window.component.inspect_state())
                 {

@@ -170,7 +170,6 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             }
         });
         quote! {
-            #[cfg(feature = "devtools")]
             fn inspect_state(&self) -> ::light::serde_json::Value {
                 let mut #map_ident: ::light::serde_json::Map<
                     ::std::string::String,
