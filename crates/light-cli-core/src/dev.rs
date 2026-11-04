@@ -1548,6 +1548,11 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     new_cmd.stdout(Stdio::inherit());
                     new_cmd.stderr(Stdio::inherit());
                     apply_state_env(&mut new_cmd, &package_root);
+                    // Swap-процесс не должен удалять state.json при закрытии
+                    // (state уже сохранён предыдущим процессом через SAVE_STATE
+                    // или будет восстановлен из файла).
+                    new_cmd.env("LIGHT_SWAP", "1");
+                    eprintln!("light dev: clean exit during swap — state.json kept");
                     match new_cmd.spawn() {
                         Ok(c) => {
                             let new_pid = c.id();

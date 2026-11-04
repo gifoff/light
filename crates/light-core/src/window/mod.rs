@@ -2270,6 +2270,20 @@ impl App {
         {
             eprintln!("DevTools: не удалось сохранить состояние: {error}");
         }
+        // ТЗ 0.14.3-fix3: при clean exit (не swap) удаляем state.json,
+        // чтобы следующее запуск стартовал с чистым состоянием.
+        #[cfg(feature = "devtools")]
+        if state.parent.is_none() {
+            let is_swap = std::env::var("LIGHT_SWAP").is_ok();
+            if !is_swap {
+                let state_path = crate::devtools::state_file_path();
+                if std::fs::remove_file(&state_path).is_ok() {
+                    eprintln!("light: clean exit — state.json removed");
+                }
+            } else {
+                eprintln!("light: clean exit during swap — state.json kept");
+            }
+        }
         let mut closing = self.descendants(token);
         closing.push(token);
         for token in closing {

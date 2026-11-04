@@ -186,11 +186,34 @@ impl FontMetrics {
 
     /// Возвращает `(font_index, glyph_id)` для данного символа.
     ///
-    /// Сначала проверяет основной шрифт: если глиф есть — `(0, id)`.
-    /// Затем фолбэки по порядку. Если глиф не найден нигде — `None`
-    /// (рисуется плейсхолдер U+25A1).
+    /// 1. Основной шрифт (индекс 0) — первым, для любого символа.
+    /// 2. Basic-символы (пробел, латиница, кириллица, пунктуация) НЕ
+    ///    уходят в emoji fallback: там они рендерятся как □.
+    /// 3. Emoji / редкие символы — перебираем fallbacks (индексы 1..).
+    ///
+    /// Если глиф не найден нигде — `None` (рисуется плейсхолдер U+25A1).
     pub fn glyph_for(&self, ch: char) -> Option<(usize, GlyphId)> {
-        for (idx, font) in self.fonts.iter().enumerate() {
+        // 1. Основной шрифт — первым, для любого символа.
+        let id = self.fonts[0].glyph_id(ch);
+        if id.0 != 0 && self.fonts[0].outline(id).is_some() {
+            return Some((0, id));
+        }
+
+        // 2. Basic-символы (пробел, латиница, кириллица, пунктуация)
+        //    не должны уходить в emoji fallback: там они → □.
+        let cp = ch as u32;
+        let is_basic = matches!(
+            cp,
+            0x20..=0x7E | 0x00A0..=0x02FF | 0x0400..=0x04FF | 0x2000..=0x206F
+        );
+        if is_basic {
+            // Фолбэк в primary не помог — честный □.
+            let box_id = self.fonts[0].glyph_id('\u{25A1}');
+            return (box_id.0 != 0).then_some((0, box_id));
+        }
+
+        // 3. Emoji / редкие — перебираем fallbacks.
+        for (idx, font) in self.fonts.iter().enumerate().skip(1) {
             let id = font.glyph_id(ch);
             if id.0 != 0 && font.outline(id).is_some() {
                 return Some((idx, id));
@@ -323,5 +346,16 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// ТЗ 0.14.3-fix3 Task 1.2: пробел должен резолвиться из основного
+    /// шрифта (индекс 0), а не из emoji fallback.
+    #[test]
+    fn space_uses_primary_font() {
+        let Ok(m) = FontMetrics::load() else {
+            return;
+        };
+        let (idx, _) = m.glyph_for(' ').unwrap();
+        assert_eq!(idx, 0);
     }
 }
