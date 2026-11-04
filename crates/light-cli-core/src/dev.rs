@@ -711,9 +711,32 @@ fn parse_fw_core_version_from_lock_text(text: &str) -> Option<String> {
     Some(rest[..ver_end].to_string())
 }
 
+/// Текущая версия workspace-пакета из `[workspace.package] version` в
+/// `Cargo.toml`. Читаем напрямую (без `cargo metadata`): пользователь меняет
+/// версию в манифесте до запуска `cargo build`, поэтому `Cargo.lock` ещё не
+/// обновлён и не отражает новую версию. `Cargo.lock` — только fallback.
+pub fn read_fw_core_version_from_workspace_toml(toml_path: &Path) -> Option<String> {
+    let data = std::fs::read_to_string(toml_path).ok()?;
+    parse_workspace_package_version(&data)
+}
+
+/// Парсит `[workspace.package] version = "..."` из текста `Cargo.toml`
+/// (чистая функция, без I/O). Использует `toml_edit` для корректного разбора.
+fn parse_workspace_package_version(text: &str) -> Option<String> {
+    let doc: toml_edit::DocumentMut = text.parse().ok()?;
+    let ver = doc
+        .get("workspace")?
+        .get("package")?
+        .get("version")?
+        .as_str()?
+        .to_string();
+    Some(ver)
+}
+
 /// Удаляет всё, что нужно для полного сброса кэша dev-сборки (ТЗ 0.14.4):
-/// `target/hot-build`, `target/hot-run`, `.light/state.json` и артефакты
-/// зависимостей текущего пакета из `target/debug/deps/` (только `<package>*`).
+/// `target/hot-build`, `target/hot-run`, `.light/state.json`,
+/// `.light/build-info.json` и артефакты зависимостей текущего пакета из
+/// `target/debug/deps/` (только `<package>*`).
 /// Возвращает список удаляемых путей (для логирования и теста).
 pub fn clean_dev_cache(target_root: &Path, package: Option<&str>) -> std::vec::Vec<PathBuf> {
     let mut removed = Vec::new();
@@ -726,7 +749,10 @@ pub fn clean_dev_cache(target_root: &Path, package: Option<&str>) -> std::vec::V
     // 3) .light/state.json
     let state = target_root.join(".light").join("state.json");
     remove_path_quietly(&state, &mut removed);
-    // 4) target/debug/deps/<package>*
+    // 4) .light/build-info.json
+    let build_info = build_info_path(target_root);
+    remove_path_quietly(&build_info, &mut removed);
+    // 5) target/debug/deps/<package>*
     if let Some(pkg) = package {
         let deps = target_root.join("target").join("debug").join("deps");
         if let Ok(entries) = std::fs::read_dir(&deps) {
@@ -821,10 +847,16 @@ pub fn prune_stale_run_exes(run_dir: &Path, keep: &Path) -> usize {
 const STALE_RUN_AGE: Duration = Duration::from_secs(3600);
 
 /// Детектирует рассинхрон между установленным CLI (`env!("CARGO_PKG_VERSION")`
-/// бинарника) и версией `light-fw-core`, зафиксированной в `Cargo.lock` проекта.
+/// бинарника) и версией `light-fw-core` в проекте (первоисточник —
+/// `[workspace.package].version` из `Cargo.toml`; fallback — `Cargo.lock`).
 /// Возвращает `(installed, project)` только если они различаются.
-pub fn check_cli_version_mismatch(installed: &str, lock_path: &Path) -> Option<(String, String)> {
-    let project = read_fw_core_version_from_lock(lock_path)?;
+pub fn check_cli_version_mismatch(
+    installed: &str,
+    toml_path: &Path,
+    lock_path: &Path,
+) -> Option<(String, String)> {
+    let project = read_fw_core_version_from_workspace_toml(toml_path)
+        .or_else(|| read_fw_core_version_from_lock(lock_path))?;
     if project == installed {
         None
     } else {
@@ -872,15 +904,19 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     // при рассинхроне CLI/core.
     if args.clean {
         let removed = clean_dev_cache(&target_root, args.package.as_deref());
-        eprintln!("light dev: cleaned cache (hot-build, hot-run, state, deps)");
+        eprintln!("light dev: cleaned cache (hot-build, hot-run, state, deps, build-info)");
         let _ = removed.len();
     }
-    // Auto-invalidation: сравниваем версию light-fw-core в Cargo.lock с тем,
+    // Auto-invalidation: сравниваем версию light-fw-core (первоисточник —
+    // [workspace.package].version из Cargo.toml, fallback — Cargo.lock) с тем,
     // что зафиксировано в build-info.json. При смене — удаляем target/hot-build
     // ОДИН РАЗ, чтобы fresh-артефакт пересобрался с новой версией.
     let lock_path = target_root.join("Cargo.lock");
+    let toml_path = target_root.join("Cargo.toml");
     let info_path = build_info_path(&target_root);
-    if let Some(current_version) = read_fw_core_version_from_lock(&lock_path) {
+    let current_version = read_fw_core_version_from_workspace_toml(&toml_path)
+        .or_else(|| read_fw_core_version_from_lock(&lock_path));
+    if let Some(current_version) = &current_version {
         let saved = std::fs::read_to_string(&info_path)
             .ok()
             .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
@@ -893,20 +929,32 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
             let hot_build = target_root.join("target").join("hot-build");
             if hot_build.exists() {
                 if std::fs::remove_dir_all(&hot_build).is_ok() {
-                    eprintln!("light dev: framework version changed → hot-build cache invalidated");
+                    eprintln!(
+                        "light dev: framework version changed ({} → {}) → hot-build cache invalidated",
+                        saved.as_deref().unwrap_or("?"),
+                        current_version
+                    );
                 } else {
                     eprintln!("light dev: не удалось удалить target/hot-build после смены версии");
                 }
+            } else {
+                eprintln!(
+                    "light dev: framework version changed ({} → {}) → hot-build cache invalidated",
+                    saved.as_deref().unwrap_or("?"),
+                    current_version
+                );
             }
             // Записываем текущую версию, чтобы следующая сборка была «чистой».
             let lock_hash = std::fs::read_to_string(&lock_path)
                 .ok()
                 .map(|s| hex::encode(sha2::Sha256::digest(s.as_bytes())))
                 .unwrap_or_default();
-            save_build_info(&info_path, &current_version, &lock_hash);
+            save_build_info(&info_path, current_version, &lock_hash);
         }
     } else {
-        eprintln!("light dev: light-fw-core не найден в Cargo.lock — skip auto-invalidation");
+        eprintln!(
+            "light dev: light-fw-core не найден в Cargo.toml/Cargo.lock — skip auto-invalidation"
+        );
     }
     // Age-привка hot-run: на старте дочернего процесса ещё нет, но старые
     // артефакты (от прошлого запуска) уже лежат в hot-run. Удаляем их, пока
@@ -918,7 +966,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     // Предупреждение при рассинхроне между установленным CLI и версией
     // light-fw-core, зафиксированной в проекте.
     if let Some((installed, project)) =
-        check_cli_version_mismatch(env!("CARGO_PKG_VERSION"), &lock_path)
+        check_cli_version_mismatch(env!("CARGO_PKG_VERSION"), &toml_path, &lock_path)
     {
         eprintln!(
             "⚠ light dev: installed CLI version {installed} differs from project {project}. Run `cargo install --path crates/light-cli`"
@@ -1616,8 +1664,9 @@ mod tests {
     use super::{
         ChangeKind, RebuildOutcome, RebuildStateMachine, WatchAction, WatchState, bin_name,
         build_info_path, classify_change, clean_dev_cache, cleanup_run_dir, copy_fresh_to_run,
-        file_hash, fresh_bin_path, handle_watch_event, parse_dev_command, prune_stale_run_exes,
-        read_fw_core_version_from_lock, resolve_package_root, resolve_startup_completion,
+        file_hash, fresh_bin_path, handle_watch_event, parse_dev_command,
+        parse_workspace_package_version, prune_stale_run_exes, read_fw_core_version_from_lock,
+        read_fw_core_version_from_workspace_toml, resolve_package_root, resolve_startup_completion,
         run_exe_path, save_build_info, wait_port_available,
     };
     use std::io::Write as _;
@@ -2429,6 +2478,84 @@ version = "1.0.0"
         assert!(active.exists(), "active should remain: {:?}", active);
         assert!(!old_exe.exists(), "old should be removed: {:?}", old_exe);
 
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// ТЗ fix1 4.1: `read_fw_core_version_from_workspace_toml` парсит
+    /// `[workspace.package] version = "0.15.0"` из текста Cargo.toml.
+    #[test]
+    fn parse_workspace_package_version_basic() {
+        let toml_text = r#"
+[workspace]
+resolver = "2"
+members = ["crates/core"]
+
+[workspace.package]
+version = "0.15.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+serde = "1.0"
+"#;
+        let ver = parse_workspace_package_version(toml_text).expect("should parse");
+        assert_eq!(ver, "0.15.0");
+    }
+
+    /// ТЗ fix1 4.1 (часть 2): отсутствие [workspace.package] → None.
+    #[test]
+    fn parse_workspace_package_version_missing_section() {
+        let toml_text = r#"
+[package]
+name = "solo-crate"
+version = "1.0.0"
+"#;
+        assert!(parse_workspace_package_version(toml_text).is_none());
+    }
+
+    /// ТЗ fix1 4.2: `read_fw_core_version_from_workspace_toml` читает файл,
+    /// а при его отсутствии возвращает None (fallback на lock вызывается
+    /// снаружи через .or_else).
+    #[test]
+    fn workspace_toml_read_and_fallback() {
+        let tmp = test_tmp_dir("toml_fallback");
+        let _ = std::fs::create_dir_all(&tmp);
+
+        // С томом:
+        let toml_path = tmp.join("Cargo.toml");
+        let _ = std::fs::write(
+            &toml_path,
+            "[workspace.package]\nversion = \"0.16.0\"\nedition = \"2024\"\n",
+        );
+        let ver = read_fw_core_version_from_workspace_toml(&toml_path).expect("should read toml");
+        assert_eq!(ver, "0.16.0");
+
+        // Fallback: нет Cargo.toml → None (вызывающий код делает .or_else(lock)).
+        let missing = tmp.join("nonexistent/Cargo.toml");
+        assert!(read_fw_core_version_from_workspace_toml(&missing).is_none());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// ТЗ fix1 4.3: `clean_dev_cache` удаляет build-info.json.
+    #[test]
+    fn clean_dev_cache_removes_build_info() {
+        let tmp = test_tmp_dir("clean_build_info");
+        let _ = std::fs::create_dir_all(tmp.join("target/hot-build"));
+        let _ = std::fs::create_dir_all(tmp.join(".light"));
+        let bi = build_info_path(&tmp);
+        let _ = std::fs::write(&bi, "{}");
+
+        let removed = clean_dev_cache(&tmp, Some("myapp"));
+        assert!(!bi.exists(), "build-info.json should be removed");
+        let removed_strs: Vec<_> = removed
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            removed_strs.iter().any(|s| s.contains("build-info")),
+            "removed should contain build-info: {removed_strs:?}"
+        );
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
