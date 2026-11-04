@@ -2272,14 +2272,19 @@ impl App {
         }
         // ТЗ 0.14.3-fix3: при clean exit (не swap) удаляем state.json,
         // чтобы следующее запуск стартовал с чистым состоянием.
+        // ТЗ 0.14.3-fix4: при --preserve-state (LIGHT_PRESERVE_STATE=1)
+        // state.json сохраняется даже при обычном выходе.
         #[cfg(feature = "devtools")]
         if state.parent.is_none() {
             let is_swap = std::env::var("LIGHT_SWAP").is_ok();
-            if !is_swap {
+            let is_preserve = std::env::var("LIGHT_PRESERVE_STATE").is_ok();
+            if !is_swap && !is_preserve {
                 let state_path = crate::devtools::state_file_path();
                 if std::fs::remove_file(&state_path).is_ok() {
                     eprintln!("light: clean exit — state.json removed");
                 }
+            } else if is_preserve {
+                eprintln!("light: clean exit with --preserve-state — state.json kept");
             } else {
                 eprintln!("light: clean exit during swap — state.json kept");
             }
@@ -2504,33 +2509,47 @@ impl ApplicationHandler<UserEvent> for App {
             Some(c) => c,
             None => return,
         };
-        // Восстанавливаем состояние из `.light/state.json`, если файл есть
-        // (фича `devtools`). Применяем до первого рендера: значения должны
-        // отразиться в первом кадре. Повреждённый/отсутствующий файл не
-        // блокирует запуск — просто продолжаем с чистым состоянием.
+        // ТЗ 0.14.3-fix4: применяем state.json ТОЛЬКО при hot-swap
+        // (LIGHT_RESUME_FROM_SWAP=1) или явном --preserve-state
+        // (LIGHT_PRESERVE_STATE=1). На cold start дефолты из кода
+        // имеют приоритет над устаревшим state.
         #[cfg(not(feature = "devtools"))]
         let component = component;
         #[cfg(feature = "devtools")]
         let component = {
             let mut c = component;
-            match crate::devtools::load_state_file() {
-                Ok(Some(state)) => {
-                    let fields = state.as_object().map(|m| m.len()).unwrap_or(0);
-                    c.inject_state(&state);
-                    eprintln!("light: state loaded ({fields} fields injected)");
+            let is_resume_swap = std::env::var("LIGHT_RESUME_FROM_SWAP").is_ok();
+            let is_preserve = std::env::var("LIGHT_PRESERVE_STATE").is_ok();
+            if is_resume_swap || is_preserve {
+                match crate::devtools::load_state_file() {
+                    Ok(Some(state)) => {
+                        let fields = state.as_object().map(|m| m.len()).unwrap_or(0);
+                        c.inject_state(&state);
+                        if is_preserve {
+                            eprintln!(
+                                "light: state loaded ({fields} fields injected) [preserve-state]"
+                            );
+                        } else {
+                            eprintln!(
+                                "light: state loaded ({fields} fields injected) [resume from swap]"
+                            );
+                        }
+                    }
+                    Ok(None) => {
+                        eprintln!(
+                            "light: no state file at {:?}",
+                            crate::devtools::state_file_path()
+                        );
+                    }
+                    Err(_) => {
+                        eprintln!(
+                            "light: no state file at {:?}",
+                            crate::devtools::state_file_path()
+                        );
+                    }
                 }
-                Ok(None) => {
-                    eprintln!(
-                        "light: no state file at {:?}",
-                        crate::devtools::state_file_path()
-                    );
-                }
-                Err(_) => {
-                    eprintln!(
-                        "light: no state file at {:?}",
-                        crate::devtools::state_file_path()
-                    );
-                }
+            } else {
+                eprintln!("light: cold start — state.json not applied");
             }
             c
         };

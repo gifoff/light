@@ -74,6 +74,9 @@ pub struct DevArgs {
     /// deps текущего пакета). Смысл — при смене версии фреймворка, когда
     /// auto-invalidation уже не помогает.
     pub clean: bool,
+    /// Сохранять state.json между ВСЕМИ запусками (в т.ч. cold start).
+    /// Эквивалент LIGHT_PRESERVE_STATE=1. По умолчанию false.
+    pub preserve_state: bool,
 }
 
 /// Чистый разбор сырых аргументов командной строки в [`DevArgs`].
@@ -115,6 +118,9 @@ pub fn parse_dev_command(raw: &[String]) -> DevArgs {
             // Полный сброс кэша (TZ 0.14.4): не передаём в cargo, а обрабатываем
             // до warm-up build.
             out.clean = true;
+        } else if arg == "--preserve-state" {
+            // ТЗ 0.14.3-fix4: сохранять state между всеми запусками.
+            out.preserve_state = true;
         } else if i == 0 && !arg.starts_with('-') {
             out.package = Some(arg.clone());
         } else {
@@ -1052,6 +1058,12 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     child_cmd.stdout(Stdio::inherit());
     child_cmd.stderr(Stdio::inherit());
     apply_state_env(&mut child_cmd, &package_root);
+    // ТЗ 0.14.3-fix4: cold start НЕ получает LIGHT_RESUME_FROM_SWAP.
+    // При --preserve-state state.json применяется даже на cold start.
+    if args.preserve_state {
+        child_cmd.env("LIGHT_PRESERVE_STATE", "1");
+        eprintln!("light dev: --preserve-state — state.json applied on cold start");
+    }
     let child = match child_cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -1552,6 +1564,12 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     // (state уже сохранён предыдущим процессом через SAVE_STATE
                     // или будет восстановлен из файла).
                     new_cmd.env("LIGHT_SWAP", "1");
+                    // ТЗ 0.14.3-fix4: новый процесс после swap применяет
+                    // state.json (инъекция значений из старого процесса).
+                    new_cmd.env("LIGHT_RESUME_FROM_SWAP", "1");
+                    if args.preserve_state {
+                        new_cmd.env("LIGHT_PRESERVE_STATE", "1");
+                    }
                     eprintln!("light dev: clean exit during swap — state.json kept");
                     match new_cmd.spawn() {
                         Ok(c) => {
@@ -1936,6 +1954,26 @@ mod tests {
         assert!(args.verbose);
         assert!(args.package.is_none());
         assert!(args.extra_cargo_args.is_empty());
+    }
+
+    /// `--preserve-state` вынимается из аргументов (не попадает в cargo).
+    #[test]
+    fn parse_preserve_state_flag() {
+        let args = parse_dev_command(&[
+            "my-app".into(),
+            "--preserve-state".into(),
+            "--release".into(),
+        ]);
+        assert!(args.preserve_state);
+        assert_eq!(args.package.as_deref(), Some("my-app"));
+        assert_eq!(args.extra_cargo_args, vec!["--release".to_owned()]);
+    }
+
+    /// По умолчанию preserve_state = false.
+    #[test]
+    fn parse_preserve_state_default_false() {
+        let args = parse_dev_command(&[]);
+        assert!(!args.preserve_state);
     }
 
     /// `.html` → `ChangeKind::Html`.
