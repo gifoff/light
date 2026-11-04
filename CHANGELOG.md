@@ -2,6 +2,27 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.14.0] - 2026-11-04
+
+### Added
+
+- `light dev`: Hot Reload для HTML-шаблонов (RELOAD_TEMPLATE без пересборки) и
+  исходников `.rs` (пересборка + swap бинарника с сохранением состояния через
+  `SAVE_STATE`). Наблюдатель на PollWatcher (500ms), debounce (HTML 100ms /
+  .rs 500ms), hash-dedup notify-событий. Флаг `--verbose` для подробных логов.
+- `#[default(expr)]` в макросе `#[proxy]`: значение по умолчанию для поля
+  реактивного struct, задаётся выражением (не только `Default::default()`).
+- DevTools TCP-сервер (127.0.0.1:9229): JSON-снимок UI (`SNAPSHOT`), управление
+  кликами (`CLICK <key>`), `PING`, `QUIT`.
+- `light.config.json` с профилями `dev`/`prod`; `run_with_config()`.
+- Пример `examples/devtools-demo` с демонстрацией DevTools и TCP-клиента.
+
+### Changed
+
+- `light dev`: убраны verbose-логи (hash-dedup, debounce, notify events) из
+  основного вывода; доступны через `--verbose`.
+- Версии всех крейтов воркспейса подняты до `0.14.0`.
+
 ## [0.13.0] - 2026-11-01
 
 ### Added

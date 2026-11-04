@@ -8,8 +8,9 @@ use light_fw_cli_core::dev::{parse_dev_command, run as run_dev};
 
 /// Аргументы подкоманды `dev`.
 ///
-/// Первый свободный аргумент (не начинающийся с `-`) — имя пакета; всё
-/// остальное передаётся в `cargo run` как есть (например, `--release`).
+/// Первый свободный аргумент (не начинающийся с `-`) — имя пакета; `--verbose`
+/// включает подробные логи; всё остальное передаётся в `cargo run` как есть
+/// (например, `--release`).
 #[derive(clap::Args, Debug)]
 pub struct DevArgs {
     /// Пакет воркспейса, который запускается.
@@ -17,6 +18,9 @@ pub struct DevArgs {
     /// Если не указан, `cargo run` запустит пакет по умолчанию (из текущего
     /// каталога).
     pub package: Option<String>,
+    /// Включить подробные логи (debounce, hash-dedup, notify events).
+    #[arg(long, default_value_t = false)]
+    pub verbose: bool,
     /// Дополнительные флаги cargo (включая `--`, если нужно передать аргументы
     /// самому приложению). Пример: `--release`.
     #[arg(trailing_var_arg = true)]
@@ -25,9 +29,13 @@ pub struct DevArgs {
 
 /// Точка входа подкоманды `light dev`.
 pub fn run(args: DevArgs) -> anyhow::Result<i32> {
+    let verbose = args.verbose;
     let mut raw: Vec<String> = Vec::new();
     if let Some(package) = &args.package {
         raw.push(package.clone());
+    }
+    if verbose {
+        raw.push("--verbose".into());
     }
     raw.extend(args.extra_cargo_args);
     // Повторно разбираем через чистую функцию `parse_dev_command`, чтобы

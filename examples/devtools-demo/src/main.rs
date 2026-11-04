@@ -13,6 +13,7 @@ use light::prelude::*;
 #[proxy]
 struct App {
     count: i64,
+    #[default("Кликните «Инкремент»".to_owned())]
     status: String,
 }
 

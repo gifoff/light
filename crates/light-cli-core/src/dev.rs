@@ -67,14 +67,16 @@ pub struct DevArgs {
     /// Дополнительные флаги cargo, передаваемые после имени пакета
     /// (например, `--release`).
     pub extra_cargo_args: Vec<String>,
+    /// Включить подробные логи (debounce, hash-dedup, notify events).
+    pub verbose: bool,
 }
 
 /// Чистый разбор сырых аргументов командной строки в [`DevArgs`].
 ///
 /// Правила: первый аргумент (если он существует и не начинается с `-`)
-/// считается именем пакета; все последующие аргументы попадают в
-/// `extra_cargo_args`. Это изолировано от `clap`, чтобы тестировать парсинг
-/// без запуска бинарника.
+/// считается именем пакета; `--verbose` включает подробные логи; всё
+/// остальное попадает в `extra_cargo_args`. Это изолировано от `clap`,
+/// чтобы тестировать парсинг без запуска бинарника.
 ///
 /// # Примеры
 ///
@@ -85,6 +87,13 @@ pub struct DevArgs {
 /// let args = parse_dev_command(&["example-devtools-demo".into(), "--release".into()]);
 /// assert_eq!(args.package.as_deref(), Some("example-devtools-demo"));
 /// assert_eq!(args.extra_cargo_args, vec!["--release"]);
+/// assert!(!args.verbose);
+///
+/// // `light dev --verbose`
+/// let args = parse_dev_command(&["--verbose".into()]);
+/// assert!(args.verbose);
+/// assert_eq!(args.package, None);
+/// assert!(args.extra_cargo_args.is_empty());
 ///
 /// // `light dev` (без имени пакета)
 /// let empty: &[String] = &[];
@@ -95,7 +104,9 @@ pub struct DevArgs {
 pub fn parse_dev_command(raw: &[String]) -> DevArgs {
     let mut out = DevArgs::default();
     for (i, arg) in raw.iter().enumerate() {
-        if i == 0 && !arg.starts_with('-') {
+        if arg == "--verbose" {
+            out.verbose = true;
+        } else if i == 0 && !arg.starts_with('-') {
             out.package = Some(arg.clone());
         } else {
             out.extra_cargo_args.push(arg.clone());
@@ -263,7 +274,7 @@ const FILE_HASH_MAX_ATTEMPTS: u32 = 3;
 /// попытками. Если все попытки упали (файл реально недоступен) — возвращает
 /// `None`; событие тогда НЕ дедуплицируется и обрабатывается как изменение
 /// (консервативно: лучше лишний reload, чем пропущенное изменение).
-pub fn file_hash(path: &Path) -> Option<u64> {
+pub fn file_hash(path: &Path, verbose: bool) -> Option<u64> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
@@ -280,11 +291,13 @@ pub fn file_hash(path: &Path) -> Option<u64> {
                 if attempts >= FILE_HASH_MAX_ATTEMPTS {
                     break None;
                 }
-                eprintln!(
-                    "light dev: hash({path:?}) read attempt {attempts} failed: {e} \
-                     (повторю через {:?}, всего до {FILE_HASH_MAX_ATTEMPTS:?} попыток)",
-                    FILE_HASH_RETRY_INTERVAL
-                );
+                if verbose {
+                    eprintln!(
+                        "light dev: hash({path:?}) read attempt {attempts} failed: {e} \
+                         (повторю через {:?}, всего до {FILE_HASH_MAX_ATTEMPTS:?} попыток)",
+                        FILE_HASH_RETRY_INTERVAL
+                    );
+                }
                 thread::sleep(FILE_HASH_RETRY_INTERVAL);
             }
         }
@@ -294,8 +307,9 @@ pub fn file_hash(path: &Path) -> Option<u64> {
         b.hash(&mut hasher);
         hasher.finish()
     });
-    // Лог по ТЗ 2.2: на каждый вызов file_hash — eprintln с Some/None.
-    eprintln!("light dev: hash({:?}) = {:?}", path, result);
+    if verbose {
+        eprintln!("light dev: hash({:?}) = {:?}", path, result);
+    }
     result
 }
 
@@ -770,6 +784,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
 
     let watch_paths_copy = watch_paths(&package_root);
     eprintln!("light dev: watching {:?}", watch_paths_copy);
+    let verbose = args.verbose;
     let done_flag_watch = done_flag.clone();
     let watcher = thread::spawn(move || {
         if watch_paths_copy.is_empty() {
@@ -902,10 +917,12 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                         }
                         // Лог по ТЗ 3.1: сразу, до debounce.
                         let kind_log = classify_change(path);
-                        eprintln!(
-                            "light dev: notify event path={path:?} kind={kind_log:?} \
-                             (queued for debounce)"
-                        );
+                        if verbose {
+                            eprintln!(
+                                "light dev: notify event path={path:?} kind={kind_log:?} \
+                                 (queued for debounce)"
+                            );
+                        }
                         // Deduplicate by path within the queue: если тот же путь
                         // уже в pending_debounce, не добавляем повторно (серия
                         // событий одного save генерирует 2-3 notify на один путь).
@@ -967,16 +984,18 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                             if rs_fired {
                                 last_rs = None;
                             }
-                            eprintln!(
-                                "light dev: debounce fired, {} paths pending",
-                                pending_debounce.len()
-                            );
+                            if verbose {
+                                eprintln!(
+                                    "light dev: debounce fired, {} paths pending",
+                                    pending_debounce.len()
+                                );
+                            }
                             // Проходим по pending_debounce: хэшируем и дедуплицируем.
                             // Файл уже полностью записан (debounce отработал).
                             let mut clean_events: std::collections::VecDeque<PathBuf> =
                                 std::collections::VecDeque::new();
                             while let Some(path) = pending_debounce.pop_front() {
-                                match file_hash(&path) {
+                                match file_hash(&path, verbose) {
                                     Some(hash) => {
                                         // Сравниваем с последним известным хэшем
                                         // этого пути:
@@ -988,10 +1007,12 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                                         //    clean_events.
                                         match last_hashes.get(&path) {
                                             Some(&last) if last == hash => {
-                                                eprintln!(
-                                                    "light dev: duplicate notify event for \
-                                                     {path:?} (hash unchanged) — ignored"
-                                                );
+                                                if verbose {
+                                                    eprintln!(
+                                                        "light dev: duplicate notify event for \
+                                                         {path:?} (hash unchanged) — ignored"
+                                                    );
+                                                }
                                             }
                                             _ => {
                                                 last_hashes.insert(path.clone(), hash);
@@ -1003,18 +1024,22 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                                     // 3 попыток чтения): НЕ дедуплицируем —
                                     // обрабатываем как изменение (консервативно).
                                     None => {
-                                        eprintln!(
-                                            "light dev: file_hash returned None for \
-                                             {path:?} (treated as real change, no dedup)"
-                                        );
+                                        if verbose {
+                                            eprintln!(
+                                                "light dev: file_hash returned None for \
+                                                 {path:?} (treated as real change, no dedup)"
+                                            );
+                                        }
                                         clean_events.push_back(path);
                                     }
                                 }
                             }
-                            eprintln!(
-                                "light dev: {} clean events after hash-dedup",
-                                clean_events.len()
-                            );
+                            if verbose {
+                                eprintln!(
+                                    "light dev: {} clean events after hash-dedup",
+                                    clean_events.len()
+                                );
+                            }
                             // Берём ПЕРВЫЙ чистый путь, классифицируем и
                             // передаём в handle_watch_event (по ТЗ 1.3).
                             if let Some(first) = clean_events.pop_front() {
@@ -1062,10 +1087,12 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                                     }
                                 }
                             } else {
-                                eprintln!(
-                                    "light dev: все события отфильтрованы hash-дедупом — \
-                                     action не требуется"
-                                );
+                                if verbose {
+                                    eprintln!(
+                                        "light dev: все события отфильтрованы hash-дедупом — \
+                                         action не требуется"
+                                    );
+                                }
                             }
                         }
                     }
@@ -1567,6 +1594,24 @@ mod tests {
         );
     }
 
+    /// `--verbose` вынимается из доп. аргументов и не попадает в cargo.
+    #[test]
+    fn parse_verbose_flag() {
+        let args = parse_dev_command(&["my-app".into(), "--verbose".into(), "--release".into()]);
+        assert!(args.verbose);
+        assert_eq!(args.package.as_deref(), Some("my-app"));
+        assert_eq!(args.extra_cargo_args, vec!["--release".to_owned()]);
+    }
+
+    /// `--verbose` без пакета.
+    #[test]
+    fn parse_verbose_only() {
+        let args = parse_dev_command(&["--verbose".into()]);
+        assert!(args.verbose);
+        assert!(args.package.is_none());
+        assert!(args.extra_cargo_args.is_empty());
+    }
+
     /// `.html` → `ChangeKind::Html`.
     #[test]
     fn classify_html_file() {
@@ -1629,7 +1674,7 @@ mod tests {
         f.write_all(b"a").expect("write 'a'");
         f.sync_all().expect("sync");
         drop(f);
-        let hash1 = file_hash(&path).expect("hash1 must be Some");
+        let hash1 = file_hash(&path, false).expect("hash1 must be Some");
 
         // Записываем "a" ещё раз (симулируем повторное событие notify).
         let mut f = std::fs::OpenOptions::new()
@@ -1640,7 +1685,7 @@ mod tests {
         f.write_all(b"a").expect("rewrite 'a'");
         f.sync_all().expect("sync");
         drop(f);
-        let hash2 = file_hash(&path).expect("hash2 must be Some");
+        let hash2 = file_hash(&path, false).expect("hash2 must be Some");
 
         // Одно и то же содержимое → одинаковый хэш.
         assert_eq!(
@@ -1657,7 +1702,7 @@ mod tests {
         f.write_all(b"b").expect("write 'b'");
         f.sync_all().expect("sync");
         drop(f);
-        let hash3 = file_hash(&path).expect("hash3 must be Some");
+        let hash3 = file_hash(&path, false).expect("hash3 must be Some");
 
         // Разное содержимое → разные хэши (крайне маловероятно совпадение
         // у DefaultHasher для двух байтов, но формально проверяем).
@@ -1676,7 +1721,7 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("create temp dir");
         let path = dir.join("does_not_exist.html");
         let _ = std::fs::remove_file(&path);
-        assert_eq!(file_hash(&path), None);
+        assert_eq!(file_hash(&path, false), None);
         let _ = std::fs::remove_dir(&dir);
     }
 
@@ -1723,11 +1768,11 @@ mod tests {
 
         // К этому моменту debounce (100/500 мс) уже истёк. Хэшируем финальное
         // содержимое "ab":
-        let final_hash = file_hash(&path).expect("hash of 'ab'");
+        let final_hash = file_hash(&path, false).expect("hash of 'ab'");
 
         // Симулируем «повторное» notify-событие (Modify(Data) / Modify(Metadata)):
         // содержимое НЕ изменилось, хэш должен совпадать.
-        let dup_hash = file_hash(&path).expect("hash on duplicate event");
+        let dup_hash = file_hash(&path, false).expect("hash on duplicate event");
         assert_eq!(
             final_hash, dup_hash,
             "повторное событие того же содержимого должно дать одинаковый хэш \
@@ -1743,7 +1788,7 @@ mod tests {
         f.write_all(b"xyz").expect("write 'xyz'");
         f.sync_all().expect("sync");
         drop(f);
-        let new_hash = file_hash(&path).expect("hash of 'xyz'");
+        let new_hash = file_hash(&path, false).expect("hash of 'xyz'");
         assert_ne!(
             final_hash, new_hash,
             "новое содержимое даёт новый хэш → пройдёт hash-фильтр"
@@ -1777,7 +1822,7 @@ mod tests {
         let _ = std::fs::remove_file(&path);
 
         let start = Instant::now();
-        let result = file_hash(&path);
+        let result = file_hash(&path, false);
         let elapsed = start.elapsed();
 
         // Файл не существует: все 3 попытки падают, возвращаем None.
