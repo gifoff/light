@@ -803,7 +803,16 @@ impl Layout {
                 let btn_inset = inset.plus(extra);
                 let inner_left = flow_x + btn_inset.left;
                 let inner_top = flow_y + btn_inset.top;
-                let inner_w = (definite_w - btn_inset.horizontal()).max(0.0);
+                // Auto-ширина кнопки: дети всегда измеряются с неограниченной
+                // шириной (max-content), даже во второй проходе раскладки
+                // (`stretch_row_children`), где кнопка получает `forced_w` из
+                // первого прохода. Иначе текст повторно переносится на узкой
+                // ширине и кнопка становится tall-and-narrow.
+                let inner_w = if matches!(style.width, Size::Auto) {
+                    f32::INFINITY
+                } else {
+                    (definite_w - btn_inset.horizontal()).max(0.0)
+                };
                 let inner_h = (definite_h - btn_inset.vertical()).max(0.0);
                 let content = ContentBox {
                     left: inner_left,
