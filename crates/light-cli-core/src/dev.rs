@@ -242,6 +242,16 @@ fn apply_state_env(cmd: &mut std::process::Command, root: &std::path::Path) {
     cmd.env("LIGHT_STATE_FILE", &path);
 }
 
+/// Путь файла геометрии окна относительно `root` (по умолчанию
+/// `.light/window.json`; переопределяется `LIGHT_WINDOW_FILE`). Совпадает с
+/// путём, который читает/пишет окно приложения (`light-fw-core::window`).
+pub fn window_file_path(root: &std::path::Path) -> PathBuf {
+    match std::env::var_os("LIGHT_WINDOW_FILE") {
+        Some(var) if !var.is_empty() => PathBuf::from(var),
+        _ => root.join(".light").join("window.json"),
+    }
+}
+
 /// Отправляет команду `SAVE_STATE\n` в TCP-сервер DevTools на
 /// `127.0.0.1:<port>` и закрывает соединение. Ошибки (сервер не запущен,
 /// порт занят) не являются фатальными — просто проигнорируются.
@@ -1053,6 +1063,19 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         first_run_exe,
         fresh_bin_path(&build_target, &bin)
     );
+    // ТЗ 0.14.3-fix7: cold start не применяет ни state, ни geometry (см.
+    // `resumed`/`create_window` в core). Чтобы они гарантированно не подтянули
+    // устаревшие значения из прошлой сессии, удаляем оба файла до запуска
+    // первого warm-up бинарника. (При user-close supervisor их тоже удаляет —
+    // это двойная страховка на случай, если прошлый процесс завершился грубо.)
+    for stale in [
+        state_file_path(&package_root),
+        window_file_path(&package_root),
+    ] {
+        if std::fs::remove_file(&stale).is_ok() {
+            eprintln!("light dev: cold start — cleared stale {:?}", stale);
+        }
+    }
     let mut child_cmd = Command::new(&first_run_exe);
     child_cmd.stdin(Stdio::inherit());
     child_cmd.stdout(Stdio::inherit());
@@ -1086,7 +1109,10 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     // State-machine: решение о реакции на результат фоновой сборки. Держим
     // в main-потоке (swap выполняется там); чистый, без side effects.
     let mut sm = RebuildStateMachine::default();
-
+    // ТЗ 0.14.3-fix7: kill_child (kill + wait) синхронно потребляет exit
+    // убитого swap-процесса, так что Ev::Exited в главном цикле получает
+    // только события от «живых» детей (user-close или crash). Флаг pending_swap
+    // больше не нужен — все exit 0 в Ev::Exited = user-close → удалить файлы.
     // Канал на перезапуск от наблюдателя. Несёт тип изменения: Html →
     // RELOAD_TEMPLATE (без убийства), Source → background rebuild + swap.
     let (restart_tx, restart_rx) = mpsc::channel::<(Instant, ChangeKind)>();
@@ -1496,7 +1522,20 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     let _ = r.wait();
                 }
                 let code = status.code().unwrap_or(1);
+                // ТЗ 0.14.3-fix7: Ev::Exited получает только события от
+                // «живых» детей (kill_child синхронно потребляет exit убитого
+                // swap-процесса). Exit 0 → user-close: стираем state + geometry.
+                // Exit != 0 → crash: файлы не трогаем.
                 if code == 0 {
+                    for stale in [
+                        state_file_path(&package_root),
+                        window_file_path(&package_root),
+                    ] {
+                        if std::fs::remove_file(&stale).is_ok() {
+                            eprintln!("light dev: removed {:?}", stale);
+                        }
+                    }
+                    eprintln!("light dev: user close — state + geometry removed");
                     eprintln!(
                         "light dev: app exited cleanly (window closed by user or session end)"
                     );
@@ -1588,6 +1627,11 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                                     "light dev: child_arc poisoned — не записала новый process"
                                 );
                             }
+                            // ТЗ 0.14.3-fix7: старый child уже убив синхронно
+                            // (kill_child → kill + wait), так что его exit НЕ
+                            // попадёт в Ev::Exited. Новый child — обычный:
+                            // если пользователь закроет X → user-close → удалить
+                            // state + geometry. pending_swap остаётся false.
                             // Чистим старые копии (кроме текущей run_exe) +
                             // age-привка: убиваем всё, что старше STALE_RUN_AGE
                             // или чей суффикс-timestamp не совпадает с «сегодня».

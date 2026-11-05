@@ -1819,6 +1819,15 @@ fn map_button(button: MouseButton) -> DomButton {
     }
 }
 
+/// ТЗ 0.14.3-fix7: восстановление geometry (как и state) допустимо ТОЛЬКО при
+/// hot-swap (`LIGHT_RESUME_FROM_SWAP=1`). На cold start окно появляется в
+/// дефолтной позиции (центр экрана), а устаревшая geometry из прошлой сессии
+/// не применяется — иначе холодный старт брал бы «сломанную» позицию
+/// (например `(-32000, -32000)` от свёрнутого окна).
+fn is_resume_from_swap() -> bool {
+    std::env::var("LIGHT_RESUME_FROM_SWAP").is_ok()
+}
+
 /// Координатор цикла событий: набор окон и общие ресурсы.
 struct App {
     windows: HashMap<WindowId, WindowState>,
@@ -1835,12 +1844,17 @@ struct App {
     window_geom: Option<WindowGeometry>,
     window_geom_dirty: bool,
     window_geom_last_write: std::time::Instant,
+    /// ТЗ 0.14.3-fix7: последняя «нормальная» (не minimized, не off-screen)
+    /// геометрия. Когда окно свёрнуто, вместо мусорных координат Windows
+    /// `(-32000, -32000)` в файл уходит именно эта — чтобы restore не ломал
+    /// thumbnail/видимость.
+    cached_normal_geometry: Option<WindowGeometry>,
     /// Прокси цикла событий для доставки событий AccessKit.
     #[cfg(feature = "a11y-winit")]
     proxy: Option<EventLoopProxy<UserEvent>>,
 }
 
-/// Сохранённая геометрия окна (position + size + maximized flag).
+/// Сохранённая геометрия окна (position + size + maximized/minimized flags).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct WindowGeometry {
     pub x: i32,
@@ -1848,9 +1862,23 @@ pub(crate) struct WindowGeometry {
     pub width: u32,
     pub height: u32,
     pub maximized: bool,
+    /// ТЗ 0.14.3-fix7: флаг «окно было свёрнуто» при записи. Применяется только
+    /// как диагностика — restore никогда НЕ ставит окно в minimized (это ломает
+    /// thumbnail), поэтому при чтении поле читается, но на позицию не влияет.
+    /// `Deserialize` кастомный (без derive) и полагается на отсутствие поля →
+    /// по умолчанию `false`; явный `default`-атрибут здесь не нужен.
+    pub minimized: bool,
 }
 
 impl WindowGeometry {
+    /// ТЗ 0.14.3-fix7: мусорные координаты свёрнутого окна (Windows кладёт
+    /// minimized-окно за левую границу экрана, например `(-32000, -32000)`).
+    /// Такую геометрию нельзя применять — окно будет невидимым, а thumbnail
+    /// пустым.
+    fn is_garbage(&self) -> bool {
+        self.x < -10000 || self.y < -10000
+    }
+
     /// Путь файла геометрии (`LIGHT_WINDOW_FILE` или `.light/window.json`).
     fn file_path() -> std::path::PathBuf {
         std::env::var_os("LIGHT_WINDOW_FILE")
@@ -1899,6 +1927,7 @@ impl<'de> serde::Deserialize<'de> for WindowGeometry {
         let width = get("width").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         let height = get("height").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         let maximized = get("maximized").and_then(|v| v.as_bool()).unwrap_or(false);
+        let minimized = get("minimized").and_then(|v| v.as_bool()).unwrap_or(false);
         if width == 0 || height == 0 {
             return Err(D::Error::custom("width/height must be non-zero"));
         }
@@ -1908,6 +1937,7 @@ impl<'de> serde::Deserialize<'de> for WindowGeometry {
             width,
             height,
             maximized,
+            minimized,
         })
     }
 }
@@ -1918,12 +1948,13 @@ impl serde::Serialize for WindowGeometry {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("WindowGeometry", 5)?;
+        let mut state = serializer.serialize_struct("WindowGeometry", 6)?;
         state.serialize_field("x", &self.x)?;
         state.serialize_field("y", &self.y)?;
         state.serialize_field("width", &self.width)?;
         state.serialize_field("height", &self.height)?;
         state.serialize_field("maximized", &self.maximized)?;
+        state.serialize_field("minimized", &self.minimized)?;
         state.end()
     }
 }
@@ -1954,6 +1985,7 @@ impl App {
             window_geom: None,
             window_geom_dirty: false,
             window_geom_last_write: std::time::Instant::now(),
+            cached_normal_geometry: None,
             #[cfg(feature = "a11y-winit")]
             proxy: None,
         }
@@ -2099,24 +2131,46 @@ impl App {
         // ТЗ 0.14.3: применяем сохранённую геометрию (position/size/maximized)
         // до того, как дочернее центрирование или размер от config вступят в
         // силу. Применяется только для корневого окна (parent == None).
+        //
+        // ТЗ 0.14.3-fix7: восстанавливаем ТОЛЬКО при hot-swap
+        // (LIGHT_RESUME_FROM_SWAP=1). На cold start окно остаётся в дефолтном
+        // центре экрана — устаревшая geometry из прошлой сессии (включая
+        // мусорные (-32000, -32000) от свёрнутого окна) не применяется. Мусорную
+        // геометрию (x/y < -10000) пропускаем и на swap; minimized НЕ ставим —
+        // это ломает thumbnail (окно спавним normal, при maximized — set_maximized
+        // после show).
         if parent.is_none() {
+            let is_swap = is_resume_from_swap();
             let loaded_geom = self
                 .window_geom
                 .as_ref()
                 .cloned()
                 .or_else(WindowGeometry::load);
-            if let Some(geom) = &loaded_geom {
+            if !is_swap {
+                eprintln!("light: cold start — geometry not restored");
+            } else if let Some(geom) = &loaded_geom
+                && !geom.is_garbage()
+            {
                 let _ = window
                     .request_inner_size(LogicalSize::new(geom.width as f64, geom.height as f64));
                 window.set_outer_position(PhysicalPosition::new(geom.x, geom.y));
                 if geom.maximized {
                     window.set_maximized(true);
                 }
+                // Никогда не ставим minimized: так окно останется видимым, а
+                // taskbar-thumbnail покажет содержимое (а не пустую плитку).
                 eprintln!(
                     "light: restored window geometry ({}, {}, {}x{}, maximized={})",
                     geom.x, geom.y, geom.width, geom.height, geom.maximized
                 );
                 self.window_geom = Some(geom.clone());
+                if !geom.maximized {
+                    self.cached_normal_geometry = Some(geom.clone());
+                }
+            } else if loaded_geom.as_ref().is_some_and(|g| g.is_garbage()) {
+                eprintln!(
+                    "light: saved geometry is off-screen (minimized) — using default position"
+                );
             }
         }
         let size = window.inner_size();
@@ -2222,6 +2276,27 @@ impl App {
         let Ok(pos) = state.window.outer_position() else {
             return;
         };
+        // ТЗ 0.14.3-fix7: свёрнутое окно имеет мусорные координаты Windows
+        // (например (-32000, -32000)) + уменьшенный размер. Не записываем их:
+        // в файл уходит последняя «нормальная» геометрия из кэша, чтобы restore
+        // не ставил окно off-screen и thumbnail остался живым.
+        if state.window.is_minimized().unwrap_or(false) {
+            if let Some(last) = &self.cached_normal_geometry {
+                self.window_geom = Some(last.clone());
+                self.window_geom_dirty = true;
+                let now = std::time::Instant::now();
+                if now.duration_since(self.window_geom_last_write)
+                    >= std::time::Duration::from_millis(500)
+                {
+                    if let Err(error) = last.save() {
+                        eprintln!("light: не удалось сохранить геометрию: {error}");
+                    }
+                    self.window_geom_dirty = false;
+                    self.window_geom_last_write = now;
+                }
+            }
+            return;
+        }
         let size = state.window.inner_size();
         let geom = WindowGeometry {
             x: pos.x,
@@ -2229,9 +2304,15 @@ impl App {
             width: size.width,
             height: size.height,
             maximized: state.window.is_maximized(),
+            minimized: false,
         };
         self.window_geom = Some(geom.clone());
         self.window_geom_dirty = true;
+        // Кэшируем нормальную геометрию (только когда окно не maximized),
+        // чтобы при сворачивании была что восстановить.
+        if !geom.maximized {
+            self.cached_normal_geometry = Some(geom.clone());
+        }
         let now = std::time::Instant::now();
         if now.duration_since(self.window_geom_last_write) >= std::time::Duration::from_millis(500)
         {
