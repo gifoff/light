@@ -85,12 +85,6 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                     syn::Error::new(attr.span(), "ожидается выражение: #[default(значение)]")
                 })?;
                 default_expr = Some(quote!(#expr));
-            } else if attr.path().is_ident("transient") {
-                // ТЗ 0.14.3-fix5: #[transient] — поле не сериализуется в
-                // state.json и не восстанавливается при inject_state (его
-                // значение всегда берётся из нового кода). Сами аргументы
-                // отсутствуют, поэтому проверка на «неизвестный атрибут» здесь
-                // не нужна.
             } else {
                 let name = attr
                     .path()
@@ -107,9 +101,7 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                     });
                 return Err(syn::Error::new(
                     attr.span(),
-                    format!(
-                        "unknown field attribute #{name} (допустимы: #[default(...)], #[transient])"
-                    ),
+                    format!("unknown field attribute #{name} (допустимы: #[default(...)])"),
                 ));
             }
         }

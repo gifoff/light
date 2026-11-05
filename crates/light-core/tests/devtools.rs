@@ -32,14 +32,26 @@ impl CounterApp {
     }
 }
 
-/// Компонент с полем `#[transient]` (ТЗ 0.14.3-fix5): `status` не попадает
-/// ни в `inspect_state`, ни в `inject_state` — только `count`.
-#[template("tests/templates/transient.html")]
+/// Компонент с вычисляемым значением (ТЗ 0.14.3-fix6): `status` — метод в
+/// `impl`, а не поле структуры. Методы никогда не попадают ни в
+/// `inspect_state`, ни в `inject_state` (состояние — это только поля) и
+/// пересчитываются при каждом рендере; `eval_field` видит его, потому что
+/// шаблон содержит `{{ status }}` (и `{{ count }}`).
+#[template("tests/templates/computed.html")]
 #[proxy]
 struct TransientApp {
     count: i64,
-    #[transient]
-    status: String,
+}
+
+impl TransientApp {
+    /// Вычисляется из `count`; не хранится в state.
+    fn status(&self) -> String {
+        if self.count() == 0 {
+            "Кликните «Инкремент»".to_owned()
+        } else {
+            format!("Тест: {}", self.count())
+        }
+    }
 }
 
 /// Снимок содержит все ожидаемые ключи.
@@ -254,10 +266,10 @@ fn inject_state_empty_object_is_noop() {
     assert_eq!(app.count(), count_before);
 }
 
-/// ТЗ 0.14.3-fix5: `#[transient]` поле (`status`) не попадает в снимок
-/// состояния — в JSON есть только `count`.
+/// ТЗ 0.14.3-fix6: вычисляемое значение (`status` — метод, а не поле) не
+/// попадает в снимок состояния — в JSON есть только `count`.
 #[test]
-fn transient_field_excluded_from_inspect_state() {
+fn method_not_in_inspect_state() {
     let app = TransientApp::new();
     let snap = light::capture_snapshot(0, &app);
     let state = &snap.state;
@@ -267,44 +279,50 @@ fn transient_field_excluded_from_inspect_state() {
     assert!(obj.contains_key("count"), "count присутствует в state");
     assert!(
         !obj.contains_key("status"),
-        "transient-поле status отсутствует в state: {state:?}"
+        "метод status не является полем и отсутствует в state: {state:?}"
     );
 }
 
-/// ТЗ 0.14.3-fix5: `inject_state` восстанавливает `count`, но игнорирует
-/// `#[transient]` `status` — оно остаётся на значении из кода (дефолт).
+/// ТЗ 0.14.3-fix6: `inject_state` восстанавливает `count`, но ключ `status`
+/// игнорируется (метод, а не поле): вычисленное значение всегда берётся из
+/// кода на основе `count`, даже если в state лежит «застаревший» текст.
 #[test]
-fn transient_field_not_restored_by_inject_state() {
+fn method_not_restored_by_inject_state() {
     let mut app = TransientApp::new();
-    // Дефолт status из кода: "Кликните «Инкремент»".
-    let default_status = app.status().to_owned();
+    // count = 0 → статус по умолчанию из кода.
+    let default_status = app.status();
+    assert_eq!(default_status.as_str(), "Кликните «Инкремент»");
     let state = serde_json::json!({
         "count": 7,
         "status": "ЗАСТАРЕВШИЙ ТЕКСТ"
     });
     app.inject_state(&state);
     assert_eq!(app.count(), 7, "count восстановлен из state");
-    assert_eq!(
-        app.status(),
-        default_status,
-        "transient-поле status не перезаписано старым state"
-    );
+    // Статус пересчитан из нового count, а не восстановлен из state.
+    assert_eq!(app.status(), format!("Тест: {}", app.count()));
     assert_ne!(app.status(), "ЗАСТАРЕВШИЙ ТЕКСТ");
 }
 
-/// ТЗ 0.14.3-fix6: `eval_field` видит ВСЕ поля, включая `#[transient]` —
-/// иначе `{{ status }}` рендерился бы пустой строкой. `eval_field("status")`
-/// возвращает `Some(...)`, а не-существующее поле — `None`.
+/// ТЗ 0.14.3-fix6: `eval_field` видит и ПОЛЯ, и МЕТОДЫ, используемые в
+/// шаблоне. Для `{{ status }}` (метод) возвращает свежее вычисленное
+/// значение; несуществующий идентификатор — `None`.
 #[test]
-fn eval_field_returns_transient_field() {
+fn eval_field_returns_method_and_field() {
     let app = TransientApp::new();
-    let got = app.eval_field("status");
-    assert!(
-        got.is_some(),
-        "eval_field должен видеть transient-поле status, получено: {got:?}"
+    // count = 0 → `{{ status }}` даёт дефолтный текст.
+    let got_status = app.eval_field("status");
+    assert_eq!(
+        got_status.as_deref(),
+        Some(app.status().as_str()),
+        "eval_field видит метод status, потому что он используется в шаблоне"
     );
-    // Значение совпадает с текущим (дефолтным) значением поля из кода.
-    assert_eq!(got.as_deref(), Some(app.status().as_str()));
-    // Контроль: не-существующее поле даёт None.
+    // count — примитивное поле: тоже видно.
+    let got_count = app.eval_field("count");
+    assert_eq!(got_count.as_deref(), Some("0"));
+    // Изменим state → метод пересчитывается (computed), a не читает старое.
+    app.set_count(5);
+    assert_eq!(app.eval_field("status").as_deref(), Some("Тест: 5"));
+    assert_eq!(app.eval_field("count").as_deref(), Some("5"));
+    // Контроль: не-существующий идентификатор даёт None.
     assert_eq!(app.eval_field("не_существует"), None);
 }

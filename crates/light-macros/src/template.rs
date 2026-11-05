@@ -100,16 +100,12 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     })?;
     let ident = struct_item.ident.clone();
 
-    // Имя и тип каждого поля структуры. Две проекции:
-    //
-    // * `field_fields` — ВСЕ именованные поля (включая `#[transient]`). Нужна
-    //   для runtime-рендера (`eval_field`: `{{ status }}` читает transient-поле)
-    //   и для валидации/обработчиков.
-    // * `persisted_fields` — только persistent-поля (без `#[transient]`,
-    //   ТЗ 0.14.3-fix5). Используется для `inspect_state` / `inject_state`:
-    //   такие поля не попадают в state.json и не восстанавливаются из него —
-    //   их значение всегда берётся из нового кода (дефолт / расчёт в
-    //   обработчике).
+    // Имя и тип каждого поля структуры. Каждое поле — *состояние*: оно
+    // сохраняется в `state.json` через `inspect_state` и восстанавливается из
+    // него через `inject_state`. Вычисляемые значения (computed) — это методы
+    // в `impl App` (`fn status(&self) -> String`): они никогда не сохраняются
+    // и пересчитываются при каждом рендере; `eval_field` узнаёт о них из
+    // текста шаблона (ТЗ 0.14.3-fix6).
     //
     // Тип нужен, чтобы отличить примитивы (`i64`, `bool`, `String`, …) от
     // сложных типов: примитивы сериализуются через `inspect_field`, остальные
@@ -131,26 +127,13 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             .collect::<Vec<_>>(),
         _ => Vec::new(),
     };
-    // Persistent-поля (без `#[transient]`) — для `inspect_state` /
-    // `inject_state`. Фильтр по атрибуту поля, а не по имени, поэтому берём
-    // исходные `syn::Field` и сопоставляем по позиции с `field_fields`.
-    let persisted_fields: Vec<&(Ident, &syn::Type)> = match &struct_item.fields {
-        syn::Fields::Named(fields) => fields
-            .named
-            .iter()
-            .filter(|field| !is_transient_field(field))
-            .zip(field_fields.iter())
-            .map(|(_f, pair)| pair)
-            .collect::<Vec<_>>(),
-        _ => Vec::new(),
-    };
 
     // Метод `inject_state` (фича `devtools`): восстанавливает значения полей из
     // JSON-объекта, снятого `inspect_state`, через сеттеры `set_<поле>`
     // (их генерирует `#[proxy]`). Не-примитивные поля (и `Option`) пропущены,
     // как и в `inspect_state`. Геттер здесь не читается — только сеттер,
     // поэтому дробного заёма (`&self` на геттере + `&mut self` на сеттере) нет.
-    let inject_bodies = persisted_fields
+    let inject_bodies = field_fields
         .iter()
         .filter(|(_name, ty)| is_primitive_serde(ty))
         .map(|(name, ty)| {
@@ -173,12 +156,12 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
-    let inspect_state_method = if persisted_fields.is_empty() {
+    let inspect_state_method = if field_fields.is_empty() {
         quote!()
     } else {
         let map_ident = Ident::new("__light_inspect_map", Span::call_site());
         let self_token = Ident::new("self", Span::call_site());
-        let inserts = persisted_fields.iter().map(|(name, ty)| {
+        let inserts = field_fields.iter().map(|(name, ty)| {
             let name_str = syn::LitStr::new(&name.to_string(), name.span());
             let getter = quote!(#self_token.#name());
             // Примитивные типы всегда реализуют `Serialize`; сложные
@@ -352,16 +335,49 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
-    // Runtime-оценка полей: `eval_field` для каждого примитивного поля структуры.
-    let eval_arms = field_fields
+    // Runtime-оценка `{{ … }}`: ветки `eval_field` для ВСЕХ идентификаторов,
+    // встречающихся в шаблоне как простые пути (без точек). ТЗ 0.14.3-fix6:
+    //   * если имя — поле структуры → та же логика: примитивные сериализуются,
+    //     сложные не дают ветки (runtime-рендер откатывается на пустую строку,
+    //     как и раньше);
+    //   * если имя НЕ поле → метод из `impl App` (`fn status(&self) -> String`).
+    //     Ветка `self.<метод>().to_string()` рассчитывает на проверку
+    //     компилятора: несуществующий метод не скомпилируется («no method
+    //     named …»). Вычисляемые значения пересчитываются при каждом рендере —
+    //     после hot-swap они уже «знают» новое значение состояния (count),
+    //     поэтому runtime-рендер покажет свежий текст, а не застрянет на
+    //     старом значении поля.
+    let field_idents: std::collections::HashSet<&Ident> =
+        field_fields.iter().map(|(name, _)| name).collect();
+    // Идентификаторы из шаблона собираем до создания замыкания, чтобы их
+    // HashSet не пересекался по времени жизни с заимствованием `field_fields`.
+    // Берём реальный контент (`content`: дети `<window>` или верхний уровень —
+    // см. выше), а не сырые `nodes`, иначе в шаблоне с `<window>` интерполяции
+    // лежат в детях окна и на верхнем уровне их нет.
+    let used_idents: Vec<String> = collect_interpolations(content)
+        .into_iter()
+        .filter(|raw| !raw.contains('.') && !raw.is_empty())
+        .collect();
+    let eval_arms = used_idents
         .iter()
-        .filter(|(_name, ty)| is_primitive_serde(ty))
-        .map(|(name, _ty)| {
-            let name_str = name.to_string();
-            quote! {
-                #name_str => Some(self.#name().to_string()),
+        .filter_map(|raw| {
+            let ident = to_ident(raw).ok()?;
+            let name_str = raw.clone();
+            if !field_idents.contains(&ident) {
+                // Не поле — метод (или опечатка: компилятор укажет).
+                return Some(quote! { #name_str => Some(self.#ident().to_string()), });
             }
-        });
+            // Поле: только примитивные типы (как раньше) дают ветку.
+            let ty = field_fields
+                .iter()
+                .find(|(n, _)| n == &ident)
+                .map(|(_, t)| t)?;
+            if !is_primitive_serde(ty) {
+                return None;
+            }
+            Some(quote! { #name_str => Some(self.#ident().to_string()), })
+        })
+        .collect::<Vec<_>>();
     let eval_field_method = quote! {
         fn eval_field(&self, __name: &str) -> ::std::option::Option<String> {
             match __name {
@@ -2510,6 +2526,31 @@ fn normalize_click_name(handler: &str) -> String {
         .to_owned()
 }
 
+/// Все идентификаторы из `{{ … }}`-интерполяций шаблона (простые пути, без
+/// точек: `{{ count }}` → `count`, `{{ status }}` → `status`; сложные
+/// `{{ a.b }}` и атрибутные пути сюда не попадают). ТЗ 0.14.3-fix6: по этому
+/// множеству `eval_field` знает, какие методы нужно вычислять в runtime —
+/// только те, что реально используются в шаблоне. Рекурсия идёт и по тексту
+/// (`Node::Text`) на любом уровне, и по дочерним элементам.
+fn collect_interpolations(nodes: &[Node]) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    for node in nodes {
+        match node {
+            Node::Element(element) => {
+                out.extend(collect_interpolations(&element.children));
+            }
+            Node::Text(segments) => {
+                for segment in segments {
+                    if let light_fw_html::Segment::Path(path) = segment {
+                        out.insert(path.clone());
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Является ли тип поля структуры примитивным, который всегда реализует
 /// `serde::Serialize` и безопасно сериализуется «через геттер» в снимке
 /// состояния (ТЗ 0.13-D-fix, задача 2/3): числа (`i8…i128`, `u8…u128`,
@@ -2565,15 +2606,6 @@ fn is_primitive_serde(ty: &syn::Type) -> bool {
         }
         _ => false,
     }
-}
-
-/// Поле помечено атрибутом `#[transient]` (ТЗ 0.14.3-fix5): такое поле не
-/// попадает в `inspect_state` и не восстанавливается при `inject_state`.
-fn is_transient_field(field: &syn::Field) -> bool {
-    field
-        .attrs
-        .iter()
-        .any(|attr| attr.path().is_ident("transient"))
 }
 
 fn to_ident(segment: &str) -> syn::Result<Ident> {

@@ -13,25 +13,23 @@ use light::prelude::*;
 #[proxy]
 struct App {
     count: i64,
-    // ТЗ 0.14.3-fix5: `#[transient]` — поле не сохраняется в state.json и не
-    // восстанавливается при inject_state после hot-swap. Его значение всегда
-    // берётся из нового кода (дефолт + расчёт в `increment`), поэтому после
-    // swap status показывает текст «из нового кода», а не устаревший из state.
-    #[transient]
-    #[default("Кликните «Инкремент»".to_owned())]
-    status: String,
 }
 
 impl App {
-    fn increment(&self) -> bool {
-        let n = self.count() + 1;
-        self.set_count(n);
-        let s = if n == 0 {
+    /// Вычисляемое значение (computed): не хранится в state, пересчитывается
+    /// при каждом рендере на основе `count`. ТЗ 0.14.3-fix6: после hot-swap
+    /// метод «знает» новое значение `count` из сохранённого состояния, поэтому
+    /// runtime-рендер показывает свежий текст, а не застрявшее значение поля.
+    fn status(&self) -> String {
+        if self.count() == 0 {
             "Кликните «Инкремент»".to_owned()
         } else {
-            format!("НОВЫЙ ТЕКСТ: {n}")
-        };
-        self.set_status(s);
+            format!("НОВЫЙ: {}", self.count())
+        }
+    }
+
+    fn increment(&self) -> bool {
+        self.set_count(self.count() + 1);
         true
     }
 

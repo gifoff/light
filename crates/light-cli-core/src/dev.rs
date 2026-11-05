@@ -1062,8 +1062,8 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     // дефолты из нового кода имеют приоритет над устаревшим state. При swap
     // состояние сохраняется (см. блок ниже): LIGHT_RESUME_FROM_SWAP=1 +
     // LIGHT_PRESERVE_STATE=1, поэтому count переживает .rs change, а
-    // #[transient]-поля (status) берутся из нового кода. --preserve-state
-    // оставлен как алиас (те же эффекты, что и default).
+    // вычисляемые значения (методы, например status) пересчитываются из нового
+    // кода. --preserve-state оставлен как алиас (те же эффекты, что и default).
     let child = match child_cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -1566,9 +1566,10 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     new_cmd.env("LIGHT_SWAP", "1");
                     // ТЗ 0.14.3-fix5 (откат fix4): по умолчанию состояние
                     // СОХРАНЯЕТСЯ при .rs change (как до fix4): child
-                    // восстанавливает count из state.json, а #[transient]-поля
-                    // (status) берутся из нового кода. --preserve-state — алиас
-                    // (те же эффекты), поэтому блок не зависит от флага.
+                    // восстанавливает count из state.json, а вычисляемые
+                    // значения (методы, например status) пересчитываются из
+                    // нового кода. --preserve-state — алиас (те же эффекты),
+                    // поэтому блок не зависит от флага.
                     new_cmd.env("LIGHT_RESUME_FROM_SWAP", "1");
                     new_cmd.env("LIGHT_PRESERVE_STATE", "1");
                     if args.preserve_state {
