@@ -1849,6 +1849,11 @@ struct App {
     /// `(-32000, -32000)` в файл уходит именно эта — чтобы restore не ломал
     /// thumbnail/видимость.
     cached_normal_geometry: Option<WindowGeometry>,
+    /// ТЗ 0.14.3-fix8: установлено при CloseRequested (WM_CLOSE / X-кнопка).
+    /// В `save_geometry_on_exit` предотвращает запись geometry-файла при
+    /// user close: supervisor сам удалит файлы. При swap (`LIGHT_SWAP=1`)
+    /// файл **сохраняется** — следующий child восстановит позицию.
+    closing: bool,
     /// Прокси цикла событий для доставки событий AccessKit.
     #[cfg(feature = "a11y-winit")]
     proxy: Option<EventLoopProxy<UserEvent>>,
@@ -1986,6 +1991,7 @@ impl App {
             window_geom_dirty: false,
             window_geom_last_write: std::time::Instant::now(),
             cached_normal_geometry: None,
+            closing: false,
             #[cfg(feature = "a11y-winit")]
             proxy: None,
         }
@@ -2326,6 +2332,14 @@ impl App {
 
     /// Сохраняет накопленную геометрию (вызывается при выходе).
     fn save_geometry_on_exit(&self) {
+        // ТЗ 0.14.3-fix8: при user close не пишем geometry-файл —
+        // supervisor сам удалит оба файла при чистом выходе child'а.
+        // При swap (LIGHT_SWAP=1) файл **сохраняется**: следующий child
+        // восстановит позицию окна из него.
+        if self.closing && std::env::var("LIGHT_SWAP").is_err() {
+            eprintln!("light: geometry save skipped (user close, supervisor will clean up)");
+            return;
+        }
         if self.window_geom_dirty
             && let Some(geom) = &self.window_geom
             && let Err(error) = geom.save()
@@ -2736,6 +2750,10 @@ impl ApplicationHandler<UserEvent> for App {
             adapter.process_event(&state.window, &event);
         }
         if let WindowEvent::CloseRequested = event {
+            // ТЗ 0.14.3-fix8: при user close (X, WM_CLOSE) не сохраняем
+            // geometry-файл — supervisor удалит оба файла. При swap
+            // (LIGHT_SWAP=1) файл сохраняется для следующего child.
+            self.closing = true;
             self.close_window(event_loop, id);
             return;
         }

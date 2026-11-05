@@ -242,6 +242,17 @@ fn apply_state_env(cmd: &mut std::process::Command, root: &std::path::Path) {
     cmd.env("LIGHT_STATE_FILE", &path);
 }
 
+/// Устанавливает `LIGHT_WINDOW_FILE` на `Command`, указывая на абсолютный путь
+/// `root/.light/window.json` (или значение переменной окружения, если задана).
+/// Без этого ребёнок читает относительный `.light/window.json` от своего CWD,
+/// который может не совпадать с корнем пакета → supervisor и child работают
+/// с разными файлами.
+fn apply_window_env(cmd: &mut std::process::Command, root: &std::path::Path) {
+    let path = window_file_path(root);
+    eprintln!("light dev: window file for child: {:?}", path);
+    cmd.env("LIGHT_WINDOW_FILE", &path);
+}
+
 /// Путь файла геометрии окна относительно `root` (по умолчанию
 /// `.light/window.json`; переопределяется `LIGHT_WINDOW_FILE`). Совпадает с
 /// путём, который читает/пишет окно приложения (`light-fw-core::window`).
@@ -1081,6 +1092,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     child_cmd.stdout(Stdio::inherit());
     child_cmd.stderr(Stdio::inherit());
     apply_state_env(&mut child_cmd, &package_root);
+    apply_window_env(&mut child_cmd, &package_root);
     // ТЗ 0.14.3-fix5 (откат fix4): на cold start state.json НЕ применяется —
     // дефолты из нового кода имеют приоритет над устаревшим state. При swap
     // состояние сохраняется (см. блок ниже): LIGHT_RESUME_FROM_SWAP=1 +
@@ -1599,6 +1611,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     new_cmd.stdout(Stdio::inherit());
                     new_cmd.stderr(Stdio::inherit());
                     apply_state_env(&mut new_cmd, &package_root);
+                    apply_window_env(&mut new_cmd, &package_root);
                     // Swap-процесс не должен удалять state.json при закрытии
                     // (state уже сохранён предыдущим процессом через SAVE_STATE
                     // или будет восстановлен из файла).
