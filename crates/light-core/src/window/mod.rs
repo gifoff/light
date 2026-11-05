@@ -2160,14 +2160,33 @@ impl App {
                 let _ = window
                     .request_inner_size(LogicalSize::new(geom.width as f64, geom.height as f64));
                 window.set_outer_position(PhysicalPosition::new(geom.x, geom.y));
-                if geom.maximized {
+                // ТЗ 0.14.3-fix9: maximized и minimized взаимоисключающие.
+                if geom.maximized && !geom.minimized {
                     window.set_maximized(true);
                 }
-                // Никогда не ставим minimized: так окно останется видимым, а
-                // taskbar-thumbnail покажет содержимое (а не пустую плитку).
+                // ТЗ 0.14.3-fix9: при minimized — спавним видимым (чтобы
+                // первый frame отрисовался и thumbnail показал содержимое),
+                // затем через 100 мс сворачиваем через DeferredMinimize.
+                if geom.minimized {
+                    // ТЗ 0.14.3-fix9: спавним видимым (thumbnail), через
+                    // 100 мс сворачиваем. Прокси берём из UI_PROXY статика.
+                    #[cfg(feature = "async-runtime")]
+                    {
+                        let window_id = window.id();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                            if let Some(proxy) = crate::async_runtime::UI_PROXY.get() {
+                                let _ = proxy.send_event(UserEvent::DeferredMinimize { window_id });
+                            } else {
+                                eprintln!("light: UI proxy not installed, cannot defer minimize");
+                            }
+                        });
+                        eprintln!("light: deferred minimize scheduled");
+                    }
+                }
                 eprintln!(
-                    "light: restored window geometry ({}, {}, {}x{}, maximized={})",
-                    geom.x, geom.y, geom.width, geom.height, geom.maximized
+                    "light: restored window geometry ({}, {}, {}x{}, maximized={}, minimized={})",
+                    geom.x, geom.y, geom.width, geom.height, geom.maximized, geom.minimized
                 );
                 self.window_geom = Some(geom.clone());
                 if !geom.maximized {
@@ -2288,14 +2307,23 @@ impl App {
         // не ставил окно off-screen и thumbnail остался живым.
         if state.window.is_minimized().unwrap_or(false) {
             if let Some(last) = &self.cached_normal_geometry {
-                self.window_geom = Some(last.clone());
+                // ТЗ 0.14.3-fix9: сохраняем нормальную геометрию + minimized=true,
+                // чтобы swap-restore мог применить deferred minimize.
+                let mut geom = last.clone();
+                geom.minimized = true;
+                self.window_geom = Some(geom.clone());
                 self.window_geom_dirty = true;
                 let now = std::time::Instant::now();
                 if now.duration_since(self.window_geom_last_write)
                     >= std::time::Duration::from_millis(500)
                 {
-                    if let Err(error) = last.save() {
+                    if let Err(error) = geom.save() {
                         eprintln!("light: не удалось сохранить геометрию: {error}");
+                    } else {
+                        eprintln!(
+                            "light: geometry saved (minimized=true, x={}, y={})",
+                            geom.x, geom.y
+                        );
                     }
                     self.window_geom_dirty = false;
                     self.window_geom_last_write = now;
@@ -2304,13 +2332,14 @@ impl App {
             return;
         }
         let size = state.window.inner_size();
+        let minimized = state.window.is_minimized().unwrap_or(false);
         let geom = WindowGeometry {
             x: pos.x,
             y: pos.y,
             width: size.width,
             height: size.height,
             maximized: state.window.is_maximized(),
-            minimized: false,
+            minimized,
         };
         self.window_geom = Some(geom.clone());
         self.window_geom_dirty = true;
@@ -2667,6 +2696,16 @@ impl ApplicationHandler<UserEvent> for App {
             }
             return;
         }
+        // ТЗ 0.14.3-fix9: отложенный minimize — применяем после того как
+        // первый frame уже отрисован (thumbnail содержит содержимое).
+        #[cfg(feature = "async-runtime")]
+        if let UserEvent::DeferredMinimize { window_id } = event {
+            if let Some(state) = self.windows.get(&window_id) {
+                state.window.set_minimized(true);
+                eprintln!("light: deferred minimize applied");
+            }
+            return;
+        }
         let (token, command) = match event {
             UserEvent::Command { token, command } => (token, command),
             #[cfg(feature = "a11y-winit")]
@@ -2721,6 +2760,11 @@ impl ApplicationHandler<UserEvent> for App {
             #[cfg(all(feature = "devtools", feature = "async-runtime"))]
             UserEvent::DevTools(_) => {
                 unreachable!("devtools-событие перехватывается ранним возвратом выше")
+            }
+            // ТЗ 0.14.3-fix9: обработано ранним возвратом выше.
+            #[cfg(feature = "async-runtime")]
+            UserEvent::DeferredMinimize { .. } => {
+                unreachable!("DeferredMinimize перехватывается ранним возвратом выше")
             }
         };
         match command {

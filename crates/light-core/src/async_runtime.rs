@@ -36,6 +36,7 @@ use std::thread::{JoinHandle, Result as ThreadResult};
 
 use thiserror::Error;
 use winit::event_loop::EventLoopProxy;
+use winit::window::WindowId;
 
 #[cfg(feature = "devtools")]
 use crate::devtools::DevToolsCommand;
@@ -94,6 +95,12 @@ pub enum UserEvent {
         /// Токен окна-цели для точной адресации (см. описание выше).
         token: Option<WindowToken>,
     },
+    /// ТЗ 0.14.3-fix9: отложенный minimize — спавним окно видимым,
+    /// чтобы первый frame отрисовался (taskbar-thumbnail), затем сворачиваем.
+    DeferredMinimize {
+        /// Идентификатор окна, которое нужно минимизировать.
+        window_id: WindowId,
+    },
 }
 
 impl std::fmt::Debug for UserEvent {
@@ -118,6 +125,10 @@ impl std::fmt::Debug for UserEvent {
                 .field("f", &"<closure>")
                 .field("target", target)
                 .field("token", token)
+                .finish(),
+            Self::DeferredMinimize { window_id } => f
+                .debug_struct("DeferredMinimize")
+                .field("window_id", window_id)
                 .finish(),
         }
     }
