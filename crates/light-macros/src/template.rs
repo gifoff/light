@@ -105,10 +105,16 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     // `String`, …) от сложных типов: примитивы сериализуются через
     // `inspect_field`, остальные — как `null` (не требует `#[derive(Serialize)]`
     // на пользовательских типах).
+    //
+    // Поля с атрибутом `#[transient]` (ТЗ 0.14.3-fix5) исключены: они не
+    // попадают ни в `inspect_state`, ни в `inject_state` — их значение всегда
+    // берётся из нового кода (дефолт / расчёт в обработчике), а не из
+    // state.json.
     let field_fields: Vec<(Ident, &syn::Type)> = match &struct_item.fields {
         syn::Fields::Named(fields) => fields
             .named
             .iter()
+            .filter(|field| !is_transient_field(field))
             .map(|field| {
                 (
                     field
@@ -2542,6 +2548,15 @@ fn is_primitive_serde(ty: &syn::Type) -> bool {
         }
         _ => false,
     }
+}
+
+/// Поле помечено атрибутом `#[transient]` (ТЗ 0.14.3-fix5): такое поле не
+/// попадает в `inspect_state` и не восстанавливается при `inject_state`.
+fn is_transient_field(field: &syn::Field) -> bool {
+    field
+        .attrs
+        .iter()
+        .any(|attr| attr.path().is_ident("transient"))
 }
 
 fn to_ident(segment: &str) -> syn::Result<Ident> {

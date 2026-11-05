@@ -32,6 +32,16 @@ impl CounterApp {
     }
 }
 
+/// Компонент с полем `#[transient]` (ТЗ 0.14.3-fix5): `status` не попадает
+/// ни в `inspect_state`, ни в `inject_state` — только `count`.
+#[template("tests/templates/transient.html")]
+#[proxy]
+struct TransientApp {
+    count: i64,
+    #[transient]
+    status: String,
+}
+
 /// Снимок содержит все ожидаемые ключи.
 #[test]
 fn snapshot_has_expected_keys() {
@@ -242,4 +252,42 @@ fn inject_state_empty_object_is_noop() {
     app.inject_state(&serde_json::json!({}));
     assert_eq!(app.label(), label_before);
     assert_eq!(app.count(), count_before);
+}
+
+/// ТЗ 0.14.3-fix5: `#[transient]` поле (`status`) не попадает в снимок
+/// состояния — в JSON есть только `count`.
+#[test]
+fn transient_field_excluded_from_inspect_state() {
+    let app = TransientApp::new();
+    let snap = light::capture_snapshot(0, &app);
+    let state = &snap.state;
+    let obj = state
+        .as_object()
+        .unwrap_or_else(|| panic!("state должен быть объектом, получено: {state:?}"));
+    assert!(obj.contains_key("count"), "count присутствует в state");
+    assert!(
+        !obj.contains_key("status"),
+        "transient-поле status отсутствует в state: {state:?}"
+    );
+}
+
+/// ТЗ 0.14.3-fix5: `inject_state` восстанавливает `count`, но игнорирует
+/// `#[transient]` `status` — оно остаётся на значении из кода (дефолт).
+#[test]
+fn transient_field_not_restored_by_inject_state() {
+    let mut app = TransientApp::new();
+    // Дефолт status из кода: "Кликните «Инкремент»".
+    let default_status = app.status().to_owned();
+    let state = serde_json::json!({
+        "count": 7,
+        "status": "ЗАСТАРЕВШИЙ ТЕКСТ"
+    });
+    app.inject_state(&state);
+    assert_eq!(app.count(), 7, "count восстановлен из state");
+    assert_eq!(
+        app.status(),
+        default_status,
+        "transient-поле status не перезаписано старым state"
+    );
+    assert_ne!(app.status(), "ЗАСТАРЕВШИЙ ТЕКСТ");
 }

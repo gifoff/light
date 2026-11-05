@@ -1058,12 +1058,12 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     child_cmd.stdout(Stdio::inherit());
     child_cmd.stderr(Stdio::inherit());
     apply_state_env(&mut child_cmd, &package_root);
-    // ТЗ 0.14.3-fix4: cold start НЕ получает LIGHT_RESUME_FROM_SWAP.
-    // При --preserve-state state.json применяется даже на cold start.
-    if args.preserve_state {
-        child_cmd.env("LIGHT_PRESERVE_STATE", "1");
-        eprintln!("light dev: --preserve-state — state.json applied on cold start");
-    }
+    // ТЗ 0.14.3-fix5 (откат fix4): на cold start state.json НЕ применяется —
+    // дефолты из нового кода имеют приоритет над устаревшим state. При swap
+    // состояние сохраняется (см. блок ниже): LIGHT_RESUME_FROM_SWAP=1 +
+    // LIGHT_PRESERVE_STATE=1, поэтому count переживает .rs change, а
+    // #[transient]-поля (status) берутся из нового кода. --preserve-state
+    // оставлен как алиас (те же эффекты, что и default).
     let child = match child_cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -1564,26 +1564,17 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     // (state уже сохранён предыдущим процессом через SAVE_STATE
                     // или будет восстановлен из файла).
                     new_cmd.env("LIGHT_SWAP", "1");
-                    // ТЗ 0.14.3-fix5: по умолчанию state сбрасывается при swap
-                    // (новый код → новые дефолты). --preserve-state сохраняет
-                    // и применяет старое состояние.
+                    // ТЗ 0.14.3-fix5 (откат fix4): по умолчанию состояние
+                    // СОХРАНЯЕТСЯ при .rs change (как до fix4): child
+                    // восстанавливает count из state.json, а #[transient]-поля
+                    // (status) берутся из нового кода. --preserve-state — алиас
+                    // (те же эффекты), поэтому блок не зависит от флага.
+                    new_cmd.env("LIGHT_RESUME_FROM_SWAP", "1");
+                    new_cmd.env("LIGHT_PRESERVE_STATE", "1");
                     if args.preserve_state {
-                        // С флагом: применяем сохранённое состояние.
-                        new_cmd.env("LIGHT_RESUME_FROM_SWAP", "1");
-                        new_cmd.env("LIGHT_PRESERVE_STATE", "1");
                         eprintln!("light dev: .rs changed → state preserved (--preserve-state)");
                     } else {
-                        // Без флага: удаляем state.json → новый старт с чистого
-                        // листа (дефолты нового кода).
-                        let state_path = state_file_path(&package_root);
-                        match std::fs::remove_file(&state_path) {
-                            Ok(()) => eprintln!(
-                                "light dev: .rs changed → state reset (--preserve-state to keep)"
-                            ),
-                            Err(_) => eprintln!(
-                                "light dev: .rs changed → state reset (file already absent)"
-                            ),
-                        }
+                        eprintln!("light dev: .rs changed → state preserved (default)");
                     }
                     eprintln!("light dev: clean exit during swap — state.json kept");
                     match new_cmd.spawn() {

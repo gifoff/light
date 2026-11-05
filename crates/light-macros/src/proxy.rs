@@ -72,7 +72,6 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             ));
         }
 
-        let mut keep_attrs = Vec::new();
         let mut default_expr = None;
         for attr in &field.attrs {
             if attr.path().is_ident("default") {
@@ -86,8 +85,32 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                     syn::Error::new(attr.span(), "ожидается выражение: #[default(значение)]")
                 })?;
                 default_expr = Some(quote!(#expr));
+            } else if attr.path().is_ident("transient") {
+                // ТЗ 0.14.3-fix5: #[transient] — поле не сериализуется в
+                // state.json и не восстанавливается при inject_state (его
+                // значение всегда берётся из нового кода). Сами аргументы
+                // отсутствуют, поэтому проверка на «неизвестный атрибут» здесь
+                // не нужна.
             } else {
-                keep_attrs.push(attr);
+                let name = attr
+                    .path()
+                    .get_ident()
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| {
+                        // Многосекционный путь (например, `crate::foo`).
+                        attr.path()
+                            .segments
+                            .iter()
+                            .map(|s| s.ident.to_string())
+                            .collect::<Vec<_>>()
+                            .join("::")
+                    });
+                return Err(syn::Error::new(
+                    attr.span(),
+                    format!(
+                        "unknown field attribute #{name} (допустимы: #[default(...)], #[transient])"
+                    ),
+                ));
             }
         }
         let default_expr =
@@ -96,7 +119,6 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         let field_vis = &field.vis;
         let field_ty = &field.ty;
         out_fields.push(quote! {
-            #(#keep_attrs)*
             #field_vis #field_ident: ::light::reactive::Property<#field_ty>
         });
 

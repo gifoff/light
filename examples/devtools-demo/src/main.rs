@@ -13,6 +13,11 @@ use light::prelude::*;
 #[proxy]
 struct App {
     count: i64,
+    // ТЗ 0.14.3-fix5: `#[transient]` — поле не сохраняется в state.json и не
+    // восстанавливается при inject_state после hot-swap. Его значение всегда
+    // берётся из нового кода (дефолт + расчёт в `increment`), поэтому после
+    // swap status показывает текст «из нового кода», а не устаревший из state.
+    #[transient]
     #[default("Кликните «Инкремент»".to_owned())]
     status: String,
 }
@@ -24,7 +29,7 @@ impl App {
         let s = if n == 0 {
             "Кликните «Инкремент»".to_owned()
         } else {
-            format!("Счётчик: {n}")
+            format!("НОВЫЙ ТЕКСТ: {n}")
         };
         self.set_status(s);
         true
