@@ -100,21 +100,25 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     })?;
     let ident = struct_item.ident.clone();
 
-    // Имя и тип каждого поля структуры — для генерации снимка состояния
-    // (фича `devtools`). Тип нужен, чтобы отличить примитивы (`i64`, `bool`,
-    // `String`, …) от сложных типов: примитивы сериализуются через
-    // `inspect_field`, остальные — как `null` (не требует `#[derive(Serialize)]`
-    // на пользовательских типах).
+    // Имя и тип каждого поля структуры. Две проекции:
     //
-    // Поля с атрибутом `#[transient]` (ТЗ 0.14.3-fix5) исключены: они не
-    // попадают ни в `inspect_state`, ни в `inject_state` — их значение всегда
-    // берётся из нового кода (дефолт / расчёт в обработчике), а не из
-    // state.json.
+    // * `field_fields` — ВСЕ именованные поля (включая `#[transient]`). Нужна
+    //   для runtime-рендера (`eval_field`: `{{ status }}` читает transient-поле)
+    //   и для валидации/обработчиков.
+    // * `persisted_fields` — только persistent-поля (без `#[transient]`,
+    //   ТЗ 0.14.3-fix5). Используется для `inspect_state` / `inject_state`:
+    //   такие поля не попадают в state.json и не восстанавливаются из него —
+    //   их значение всегда берётся из нового кода (дефолт / расчёт в
+    //   обработчике).
+    //
+    // Тип нужен, чтобы отличить примитивы (`i64`, `bool`, `String`, …) от
+    // сложных типов: примитивы сериализуются через `inspect_field`, остальные
+    // — как `null` (не требует `#[derive(Serialize)]` на пользовательских
+    // типах).
     let field_fields: Vec<(Ident, &syn::Type)> = match &struct_item.fields {
         syn::Fields::Named(fields) => fields
             .named
             .iter()
-            .filter(|field| !is_transient_field(field))
             .map(|field| {
                 (
                     field
@@ -127,13 +131,26 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             .collect::<Vec<_>>(),
         _ => Vec::new(),
     };
+    // Persistent-поля (без `#[transient]`) — для `inspect_state` /
+    // `inject_state`. Фильтр по атрибуту поля, а не по имени, поэтому берём
+    // исходные `syn::Field` и сопоставляем по позиции с `field_fields`.
+    let persisted_fields: Vec<&(Ident, &syn::Type)> = match &struct_item.fields {
+        syn::Fields::Named(fields) => fields
+            .named
+            .iter()
+            .filter(|field| !is_transient_field(field))
+            .zip(field_fields.iter())
+            .map(|(_f, pair)| pair)
+            .collect::<Vec<_>>(),
+        _ => Vec::new(),
+    };
 
     // Метод `inject_state` (фича `devtools`): восстанавливает значения полей из
     // JSON-объекта, снятого `inspect_state`, через сеттеры `set_<поле>`
     // (их генерирует `#[proxy]`). Не-примитивные поля (и `Option`) пропущены,
     // как и в `inspect_state`. Геттер здесь не читается — только сеттер,
     // поэтому дробного заёма (`&self` на геттере + `&mut self` на сеттере) нет.
-    let inject_bodies = field_fields
+    let inject_bodies = persisted_fields
         .iter()
         .filter(|(_name, ty)| is_primitive_serde(ty))
         .map(|(name, ty)| {
@@ -156,12 +173,12 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
-    let inspect_state_method = if field_fields.is_empty() {
+    let inspect_state_method = if persisted_fields.is_empty() {
         quote!()
     } else {
         let map_ident = Ident::new("__light_inspect_map", Span::call_site());
         let self_token = Ident::new("self", Span::call_site());
-        let inserts = field_fields.iter().map(|(name, ty)| {
+        let inserts = persisted_fields.iter().map(|(name, ty)| {
             let name_str = syn::LitStr::new(&name.to_string(), name.span());
             let getter = quote!(#self_token.#name());
             // Примитивные типы всегда реализуют `Serialize`; сложные

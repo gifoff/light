@@ -291,3 +291,20 @@ fn transient_field_not_restored_by_inject_state() {
     );
     assert_ne!(app.status(), "ЗАСТАРЕВШИЙ ТЕКСТ");
 }
+
+/// ТЗ 0.14.3-fix6: `eval_field` видит ВСЕ поля, включая `#[transient]` —
+/// иначе `{{ status }}` рендерился бы пустой строкой. `eval_field("status")`
+/// возвращает `Some(...)`, а не-существующее поле — `None`.
+#[test]
+fn eval_field_returns_transient_field() {
+    let app = TransientApp::new();
+    let got = app.eval_field("status");
+    assert!(
+        got.is_some(),
+        "eval_field должен видеть transient-поле status, получено: {got:?}"
+    );
+    // Значение совпадает с текущим (дефолтным) значением поля из кода.
+    assert_eq!(got.as_deref(), Some(app.status().as_str()));
+    // Контроль: не-существующее поле даёт None.
+    assert_eq!(app.eval_field("не_существует"), None);
+}
