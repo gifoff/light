@@ -2,7 +2,7 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
-## [0.15.0] - 2026-11-05
+## [0.15.0] - 2026-11-06
 
 ### Added
 
@@ -45,7 +45,7 @@
   ранее geometry читалась по разным путям.
 - `is_garbage()` фильтрует координаты `(-32000, -32000)` (свёрнутые окна).
 
-### Scope note
+### Notes
 
 Web UI DevTools (`light-devtools serve`, Axum + WS-прокси к 9229) перенесён
 в **0.16.0** — не входит в этот релиз.
