@@ -2,6 +2,54 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.15.0] - 2026-11-05
+
+### Added
+
+- `UserEvent::DeferredMinimize { window_id }` — публичный вариант enum для
+  отложенной минимизации окна после первого render (решает пустой taskbar-
+  thumbnail при spawn minimized). **Breaking для `match`:** `UserEvent` не
+  `#[non_exhaustive]` — добавьте `_ => {}` в exhaustive matches.
+- `WindowGeometry { minimized: bool }` — сохранение свёрнутости в
+  `.light/window.json`, применение после первого кадра при swap.
+- Env vars для унификации путей в supervisor:
+  `LIGHT_STATE_FILE`, `LIGHT_WINDOW_FILE`, `LIGHT_RESUME_FROM_SWAP`,
+  `LIGHT_SWAP`. Раньше пути собирались по-разному в dev и window crate.
+
+### Changed
+
+- `#[transient]` удалён; computed-значения теперь — методы `impl App`,
+  пересчитываются при каждом render, state — поля struct, сохраняются в
+  `.light/state.json`. `inspect_state` / `inject_state` макрос генерирует для
+  всех полей, а не только transient.
+- `light dev`: geometry применяется только при swap (`LIGHT_RESUME_FROM_SWAP=1`),
+  при user close — state+window удаляются supervisor'ом; `pending_swap`
+  защищает файлы от удаления при rebuild.
+- `light dev`: `.rs` swap сбрасывает state по умолчанию; флаг
+  `--preserve-state` сохраняет.
+- Версии всех крейтов воркспейса и межкрейтовых зависимостей — `0.15.0`.
+
+### Fixed
+
+- Кнопка `Auto` ширины игнорирует `forced_w`, использует `max-content` с
+  учётом padding (3 коммита: 34d4b83, a4b8128, afbb52c — уже на origin/master).
+- Кириллица/пробелы отображались как □: `glyph_for` фильтрует basic chars
+  через primary font (Segoe UI), emoji fallback — только для не-basic codepoints.
+  Emoji шрифт: `seguiemj.ttf` (не `segoeuiemoji.ttf`).
+- `parse_align_items` не поддерживал `center`.
+- `eval_field` не генерировал ветки для методов — computed пересчитываются
+  корректно.
+- Supervisor не удалял `.light/` при user close (X) из-за смешения
+  `pending_swap` / user close.
+- Унифицирован `LIGHT_WINDOW_FILE` между `light-dev` и `light-window` (fix8):
+  ранее geometry читалась по разным путям.
+- `is_garbage()` фильтрует координаты `(-32000, -32000)` (свёрнутые окна).
+
+### Scope note
+
+Web UI DevTools (`light-devtools serve`, Axum + WS-прокси к 9229) перенесён
+в **0.16.0** — не входит в этот релиз.
+
 ## [0.14.0] - 2026-11-04
 
 ### Added
