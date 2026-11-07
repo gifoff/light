@@ -156,6 +156,11 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
+    // `inspect_state` — без cfg (0.15.1): трейт требует его в любом наборе
+    // фич. Примитивные поля инлайнятся прямо через `serde::Serialize` — это
+    // не требует публичной зависимости на `::light::devtools::inspect_field`
+    // (которая за фичей `devtools`) и сохраняет поведение с ней, но добавляет
+    // только serde-serialize-impl примитивов к размеру бинаря.
     let inspect_state_method = if field_fields.is_empty() {
         quote!()
     } else {
@@ -166,8 +171,14 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             let getter = quote!(#self_token.#name());
             // Примитивные типы всегда реализуют `Serialize`; сложные
             // (вложенные компоненты, `Vec`, кастомные newtype) — `null`.
+            // Прямой вызов `serde_json::to_value` (0.15.1): без фичи
+            // `devtools` модуль `::light::devtools` закрыт, а код инлайнится
+            // в бинарь приложения и не требует публичного реэкспорта.
             let value = if is_primitive_serde(ty) {
-                quote!(::light::devtools::inspect_field(&#getter))
+                quote!(match ::light::serde_json::to_value(&#getter) {
+                    ::std::result::Result::Ok(v) => v,
+                    ::std::result::Result::Err(_) => ::light::serde_json::Value::Null,
+                })
             } else {
                 quote!(::light::serde_json::Value::Null)
             };
@@ -302,16 +313,10 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         .iter()
         .flat_map(|(key, (call, name))| {
             let name_lit = LitStr::new(name, Span::call_site());
-            // Простая эвристика: наличие `(` в token stream означает, что
-            // `handler_call` уже вернул полный вызов (с аргументами).
-            let is_full_call = call.to_string().contains('(');
-            let body: TokenStream = if is_full_call {
-                // Уже полный вызов: `#call` — это, например, `self.open('x')`.
-                quote! { #call }
-            } else {
-                // Путь: добавляем явный вызов.
-                quote! { #call() }
-            };
+            // Ветка `match` должна вернуть `bool`. Все обработчики здесь —
+            // простые имена методов (проверено `is_plain_click_handler`),
+            // поэтому вызываем явно и возвращаем `true`.
+            let body = quote! { #call(); true };
             vec![
                 quote! {
                     #name_lit => { #body }
@@ -354,9 +359,11 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     // Берём реальный контент (`content`: дети `<window>` или верхний уровень —
     // см. выше), а не сырые `nodes`, иначе в шаблоне с `<window>` интерполяции
     // лежат в детях окна и на верхнем уровне их нет.
+    let v_for_vars: std::collections::HashSet<String> = collect_v_for_items(content);
     let used_idents: Vec<String> = collect_interpolations(content)
         .into_iter()
         .filter(|raw| !raw.contains('.') && !raw.is_empty())
+        .filter(|raw| !v_for_vars.contains(raw))
         .collect();
     let eval_arms = used_idents
         .iter()
@@ -1178,11 +1185,29 @@ impl Generator {
             if let Some(handler) = attr_value(&element.attrs, attr_name) {
                 let call = self.handler_call(handler, None)?;
                 let variant = Ident::new(variant, Span::call_site());
-                // `#call` — либо полновесный вызов (для аргументных), либо путь
-                // (`self.increment`) для безаргументных: вызов добавляется явно.
+                // `handler_call` возвращает:
+                //  • полновесный вызов для явных аргументов: `self.open('x')`
+                //    или для `::`-выражений: `Dom::window().map(...)`
+                //  • метод-ссылку для имён и пустых скобок: `self.increment`
+                let trimmed = handler.trim();
+                let has_non_empty_args = trimmed
+                    .find('(')
+                    .and_then(|i| {
+                        let rest = &trimmed[i..];
+                        let close = rest.rfind(')')?;
+                        let inner = rest[1..close].trim();
+                        (!inner.is_empty()).then_some(())
+                    })
+                    .is_some();
+                let is_full_call = has_non_empty_args || trimmed.contains("::");
+                let body = if is_full_call {
+                    quote! { #call }
+                } else {
+                    quote! { #call() }
+                };
                 branches.push(quote! {
                     if ::std::matches!(&__event, ::light::vdom::Event::#variant) {
-                        #call();
+                        #body;
                         return true;
                     }
                 });
@@ -1192,7 +1217,7 @@ impl Generator {
             if let Some(handler) = attr_value(&element.attrs, attr_name) {
                 let call = self.handler_call(handler, Some(quote!(*__button)))?;
                 let variant = Ident::new(variant, Span::call_site());
-                // `#call` — уже полновесный вызов (с явным аргументом).
+                // `handler_call` с аргументом события уже вернул полновесный вызов.
                 branches.push(quote! {
                     if let ::light::vdom::Event::#variant(__button) = &__event {
                         #call;
@@ -1282,7 +1307,8 @@ impl Generator {
         Ok(match (is_explicit_call, args) {
             (true, Some(args)) => quote!(#expr(#args)),
             (true, None) => expr,
-            (false, _) => expr,
+            (false, Some(args)) => quote!(#expr(#args)),
+            (false, None) => expr,
         })
     }
 
@@ -2546,6 +2572,24 @@ fn collect_interpolations(nodes: &[Node]) -> std::collections::HashSet<String> {
                     }
                 }
             }
+        }
+    }
+    out
+}
+
+/// Все имена переменных `v-for` в шаблоне. Эти идентификаторы — локальные
+/// переменные цикла, а не методы/поля компонента, поэтому их нужно исключить
+/// из веток `eval_field`.
+fn collect_v_for_items(nodes: &[Node]) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    for node in nodes {
+        if let Node::Element(element) = node {
+            if let Some(spec) = attr_value(&element.attrs, "v-for")
+                && let Ok((item, _)) = parse_for(spec)
+            {
+                out.insert(item);
+            }
+            out.extend(collect_v_for_items(&element.children));
         }
     }
     out

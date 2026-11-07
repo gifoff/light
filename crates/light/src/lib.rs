@@ -85,7 +85,15 @@ extern crate self as light;
 #[cfg(feature = "devtools")]
 use serde::Deserialize;
 
+// Основной API доступен всегда, без cfg (0.15.1). Глоб-реэкспорт ядра ниже
+// перетягивает `vdom::to_json` и всё остальное; здесь добавлены то, что glob
+// не даёт: `serde_json` — путь `::light::serde_json` для сгенерированного
+// макросом кода (доступен теперь в любом наборе фич), и `devtools` — только
+// при фиче.
+#[cfg(feature = "devtools")]
+pub use light_fw_core::devtools;
 pub use light_fw_core::*;
+pub use serde_json;
 
 #[cfg(feature = "async-await")]
 pub use light_fw_core::spawn_async;

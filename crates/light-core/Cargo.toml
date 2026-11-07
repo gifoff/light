@@ -16,8 +16,10 @@ futures = { version = "0.3", optional = true }
 futures-timer = { version = "3.0", optional = true }
 light-fw-html.workspace = true
 light-fw-macros.workspace = true
-serde = { version = "1.0", optional = true, features = ["derive"] }
-serde_json = { version = "1.0", optional = true }
+# Не опциональны: `Component::inspect_state`/`inject_state` и генерируемый
+# макросом код (`#[template]`) используют их в любом наборе фич (0.15.1).
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 thiserror = "2"
 winit = { workspace = true, optional = true }
 pixels = { workspace = true, optional = true }
@@ -74,7 +76,7 @@ file-dialog = ["dep:rfd"]
 
 # --- Окно --------------------------------------------------------------
 # Базовое окно на winit с программной отрисовкой.
-window = ["dep:winit", "dep:ab_glyph", "dep:serde", "dep:serde_json"]
+window = ["dep:winit", "dep:ab_glyph"]
 # Показ кадра через `softbuffer` (без wgpu/naga). По умолчанию включён.
 softbuffer-backend = ["window", "dep:softbuffer"]
 # Показ кадра через `pixels` (wgpu/naga). Альтернативный бэкенд.
@@ -113,10 +115,10 @@ include = ["light-fw-macros/include"]
 # Инспекция состояния: JSON-снимок VDOM и реактивных свойств (DevTools).
 # Требует `async-runtime`: TCP-команды доставляются в UI-поток через
 # EventLoopProxy, который существует только при этой фиче.
-devtools = ["dep:serde", "dep:serde_json", "async-runtime"]
+devtools = ["async-runtime"]
 # Шаблоны во время выполнения: `render()` читает HTML с диска (mtime-кэш),
 # поэтому правка разметки в dev-режиме видна без пересборки.
-runtime-templates = ["dep:serde_json", "window", "elements-checkbox", "elements-radio", "elements-select"]
+runtime-templates = ["window", "elements-checkbox", "elements-radio", "elements-select"]
 
 [dev-dependencies]
 criterion = "0.5"

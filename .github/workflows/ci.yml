@@ -45,7 +45,11 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      # Windows/MSVC: ring (через reqwest в light-fw-cli) упирается в лимит
+      # командной строки D8050 при параллельной сборке.
       - name: Clippy
+        env:
+          CARGO_BUILD_JOBS: ${{ matrix.os == 'windows-latest' && '1' || '' }}
         run: cargo clippy --all-targets --all-features -- -D warnings
 
   test:
@@ -66,6 +70,9 @@ jobs:
 
       - name: Test (Windows)
         if: matrix.os == 'windows-latest'
+        env:
+          # ring через reqwest в light-fw-cli: обход лимита D8050.
+          CARGO_BUILD_JOBS: "1"
         run: cargo test --all-features -j 2
 
       - name: Compile benchmarks (Linux/macOS)
@@ -75,6 +82,27 @@ jobs:
       - name: Compile benchmarks (Windows)
         if: matrix.os == 'windows-latest'
         run: cargo bench --no-run -j 2
+
+  # Регрессия 0.15.0: примеры не собирались без --all-features (cfg на
+  # inspect_state/inject_state + скрытые реэкспорты). Эта сборка ловит
+  # повторения: пользовательская зависимость light = "0.15" — это дефолтные
+  # фичи, а не all-features.
+  build-default:
+    name: Build examples (default features)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build workspace without --all-features
+        env:
+          CARGO_BUILD_JOBS: "1"
+        run: |
+          cargo build --workspace
+          cargo build -p example-counter
+          cargo build -p example-dashboard
+          cargo build -p example-multi-window
+          cargo build -p example-devtools-demo
 
   # Feature combinations are checked separately on Linux: they catch code that
   # is valid only with `--all-features` but broken with a reduced feature set.

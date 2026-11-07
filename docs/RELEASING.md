@@ -17,6 +17,16 @@
    cargo build --workspace
    ```
 
+   На Windows (MSVC) ограничьте параллелизм — `ring` (через `reqwest` в
+   `light-fw-cli`) не помещается в лимит командной строки D8050 при
+   параллельной сборке:
+
+   ```powershell
+   $env:CARGO_BUILD_JOBS = "1"
+   cargo clippy --workspace --all-targets --all-features -- -D warnings
+   cargo test --workspace --all-features -j 2
+   ```
+
 4. Проверьте демо:
 
    ```bash

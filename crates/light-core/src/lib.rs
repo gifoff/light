@@ -112,8 +112,10 @@ pub const RUNTIME_TEMPLATES_ENABLED: bool = true;
 pub const RUNTIME_TEMPLATES_ENABLED: bool = false;
 
 // Публичные зависимости, доступные под именем `::light::…` в сгенерированном
-// коде (макрос `#[template]`).
-#[cfg(feature = "devtools")]
+// коде (макрос `#[template]`). Не опциональны: `inspect_state`/`inject_state`
+// и генерируемые ими вызовы (`serde_json::to_value`, `serde::Serialize`)
+// присутствуют в любом наборе фич (0.15.1), поэтому реэкспорт без cfg.
+pub use serde;
 pub use serde_json;
 
 pub mod a11y;

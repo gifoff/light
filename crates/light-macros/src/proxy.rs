@@ -74,6 +74,12 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
         let mut default_expr = None;
         for attr in &field.attrs {
+            // Документационные комментарии — не атрибуты поля: пропускаем,
+            // иначе док-строка после `#[transient]` (или в любом другом месте)
+            // ломает сборку «unknown field attribute #doc» (0.15.1).
+            if attr.path().is_ident("doc") {
+                continue;
+            }
             if attr.path().is_ident("default") {
                 if default_expr.is_some() {
                     return Err(syn::Error::new(

@@ -1,10 +1,14 @@
-﻿# Проверка сборки и тестов light на разных наборах Cargo-фич.
+# Проверка сборки и тестов light на разных наборах Cargo-фич.
 #
 # Ловит забытые `#[cfg]`: набор должен компилироваться и проходить тесты
 # не только на `--all-features`. Запуск из корня репозитория:
 #     pwsh scripts/check-features.ps1
 
 $ErrorActionPreference = "Stop"
+
+# Windows/MSVC: ring (через reqwest в light-fw-cli) не помещается в лимит
+# командной строки D8050 при параллельной сборке — ограничиваем -j.
+$env:CARGO_BUILD_JOBS = "1"
 
 $combos = @(
     @{ Name = "без фич";                    Args = @("--no-default-features") },
@@ -24,6 +28,17 @@ foreach ($combo in $combos) {
         if ($LASTEXITCODE -ne 0) {
             throw "Набор фич «$($combo.Name)» ($pkg) завершился с ошибкой"
         }
+    }
+}
+
+# Примеры должны собираться БЕЗ --all-features (дефолтные фичи): это ловит
+# регрессии 0.15.0, когда `#[template]` генерировал методы/реэкспорты,
+# доступные только при `devtools`.
+foreach ($example in @("example-counter", "example-dashboard", "example-multi-window", "example-devtools-demo")) {
+    Write-Host "==> default build: $example" -ForegroundColor Cyan
+    & cargo build -p $example
+    if ($LASTEXITCODE -ne 0) {
+        throw "Пример $example не собирается с дефолтными фичами"
     }
 }
 

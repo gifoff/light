@@ -2,6 +2,42 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.15.1] - 2026-11-07
+
+### Fixed
+
+- Регрессия 0.15.0: все примеры и приложения на `light = "0.15"` не
+  компилировались с дефолтными фичами. Причин было несколько:
+  - `Component::inspect_state` / `inject_state` были за `#[cfg(devtools)]`
+    в трейте, но макрос `#[template]` генерировал реализацию без cfg →
+    «method is not a member of trait». Методы теперь в трейте всегда.
+  - `serde` и `serde_json` были опциональными зависимостями
+    (`dep:serde`, `dep:serde_json`), привязанными к фичам `window` /
+    `devtools` / `runtime-templates`. Сгенерированный код ссылается на
+    `::light::serde` и `::light::serde_json` в любом наборе фич. Зависимости
+    теперь неопциональные, реэкспорт без cfg.
+  - `VElement::to_json` был за `#[cfg(devtools)]`; код макроса требует его
+    всегда. Теперь доступен без фичи.
+  - `#[proxy]`: док-комментарии на полях ломали сборку
+    «unknown field attribute #doc» — теперь пропускаются.
+  - Дискриминатор формы вызова обработчика в `event_branches`:
+    `show_tab('overview')` (явные аргументы) и `Dom::…` (выражения)
+    генерировались как метод-ссылка → E0618/E0615. Теперь полновесный вызов
+    определяется по непустым аргументам или `::`.
+  - `handler_call` не инжектнул аргумент события для безаргументных
+    имён: `@mousedown="down"` давал `self.down;` (E0615). Теперь
+    `self.down(*__button)` и т.п.
+  - `eval_field`: v-for переменные (`task in tasks`) ошибочно считались
+    методами → `self.task()` (E0599). Добавлен `collect_v_for_items` —
+    имена циклов исключаются из веток оценки.
+- `invoke_arms` (runtime `invoke_handler`): всегда `#call(); true` —
+  простые имена методов, проверенные `is_plain_click_handler`.
+- CI: новый джоб `build-default` собирает примеры без `--all-features`
+  (ловит повторение регрессии). `CARGO_BUILD_JOBS=1` на Windows (D8050
+  ring/reqwest).
+- `scripts/check-features.ps1`: добавлена сборка примеров с дефолтными
+  фичами; `$env:CARGO_BUILD_JOBS = "1"`.
+
 ## [0.15.0] - 2026-11-06
 
 ### Added
