@@ -286,6 +286,56 @@ pub fn request_reload_template(port: u16) -> std::io::Result<()> {
     Ok(())
 }
 
+/// ТЗ 0.15.1-fix3: graceful save перед swap-kill.
+///
+/// Отправляет `SAVE_ALL\n` в TCP-сервер DevTools на `127.0.0.1:<port>`
+/// и **ожидаает** ответа `ok` от UI-потока (до 500 мс). UI-поток синхронно
+/// сохраняет `state.json` + принудительно `window.json` (без дебаунса)
+/// и только затем отвечает. Если таймаут или ошибка — логим и продолжаем
+/// (fallback: TerminateProcess как раньше, debounce-запись может не успеть).
+fn request_save_all(port: u16) {
+    use std::io::BufRead;
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    let result = (|| -> Result<(), String> {
+        let stream = TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+        stream
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .map_err(|e| e.to_string())?;
+        stream
+            .set_write_timeout(Some(Duration::from_millis(500)))
+            .map_err(|e| e.to_string())?;
+        {
+            use std::io::Write as _;
+            let mut w = &stream;
+            w.write_all(b"SAVE_ALL\n").map_err(|e| e.to_string())?;
+        }
+        let mut reader = std::io::BufReader::new(&stream);
+        let mut line = String::new();
+        let bytes_read = reader.read_line(&mut line).map_err(|e| e.to_string())?;
+        if bytes_read == 0 {
+            return Err("connection closed before response".to_owned());
+        }
+        let reply = line.trim();
+        if reply != "ok" {
+            return Err(format!("unexpected reply: {reply}"));
+        }
+        Ok(())
+    })();
+    match result {
+        Ok(()) => {
+            eprintln!("[SAVE_ALL] sent by supervisor, replied ok");
+        }
+        Err(e) => {
+            eprintln!(
+                "light dev: SAVE_ALL timeout/error: {e} \
+                 (falling back to TerminateProcess without graceful save)"
+            );
+        }
+    }
+}
+
 /// Проверяет, открыт ли TCP-порт DevTools (на нём приложение принимает команду
 /// `SAVE_STATE`). `TcpStream::connect` к свободному порту возвращает ошибку
 /// мгновенно (connection refused), так что это дешёвая проверка.
@@ -1597,6 +1647,11 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                         }
                     };
                     eprintln!("light dev: copied fresh build to {:?}", new_run_exe);
+                    // ТЗ 0.15.1-fix3: graceful save перед kill — отправляем
+                    // SAVE_ALL и ожидаем ok (до 500 мс). UI-поток синхронно
+                    // пишет state.json + window.json. Если таймаут/ошибка —
+                    // продолжаем как раньше (TerminateProcess без graceful).
+                    request_save_all(DEVTOOLS_PORT);
                     // b) Убиваем старый app (через MutexGuard; `kill_child`
                     //    принимает `&mut Child`).
                     let old_pid = child_arc.lock().map(|g| g.id()).unwrap_or(0);

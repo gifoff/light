@@ -1864,6 +1864,15 @@ struct App {
     /// `set_outer_position`).
     restoring_geometry: bool,
     restore_started_at: Option<std::time::Instant>,
+    /// ТЗ 0.15.1-fix3: «желаемая» геометрия — то, что мы применили через
+    /// `set_outer_position` / `request_inner_size`, а не то, что видит WM
+    /// (WM может скорректировать frame offset и т.п.). При сохранении
+    /// (`flush_geometry`) пишем именно её в `window.json`, чтобы при swap
+    /// применялась исходная позиция без накопления drift. Обновляется:
+    /// * в restore-ветке `apply_geometry` — полным клон из файла;
+    /// * в `WindowEvent::Moved` (не во время restore) — x/y;
+    /// * в `WindowEvent::Resized` (не во время restore) — width/height.
+    last_applied_geometry: Option<WindowGeometry>,
     /// Прокси цикла событий для доставки событий AccessKit.
     #[cfg(feature = "a11y-winit")]
     proxy: Option<EventLoopProxy<UserEvent>>,
@@ -2004,6 +2013,7 @@ impl App {
             closing: false,
             restoring_geometry: false,
             restore_started_at: None,
+            last_applied_geometry: None,
             #[cfg(feature = "a11y-winit")]
             proxy: None,
         }
@@ -2174,6 +2184,18 @@ impl App {
                 // (иначе drift: 157,156 → 164,160 → … после каждого swap).
                 self.restoring_geometry = true;
                 self.restore_started_at = Some(std::time::Instant::now());
+                // ТЗ 0.15.1-fix3: запоминаем «желаемую» геометрию — именно её
+                // будем писать в файл при flush (не WM-коррекцию).
+                self.last_applied_geometry = Some(geom.clone());
+                eprintln!(
+                    "[apply] desired=({}, {}, {}x{}) outer_pos={:?} inner_pos={:?}",
+                    geom.x,
+                    geom.y,
+                    geom.width,
+                    geom.height,
+                    window.outer_position(),
+                    window.inner_position(),
+                );
                 let _ = window
                     .request_inner_size(LogicalSize::new(geom.width as f64, geom.height as f64));
                 window.set_outer_position(PhysicalPosition::new(geom.x, geom.y));
@@ -2322,9 +2344,31 @@ impl App {
         if state.parent.is_some() {
             return;
         }
-        let Ok(pos) = state.window.outer_position() else {
-            return;
+        // ТЗ 0.15.1-fix3: используем «желаемую» геометрию (то, что мы
+        // применили через set_outer_position/request_inner_size), а не
+        // WM-наблюдаемые координаты outer_position(). WM может скорректировать
+        // frame offset, и чтение его значения накапливает drift при каждом
+        // swap. Фолбэк на outer_position(), если last_applied ещё не задан.
+        let pos = if let Some(applied) = &self.last_applied_geometry {
+            (applied.x, applied.y)
+        } else {
+            let Ok(p) = state.window.outer_position() else {
+                return;
+            };
+            (p.x, p.y)
         };
+        eprintln!(
+            "[save] source={}, geom=({}, {}, {}x{})",
+            if self.last_applied_geometry.is_some() {
+                "last_applied"
+            } else {
+                "outer_position"
+            },
+            pos.0,
+            pos.1,
+            state.window.inner_size().width,
+            state.window.inner_size().height,
+        );
         // ТЗ 0.14.3-fix7: свёрнутое окно имеет мусорные координаты Windows
         // (например (-32000, -32000)) + уменьшенный размер. Не записываем их:
         // в файл уходит последняя «нормальная» геометрия из кэша, чтобы restore
@@ -2358,8 +2402,8 @@ impl App {
         let size = state.window.inner_size();
         let minimized = state.window.is_minimized().unwrap_or(false);
         let geom = WindowGeometry {
-            x: pos.x,
-            y: pos.y,
+            x: pos.0,
+            y: pos.1,
             width: size.width,
             height: size.height,
             maximized: state.window.is_maximized(),
@@ -2380,6 +2424,57 @@ impl App {
             }
             self.window_geom_dirty = false;
             self.window_geom_last_write = now;
+        }
+    }
+
+    /// ТЗ 0.15.1-fix3: принудительная запись геометрии в файл без дебаунса.
+    /// Вызывается из обработчика `SAVE_ALL` перед swap-kill: supervisor уже
+    /// заберёт процесс через TerminateProcess, и обычная 500 мс пауза может
+    /// не успеть сработать. Пишем то, что накопилось в `window_geom`
+    /// (обновлённое `last_applied_geometry`), и сбрасываем dirty-флаг.
+    #[cfg_attr(
+        not(all(feature = "devtools", feature = "async-runtime")),
+        allow(dead_code)
+    )]
+    fn flush_geometry_force(&mut self, id: WindowId) {
+        // Только корневое окно.
+        let Some(state) = self.windows.get(&id) else {
+            return;
+        };
+        if state.parent.is_some() {
+            return;
+        }
+        // Строим геометрию из last_applied + текущий size/maximized.
+        let pos = if let Some(applied) = &self.last_applied_geometry {
+            (applied.x, applied.y)
+        } else {
+            let Ok(p) = state.window.outer_position() else {
+                return;
+            };
+            (p.x, p.y)
+        };
+        let size = state.window.inner_size();
+        let geom = WindowGeometry {
+            x: pos.0,
+            y: pos.1,
+            width: size.width,
+            height: size.height,
+            maximized: state.window.is_maximized(),
+            minimized: state.window.is_minimized().unwrap_or(false),
+        };
+        self.window_geom = Some(geom.clone());
+        if !geom.maximized {
+            self.cached_normal_geometry = Some(geom.clone());
+        }
+        eprintln!(
+            "[save] force: source=last_applied, geom=({}, {}, {}x{})",
+            geom.x, geom.y, geom.width, geom.height
+        );
+        if let Err(error) = geom.save() {
+            eprintln!("light: не удалось принудительно сохранить геометрию: {error}");
+        } else {
+            self.window_geom_dirty = false;
+            self.window_geom_last_write = std::time::Instant::now();
         }
     }
 
@@ -2630,6 +2725,40 @@ impl App {
                     eprintln!("DevTools: не удалось сохранить состояние: {error}");
                 }
             }
+            // ТЗ 0.15.1-fix3: graceful save перед swap-kill. Supervisor
+            // шлёт SAVE_ALL по TCP; мы синхронно пишем state.json +
+            // принудительно window.json (без дебаунса), затем отвечаем ok.
+            crate::devtools::DevToolsCommand::SaveAll { response_tx } => {
+                let active_wid = self
+                    .tokens
+                    .get(&crate::control::active_window())
+                    .copied()
+                    .filter(|wid| self.windows.contains_key(wid));
+                let root_wid = active_wid.or_else(|| {
+                    self.windows
+                        .iter()
+                        .find(|(_, w)| w.parent.is_none())
+                        .map(|(wid, _)| *wid)
+                });
+                let Some((root_wid, window)) =
+                    root_wid.and_then(|wid| self.windows.get(&wid).map(|w| (wid, w)))
+                else {
+                    let _ = response_tx.send(false);
+                    return;
+                };
+                // 1) state.json
+                let mut ok = true;
+                if let Err(error) =
+                    crate::devtools::save_state_file(&window.component.inspect_state())
+                {
+                    eprintln!("light: SAVE_ALL: не удалось сохранить state.json: {error}");
+                    ok = false;
+                }
+                // 2) window.json — принудительная запись без дебаунса
+                self.flush_geometry_force(root_wid);
+                eprintln!("[SAVE_ALL] sent by supervisor, replied ok");
+                let _ = response_tx.send(ok);
+            }
             // ReloadTemplate: перечитываем HTML-шаблон с диска (runtime-templates)
             // и перерисовываем все окна. Кэш шаблонов ключируется по mtime,
             // поэтому при изменённом файле `render_dynamic` вернёт новый
@@ -2847,11 +2976,55 @@ impl ApplicationHandler<UserEvent> for App {
             return;
         };
         match event {
-            WindowEvent::Resized(_) => {
+            WindowEvent::Resized(size) => {
                 window.invalidate();
+                // ТЗ 0.15.1-fix3: вне restore-окна обновляем «желаемый»
+                // размер (пользователь изменил размер окна). Если запись ещё
+                // не существует (cold start, без restore) — создаём её из
+                // текущего состояния окна.
+                if !self.restoring_geometry {
+                    let applied = self.last_applied_geometry.get_or_insert_with(|| {
+                        let pos = window.window.outer_position().unwrap_or_default();
+                        let sz = window.window.inner_size();
+                        WindowGeometry {
+                            x: pos.x,
+                            y: pos.y,
+                            width: sz.width,
+                            height: sz.height,
+                            maximized: false,
+                            minimized: false,
+                        }
+                    });
+                    applied.width = size.width;
+                    applied.height = size.height;
+                }
                 self.flush_geometry(id);
             }
-            WindowEvent::Moved { .. } => {
+            WindowEvent::Moved(position) => {
+                eprintln!(
+                    "[moved] pos=({}, {}), restoring={}",
+                    position.x, position.y, self.restoring_geometry
+                );
+                // ТЗ 0.15.1-fix3: вне restore-окна обновляем «желаемую»
+                // позицию на фактическую (пользователь перетащил окно). Если
+                // запись ещё не существует (cold start, без restore) —
+                // создаём её из текущего состояния окна.
+                if !self.restoring_geometry {
+                    let applied = self.last_applied_geometry.get_or_insert_with(|| {
+                        let pos = window.window.outer_position().unwrap_or_default();
+                        let sz = window.window.inner_size();
+                        WindowGeometry {
+                            x: pos.x,
+                            y: pos.y,
+                            width: sz.width,
+                            height: sz.height,
+                            maximized: false,
+                            minimized: false,
+                        }
+                    });
+                    applied.x = position.x;
+                    applied.y = position.y;
+                }
                 self.flush_geometry(id);
             }
             WindowEvent::Focused(false) => window.on_unfocus(),

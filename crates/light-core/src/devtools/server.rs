@@ -16,6 +16,10 @@
 //! * Клиент шлёт `SAVE_STATE\n` — сервер просит UI-поток сохранить текущее
 //!   состояние компонента в `.light/state.json` и сразу отвечает `ok\n`
 //!   (запись асинхронна; результат видно при следующем запуске).
+//! * Клиент шлёт `SAVE_ALL\n` — сервер просит UI-поток **синхронно**
+//!   сохранить и `.light/state.json`, и принудительно написать
+//!   `.light/window.json` (без дебаунса); отвечает `ok\n` только после
+//!   подтверждения от UI (ТЗ 0.15.1-fix3, graceful save перед swap-kill).
 //! * Клиент шлёт `QUIT\n` — сервер закрывает соединение.
 //! * Неизвестная команда — сервер отвечает `unknown command\n` и продолжает
 //!   обслуживание.
@@ -151,6 +155,18 @@ fn dispatch_command(command: &str) -> String {
             // сервер отвечает сразу, не ожидая перерисовки.
             super::send_command(super::DevToolsCommand::ReloadTemplate);
             "ok".to_owned()
+        }
+        "SAVE_ALL" => {
+            // ТЗ 0.15.1-fix3: supervisor шлёт SAVE_ALL перед kill. Ожидаем
+            // подтверждения из UI-потока (до 1 с), что state.json + window.json
+            // записаны, и отвечаем `ok` / `timeout`.
+            let (tx, rx) = std::sync::mpsc::channel();
+            super::send_command(super::DevToolsCommand::SaveAll { response_tx: tx });
+            match rx.recv_timeout(std::time::Duration::from_secs(1)) {
+                Ok(true) => "ok".to_owned(),
+                Ok(false) => "error".to_owned(),
+                _ => "timeout".to_owned(),
+            }
         }
         _ => "unknown command".to_owned(),
     }
