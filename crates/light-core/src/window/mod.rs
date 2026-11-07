@@ -1854,6 +1854,16 @@ struct App {
     /// user close: supervisor сам удалит файлы. При swap (`LIGHT_SWAP=1`)
     /// файл **сохраняется** — следующий child восстановит позицию.
     closing: bool,
+    /// ТЗ 0.15.1-fix2: флаг «идёт восстановление геометрии». Когда мы
+    /// применяем сохранённую позицию через `set_outer_position`, Windows
+    /// может скорректировать её (workspace boundary, taskbar и т.п.) и
+    /// сгенерировать `WindowEvent::Moved` со сдвинутыми координатами.
+    /// Без этого флага `flush_geometry` закэширует WM-коррекцию, и
+    /// следующий swap применит уже сдвинутую позицию → drift.
+    /// Флаг живёт ~200 мс (пока WM не доставит Moved-события от нашего
+    /// `set_outer_position`).
+    restoring_geometry: bool,
+    restore_started_at: Option<std::time::Instant>,
     /// Прокси цикла событий для доставки событий AccessKit.
     #[cfg(feature = "a11y-winit")]
     proxy: Option<EventLoopProxy<UserEvent>>,
@@ -1992,6 +2002,8 @@ impl App {
             window_geom_last_write: std::time::Instant::now(),
             cached_normal_geometry: None,
             closing: false,
+            restoring_geometry: false,
+            restore_started_at: None,
             #[cfg(feature = "a11y-winit")]
             proxy: None,
         }
@@ -2157,6 +2169,11 @@ impl App {
             } else if let Some(geom) = &loaded_geom
                 && !geom.is_garbage()
             {
+                // ТЗ 0.15.1-fix2: помечаем «восстановление геометрии», чтобы
+                // `flush_geometry` пропустил Moved-события от WM-коррекции
+                // (иначе drift: 157,156 → 164,160 → … после каждого swap).
+                self.restoring_geometry = true;
+                self.restore_started_at = Some(std::time::Instant::now());
                 let _ = window
                     .request_inner_size(LogicalSize::new(geom.width as f64, geom.height as f64));
                 window.set_outer_position(PhysicalPosition::new(geom.x, geom.y));
@@ -2291,6 +2308,13 @@ impl App {
     /// Вызывается при каждом `Moved`/`Resized` событии; запись в файл
     /// дебаунсится на 500 мс.
     fn flush_geometry(&mut self, id: WindowId) {
+        // ТЗ 0.15.1-fix2: не кэшируем позицию во время восстановления
+        // геометрии — это WM-коррекция от нашего `set_outer_position`, а не
+        // движение пользователя. Иначе следующий swap применит сдвинутую
+        // координату (drift).
+        if self.restoring_geometry {
+            return;
+        }
         let Some(state) = self.windows.get(&id) else {
             return;
         };
@@ -2840,6 +2864,15 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::KeyboardInput { event, .. } => window.on_key(&event),
             WindowEvent::MouseWheel { delta, .. } => window.on_wheel(delta),
             WindowEvent::RedrawRequested => {
+                // ТЗ 0.15.1-fix2: снимаем флаг восстановления геометрии через
+                // 200 мс — к этому времени WM уже доставил все Moved-события
+                // от нашего `set_outer_position`.
+                if let Some(started) = self.restore_started_at
+                    && started.elapsed() > std::time::Duration::from_millis(200)
+                {
+                    self.restoring_geometry = false;
+                    self.restore_started_at = None;
+                }
                 if let Err(error) = window.redraw() {
                     self.error = Some(error);
                     event_loop.exit();

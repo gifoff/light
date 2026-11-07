@@ -41,6 +41,18 @@ cargo fmt --all && cargo clippy --all-targets --all-features -- -D warnings && c
 cargo test --all-features -j 2
 ```
 
+На Windows (MSVC) `ring` (через `reqwest` в `light-fw-cli`) не помещается в
+лимит командной строки D8050 при параллельной сборке. Обход:
+
+```powershell
+$env:CARGO_BUILD_JOBS = "1"
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features -j 2
+```
+
+CI уже применяет `CARGO_BUILD_JOBS=1` на всех Windows-джобах. См.
+[docs/RELEASING.md](docs/RELEASING.md).
+
 **Если менялись версии крейтов или манифесты**, перед коммитом дополнительно
 проверьте упаковку всего воркспейса:
 
