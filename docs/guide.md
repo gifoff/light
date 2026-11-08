@@ -10,9 +10,11 @@ Light — декларативный реактивный GUI-фреймворк
 - [Шаблоны](#шаблоны)
 - [Текстовые узлы и наследование стиля](#текстовые-узлы-и-наследование-стиля)
 - [Стили элементов](#стили-элементов)
+- [Кнопки](#кнопки)
 - [Фон и прозрачность](#фон-и-прозрачность)
 - [Директивы](#директивы)
 - [События](#события)
+- [Курсор мыши](#курсор-мыши)
 - [Окно и управление окном](#окно-и-управление-окном)
 - [Модальные окна](#модальные-окна)
 - [Второе главное окно и общее состояние](#второе-главное-окно-и-общее-состояние)
@@ -23,7 +25,9 @@ Light — декларативный реактивный GUI-фреймворк
 - [Коллекции](#коллекции)
 - [Доступ к виртуальному DOM](#доступ-к-виртуальному-dom)
 - [Компиляция шаблонов](#компиляция-шаблонов)
+- [Асинхронные обновления интерфейса](#асинхронные-обновления-интерфейса)
 - [Полный пример](#полный-пример)
+- [Доступность](#доступность)
 - [DevTools](#devtools)
 
 ## Философия и обзор
@@ -45,6 +49,10 @@ Light строится на нескольких принципах:
 ```toml
 [dependencies]
 light = { path = "crates/light" }
+
+[features]
+# Включает поддержку hot-reload и DevTools
+dev-mode = ["light/dev-mode"]
 ```
 
 Компонент — это структура с атрибутом `#[proxy]` (реактивные свойства) и атрибутом `#[template("путь/к/шаблону.html")]`, который привязывает структуру к шаблону:
@@ -80,7 +88,9 @@ impl App {
 }
 
 fn main() -> light::Result<()> {
-    light::run(App::new())
+    // run_with_config включает чтение light.config.json 
+    // и автоматический запуск DevTools (если включена фича dev-mode).
+    light::run_with_config("light.config.json", App::new())
 }
 ```
 
@@ -103,7 +113,7 @@ fn main() -> light::Result<()> {
 </window>
 ```
 
-`#[proxy]` для каждого поля генерирует геттер (`count()`) и сеттер (`set_count(...)`); изменение свойства запускает перерисовку только тех узлов, которые реально зависят от него. `App::new()` создаёт компонент со значениями по умолчанию, `light::run(...)` поднимает окно и запускает цикл событий.
+`#[proxy]` для каждого поля генерирует геттер (`count()`) и сеттер (`set_count(...)`); изменение свойства запускает перерисовку только тех узлов, которые реально зависят от него. `App::new()` создаёт компонент со значениями по умолчанию, `light::run_with_config(...)` поднимает окно и запускает цикл событий.
 
 ## Установка и Cargo-фичи
 
@@ -286,7 +296,7 @@ cargo run -p light-fw-cli -- suggest   # что стоит добавить
   light-fw-element-form
 
 Рекомендации:
-  добавить light-fw-element-form ^0.1
+  добавить light-fw-element-form ^0.15
 ```
 
 ### `light suggest [путь]`
@@ -360,7 +370,7 @@ Light doctor
   ⚠ light.lock отсутствует (воспроизводимость не гарантирована)
 
 Компоненты (1):
-  ✓ light-fw-element-form 0.1.0 (совместим)
+  ✓ light-fw-element-form 0.15.5 (совместим)
 ```
 
 ### `light search <запрос>`
@@ -371,7 +381,7 @@ Light doctor
 ```
 $ light search datepicker
 NAME                           VERSION    DESCRIPTION                                                  URL
-light-fw-datepicker            0.3.0      Date picker for Light                                        https://crates.io/crates/light-fw-datepicker
+light-fw-datepicker            0.1.0      Date picker for Light                                        https://crates.io/crates/light-fw-datepicker
 ```
 
 Если ничего не найдено, команда печатает
@@ -456,7 +466,7 @@ $ light add light-fw-datepicker --features calendar,timezone --yes
 сохраняют их в `.light/backup/` (снимок). Если `cargo check` после изменения
 падает, файлы восстанавливаются из снимка (включая удаление файлов, которых не
 было до изменения), а команда завершается с кодом `1`. Каталог `.light/`
-стоит добавить в `.gitignore`.
+стоит добавить в `.gitignore`. 
 
 ## Шаблоны
 
@@ -514,7 +524,7 @@ $ light add light-fw-datepicker --features calendar,timezone --yes
 Для `<image>` включите фичу `image-support`:
 
 ```toml
-light = { version = "0.10.3", features = ["image-support"] }
+light = { version = "0.15", features = ["image-support"] }
 ```
 
 ```html
@@ -548,7 +558,7 @@ fn load_avatar(path: &Path) -> light::Result<ImageData> {
 диалог доступен с фичей `file-dialog`:
 
 ```toml
-light = { version = "0.10.3", features = ["image-support", "file-dialog"] }
+light = { version = "0.15", features = ["image-support", "file-dialog"] }
 ```
 
 ```rust
@@ -1326,7 +1336,7 @@ fn start_async(&self) {
 }
 ```
 
-Важно: `futures::executor::block_on` не поддерживает принудительную отмену извне — если фьюча висит на I/O, `TaskHandle::abort()` её не прервёт. Отмена кооперативная: задача сама проверяет `ctx.is_cancelled()` между шагами. Это ожидаемое поведение для 0.12.0.
+Важно: `futures::executor::block_on` не поддерживает принудительную отмену извне — если фьюча висит на I/O, `TaskHandle::abort()` её не прервёт. Отмена кооперативная: задача сама проверяет `ctx.is_cancelled()` между шагами.
 
 `post_update` принимает только замыкание и типизируется дженериком `<C: Component>`: `light::post_update::<App>(|app: &mut App| { … })`. Прокси передавать не нужно. В UI-цикле компонент, которому адресовано действие, находится по `TypeId`, замыкание применяется к нему, и на всех открытых окнах запрашивается перерисовка.
 
@@ -1434,7 +1444,7 @@ impl App {
 struct Dialog {}
 
 fn main() -> light::Result<()> {
-    light::run(App::new())
+    light::run_with_config("light.config.json", App::new())
 }
 ```
 
@@ -1538,32 +1548,37 @@ if let Some(window) = a11y::active_window() {
 
 ### Запуск с DevTools
 
-DevTools включаются одним из трёх способов:
+Начиная с версии 0.15, DevTools и горячая перезагрузка настраиваются через файл
+`light.config.json` и включение фичи `dev-mode` в `Cargo.toml` вашего проекта.
 
+1. Добавьте фичу в `Cargo.toml`:
+   ```toml
+   [features]
+   dev-mode = ["light/dev-mode"]
+   ```
+
+2. Используйте `light::run_with_config("light.config.json", App::new())` в `main.rs`.
+
+3. Запустите проект с помощью CLI:
+   ```bash
+   light dev
+   ```
+   Утилита автоматически найдет ваш пакет в текущей директории, соберет его
+   с фичей `dev-mode` и запустит TCP-сервер DevTools на `127.0.0.1:9229`.
+
+Для ручного запуска без CLI (если вы хотите использовать классический `cargo run`):
 ```bash
-# 1. Алиас `cargo dev` — debug-сборка с фичей devtools (по умолчанию в
-#    debug-сборке inspect_state генерируется всегда, фича не обязательна).
-cargo dev -p my-app
-
-# 2. Алиас `cargo prod` — release-сборка без DevTools.
-cargo prod -p my-app
-
-# 3. Явное включение фичи.
-cargo run --features devtools -p my-app
+cargo run --features dev-mode
 ```
-
-В debug-сборке метод `inspect_state` генерируется макросом `#[template]`
-автоматически (не нужно помнить про `--features`). В release-сборке
-`inspect_state` присутствует только при явном включении фичи `devtools`;
-без фичи сервер DevTools НЕ запускается и снимки состояния недоступны.
 
 Для примера `example-devtools-demo` достаточно `cargo run -p example-devtools-demo`
 — фича `devtools` уже включена в базовых зависимостях примера.
 
 ### Горячая перезагрузка (Hot Reload)
 
-`light dev <пакет>` запускает приложение с автоматической перезагрузкой при
-изменении исходников или HTML-шаблонов. Архитектура:
+Команда `light dev` (без аргументов) запускает приложение с автоматической
+перезагрузкой при изменении исходников или HTML-шаблонов. Если в текущей папке
+несколько пакетов, укажите нужный: `light dev -p my-package`. Архитектура:
 
 1. **Phase A** — блокирующая warm-up сборка в изолированном
    `target/hot-build` (не трогает основную `target/`).
@@ -1583,14 +1598,14 @@ cargo run --features devtools -p my-app
      `.light/state.json` и `.light/window.json`.
 
 ```bash
-# Запуск с горячей перезагрузкой
-light dev example-devtools-demo
+# Запуск с горячей перезагрузкой (в папке проекта)
+light dev
 
 # С подробными логами (debounce, hash-dedup, notify events)
-light dev --verbose example-devtools-demo
+light dev --verbose
 
 # Полный сброс кэша dev-сборки перед стартом
-light dev --clean example-devtools-demo
+light dev --clean
 ```
 
 #### Кэш и его инвалидация
@@ -1603,65 +1618,50 @@ Hot-reload сохраняет артефакты сборки в `target/hot-bui
 - `target/hot-run/` — копии запускаемых бинарников (один на каждую
   пересборку).
 - `.light/state.json` — состояние watcher (debounce, hash-dedup).
+- `.light/build-info.json` — информация о версии фреймворка для инвалидации.
 
 Инвалидация происходит автоматически и вручную:
 
-1. **Auto-invalidation по версии light-fw-core.** При старте `light dev`
-   читает `.light/build-info.json` (формат:
-   `{"light-fw-core-version": "0.15.1", "cargo-lock-hash": "..."}`) и
-   сравнивает с версией из `Cargo.lock`. Если версия изменилась —
-   `target/hot-build` удаляется один раз, и пишется новый `build-info.json`.
+1. **Auto-invalidation по версии light.** При старте `light dev`
+   читает `.light/build-info.json` и сравнивает минорную версию
+   `light` (например, `0.15`) с текущей версией из `Cargo.toml`.
+   Если версия изменилась — `target/hot-build` удаляется один раз, 
+   и пишется новый `build-info.json`. 
    Лог: `light dev: framework version changed → hot-build cache invalidated`.
 
-2. **Ручной сброс через `--clean`.** Флаг `light dev --clean <пакет>`
-   удаляет все четыре кэша (`hot-build`, `hot-run`, `state.json`,
-   `target/debug/deps/<пакет>*`) перед стартом. Лог:
-   `light dev: cleaned cache (hot-build, hot-run, state, deps)`.
-   Полезен при переезде между ветками, ручном редактировании
-   `light-fw-core` или подозрении на битый кэш.
+2. **Ручной сброс через `--clean`.** Флаг `light dev --clean` удаляет все 
+   четыре кэша (`hot-build`, `hot-run`, `state.json`, `target/debug/deps/<пакет>*`) 
+   перед стартом. Лог: `light dev: cleaned cache (hot-build, hot-run, state, deps)`.
 
 3. **Age-based чистка `hot-run`.** После каждой пересборки устаревшие
    исполняемые файлы (mtime старше 1 часа или timestamp в имени ≠ сегодня)
    удаляются автоматически. Лог:
    `light dev: pruned N stale executables from hot-run`.
 
-4. **Манипуляция вручную.** Файл `.light/state.json` можно удалить в любой
-   момент — это не сломает кэш, просто сбросит состояние watcher. Файл
-   `.light/build-info.json` также можно удалить: при следующем запуске
-   `light dev` сравнит версию и при несоответствии пересоберёт hot-build.
-
-5. **Предупреждение о рассинхроне CLI.** Если установленная версия
-   `light-fw-cli` (бинарник `light`) отличается от версии `light-fw-core`
-   в `Cargo.lock` проекта, выводится предупреждение:
+4. **Предупреждение о рассинхроне CLI.** Если установленная версия
+   `light-fw-cli` (бинарник `light`) отличается от версии `light` в `Cargo.lock`
+   проекта, выводится предупреждение:
    `⚠ light dev: installed CLI version {installed} differs from project {project}. Run \`cargo install --path crates/light-cli\``.
-   В этом случае кэш не инвалидируется автоматически — только предупреждение.
 
 ---
 
 ## DevTools
 
-Фича `devtools` добавляет TCP-сервер, который передаёт JSON-снимок состояния UI (виртуальное дерево, реактивные свойства) внешним инструментам разработки (IDE / standalone inspector) и принимает управляющие команды.
+Фича `devtools` (включаемая через `dev-mode`) добавляет TCP-сервер, который 
+передаёт JSON-снимок состояния UI (виртуальное дерево, реактивные свойства) 
+внешним инструментам разработки (IDE / standalone inspector) и принимает 
+управляющие команды.
 
 ### Включение
 
-1. Включите фичу `devtools` в манифесте:
-
+1. Включите фичу `dev-mode` в манифесте (или используйте `light dev`):
    ```toml
-   [dependencies]
-   light = { path = "crates/light", features = ["devtools"] }
+   [features]
+   dev-mode = ["light/dev-mode"]
    ```
-
-2. В `main()` вызовите `light::enable_devtools(9229)` перед `light::run(app)`:
-
-   ```rust
-   fn main() -> light::Result<()> {
-       let port = light::enable_devtools(9229)?;
-       eprintln!("DevTools listening on 127.0.0.1:{}", port);
-       light::run(App::new())
-   }
-   ```
-
-3. Подключитесь через TCP к `127.0.0.1:9229` и используйте построчный протокол.
+2. В `main()` вызовите `light::run_with_config("light.config.json", App::new())`.
+3. Запустите приложение через `light dev` или `cargo run --features dev-mode`. 
+   Сервер автоматически запустится на порту `9229`.
 
 ### Протокол
 

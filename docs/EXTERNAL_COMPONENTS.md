@@ -1,16 +1,12 @@
 # Сторонние компоненты Light
 
-Короткий практический гайд: как создать, опубликовать и подключить собственный
-компонент Light на примере `light-fw-datepicker`.
+Короткий практический гайд: как создать, опубликовать и подключить собственный компонент Light на примере `light-fw-datepicker`.
 
-Более подробно об архитектуре и типах компонентов — в
-[docs/COMPONENT_AUTHORING.md](COMPONENT_AUTHORING.md) и
-[docs/COMPONENT_MODEL.md](COMPONENT_MODEL.md).
+Более подробно — в [COMPONENT_AUTHORING.md](COMPONENT_AUTHORING.md) и [COMPONENT_MODEL.md](COMPONENT_MODEL.md).
 
 ## 1. Создание крейта
 
-Имя компонента должно начинаться с `light-fw-`: по этому префиксу `light add`
-и `light search` отличают компоненты Light от обычных крейтов.
+Имя компонента должно начинаться с `light-fw-`: по этому префиксу `light add` и `light search` отличают компоненты Light от обычных крейтов.
 
 ```bash
 cargo new light-fw-datepicker --lib
@@ -25,23 +21,26 @@ cd light-fw-datepicker
 [package]
 name = "light-fw-datepicker"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 description = "Date picker component for Light"
 repository = "https://github.com/<user>/light-fw-datepicker"
 
 [dependencies]
-light = "0.10.3"
+light = "0.15"
+
+# Для поддержки локальной разработки с Hot Reload
+[features]
+dev-mode = ["light/dev-mode"]
 ```
 
-Если компонент использует элементы формы, подключите
-`light-fw-element-form` и фичу `light/elements-form`:
+Если компонент использует элементы формы, подключите `light-fw-element-form` и фичу `light/elements-form`:
 
 ```toml
 [dependencies]
-light = { version = "0.10.3", features = ["elements-form"] }
-light-fw-element-form = "0.10.3"
+light = { version = "0.15", features = ["elements-form"] }
+light-fw-element-form = "0.15"
 ```
 
 ## 3. Минимальный компонент
@@ -77,44 +76,35 @@ impl DatePicker {
 }
 ```
 
-Макрос `#[template]` компилирует HTML в код построения виртуального дерева, а
-`#[proxy]` создаёт реактивные геттеры и сеттеры. Пользователь компонента может
-запустить его как обычное приложение:
+Если вы запускаете компонент как самостоятельное приложение, используйте `run_with_config` для инициализации DevTools:
 
 ```rust
 fn main() -> light::Result<()> {
-    light::run(DatePicker::new())
+    light::run_with_config("light.config.json", DatePicker::new())
 }
 ```
 
 ## 4. Метаданные компонента
 
-Для поиска через `light add` достаточно имени с префиксом `light-fw-`: версия
-берётся с crates.io. Секция `[package.metadata.light]` нужна инструментам
-Light (`doctor`, `check`, будущему каталогу), если крейт является полноценным
-компонентом:
+Для поиска через `light add` достаточно имени с префиксом `light-fw-`. Секция `[package.metadata.light]` нужна инструментам Light (`doctor`, `check`, будущему каталогу), если крейт является полноценным компонентом:
 
 ```toml
 [package.metadata.light]
 kind = "widget"
 display-name = "Date Picker"
-core = "^0.6"
+core = "^0.15"
 
 [package.metadata.light.registry]
 official = false
 tags = ["date", "input", "calendar"]
 ```
 
-Если компонент добавляет новые теги, атрибуты или директивы, перечислите их в
-`provides`:
+Если компонент добавляет новые теги, атрибуты или директивы, перечислите их в `provides`:
 
 ```toml
 [package.metadata.light.provides]
 elements = ["datepicker"]
 ```
-
-Обязательные поля манифеста и их смысл описаны в
-[docs/COMPONENT_AUTHORING.md](COMPONENT_AUTHORING.md).
 
 ## 5. Проверка перед публикацией
 
@@ -125,8 +115,7 @@ cargo test --all-features
 cargo publish --dry-run
 ```
 
-Убедитесь, что в `Cargo.toml` есть `description`, `license`, `repository` и
-`readme` — crates.io требует их для публикации.
+Убедитесь, что в `Cargo.toml` есть `description`, `license`, `repository` и `readme`.
 
 ## 6. Публикация
 
@@ -142,13 +131,11 @@ light search datepicker
 light add light-fw-datepicker
 ```
 
-`light add` добавит зависимость в `Cargo.toml`, включит фичу компонента,
-обновит `light.lock` и проверит сборку.
+`light add` добавит зависимость в `Cargo.toml`, включит фичу компонента, обновит `light.lock` и проверит сборку.
 
 ## 7. Обновление версии
 
-Для новой версии поднимите `version` в `Cargo.toml`, обновите `CHANGELOG.md`
-и повторите `cargo publish`. Пользователи обновляются командой:
+Для новой версии поднимите `version` в `Cargo.toml`, обновите `CHANGELOG.md` и повторите `cargo publish`. Пользователи обновляются командой:
 
 ```bash
 light update

@@ -6,7 +6,7 @@
 cargo install light-fw-cli
 light init my-app --template counter
 cd my-app
-cargo run
+light dev
 ```
 
 Доступны три showcase-шаблона: `counter`, `todo` и `calculator`. Их исходники
@@ -34,10 +34,13 @@ light init my-app --with form --with validation
 [package]
 name = "my-app"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 light = { git = "https://github.com/gifoff/light" }
+
+[features]
+dev-mode = ["light/dev-mode"]
 ```
 
 `src/main.rs`:
@@ -59,7 +62,9 @@ impl App {
 }
 
 fn main() -> light::Result<()> {
-    light::run(App::new())
+    // Использование run_with_config включает поддержку light.config.json
+    // и автоматический запуск DevTools (если фича включена).
+    light::run_with_config("light.config.json", App::new())
 }
 ```
 

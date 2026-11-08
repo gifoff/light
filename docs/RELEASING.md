@@ -5,10 +5,10 @@
 
 ## 1. Подготовка
 
-1. Убедитесь, что рабочее дерево чистое, а версия обновлена во всех
-   манифестах и внутренних зависимостях.
-2. Обновите `CHANGELOG.md` и `docs/ROADMAP.md`.
-3. Прогоните проверки:
+1. **Убедитесь, что рабочее дерево абсолютно чистое.** Выполните `git status --short`. Если есть модифицированные файлы, закоммитьте их. **Публикация с грязным деревом приведет к сбою.**
+2. Проверьте, что версия обновлена во всех манифестах и внутренних зависимостях.
+3. Обновите `CHANGELOG.md` и `docs/ROADMAP.md`.
+4. Прогоните проверки:
 
    ```bash
    cargo fmt --all -- --check
@@ -17,20 +17,11 @@
    cargo build --workspace
    ```
 
-   На Windows (MSVC) ограничьте параллелизм — `ring` (через `reqwest` в
-   `light-fw-cli`) не помещается в лимит командной строки D8050 при
-   параллельной сборке:
-
+   На Windows (MSVC) ограничьте параллелизм:
    ```powershell
    $env:CARGO_BUILD_JOBS = "1"
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features -j 2
-   ```
-
-4. Проверьте демо:
-
-   ```bash
-   cargo run -p light-fw-cli -- check --strict crates/light-demo
    ```
 
 ## 2. Вход в crates.io
@@ -41,86 +32,37 @@
 cargo login
 ```
 
-`cargo` попросит вставить токен и сохранит его в
-`~/.cargo/credentials.toml`. В CI передавайте токен через переменную
-окружения `CARGO_REGISTRY_TOKEN`, а не через файл.
-
 ## 3. Проверка пакетов
 
-Сначала выполните dry-run — он упакует все крейты, но ничего не опубликует:
-
-```bash
-cargo run -p light-fw-cli -- publish --dry-run
-```
-
-Если `light` уже установлен:
+Сначала выполните dry-run:
 
 ```bash
 light publish --dry-run
 ```
 
-`--dry-run` полезен для проверки состава пакетов и порядка публикации.
-Он не требует токена.
-
-Перед dry-run очистите локальные артефакты, чтобы устаревший кэш не
-исказил результат: `cargo clean -p example-dashboard`. Локальная сборка
-этого примера может оставлять устаревший `.rlib`, из-за чего `publish`
-падает на этапе линковки (LNK2019), хотя сами пакеты корректны.
+Перед dry-run очистите локальные артефакты:
+`cargo clean -p example-dashboard`.
 
 ## 4. Публикация
 
-Рекомендуемый способ — `light publish`: команда сама строит топологический
-порядок из `cargo metadata`, пропускает `publish = false` (например,
-`light-demo`), проверяет версии и внутренние зависимости, запускает
-pre-flight-гейты и повторяет попытки при устаревании индекса crates.io.
-
-```bash
-cargo run -p light-fw-cli -- publish
-```
-
-Или, если CLI установлен:
+Рекомендуемый способ — `light publish`:
 
 ```bash
 light publish
 ```
 
-Для неинтерактивного запуска:
+Для неинтерактивного запуска (CI):
 
 ```bash
-light publish --yes
-```
-
-Токен можно передать явно:
-
-```bash
-light publish --token "$CARGO_REGISTRY_TOKEN"
+light publish --yes --skip-gates --no-verify
 ```
 
 Полезные флаги: `--allow-dirty`, `--skip-gates`, `--no-verify`,
-`--only <крейт>` (повторить публикацию одного крейта).
-
-### Ручной вариант через `cargo publish`
-
-Если нужно публиковать вручную, соблюдайте порядок зависимостей:
-
-```bash
-cargo publish -p light-fw-html
-cargo publish -p light-fw-cli-core
-cargo publish -p light-fw-cli
-cargo publish -p light-fw-macros
-cargo publish -p light-fw-core
-cargo publish -p light-fw-behavior-validation
-cargo publish -p light-fw-element-form
-cargo publish -p light
-```
-
-После каждой публикации может потребоваться пауза, пока индекс crates.io
-увидит новую версию. `light publish` делает такие паузы и повторы
-автоматически.
+`--only <крейт>`.
 
 ## 5. Тег и проверка
 
-После успешной публикации всех крейтов создайте тег:
+После успешной публикации всех 8 крейтов создайте тег:
 
 ```bash
 git tag -a vX.Y.Z -m "Release X.Y.Z"
@@ -135,13 +77,10 @@ cargo search light
 cargo install light-fw-cli --version X.Y.Z
 ```
 
-Также откройте страницы крейтов на crates.io и убедитесь, что docs.rs
-собрал документацию.
-
 ## Важно
 
 - Опубликованную версию нельзя перезаписать. Если публикация оборвалась
-  после части крейтов, исправьте проблему и выпустите следующую версию;
-  `light publish` пропустит уже опубликованные крейты.
-- Не публикуйте с грязным рабочим деревом без необходимости.
+  после части крейтов, исправьте проблему, сделайте bump до следующей версии
+  и запустите `light publish` снова (он пропустит уже опубликованные крейты).
+- Не публикуйте с грязным рабочим деревом.
 - Тег ставьте только на проверенный коммит, из которого собраны пакеты.
