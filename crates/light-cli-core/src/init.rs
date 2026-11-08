@@ -15,6 +15,16 @@ use crate::process::CommandRunner;
 /// Версия мета-крейта `light`, которую прописывает `light init`.
 pub const LIGHT_DEPENDENCY_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Minor-диапазон версии (`major.minor`), используемый в `Cargo.toml` нового
+/// проекта: пользователь всегда получает latest `major.minor.x`, не привязываясь
+/// к конкретному yanked-патчу.
+pub fn minor_version() -> String {
+    LIGHT_DEPENDENCY_VERSION
+        .rsplit_once('.')
+        .map(|(prefix, _)| prefix.to_string())
+        .unwrap_or_else(|| LIGHT_DEPENDENCY_VERSION.to_string())
+}
+
 /// Содержимое `.gitignore` нового проекта.
 pub const GITIGNORE: &str = "target/\n";
 
@@ -277,7 +287,7 @@ pub fn cargo_toml(name: &str, components: &[InitComponent]) -> String {
     );
 
     if components.is_empty() {
-        text.push_str(&format!("light = \"{LIGHT_DEPENDENCY_VERSION}\"\n"));
+        text.push_str(&format!("light = \"{}\"\n", minor_version()));
         return text;
     }
 
@@ -286,14 +296,12 @@ pub fn cargo_toml(name: &str, components: &[InitComponent]) -> String {
         .map(|component| format!("\"{}\"", component.light_feature()))
         .collect::<Vec<_>>()
         .join(", ");
+    let v = minor_version();
     text.push_str(&format!(
-        "light = {{ version = \"{LIGHT_DEPENDENCY_VERSION}\", features = [{features}] }}\n"
+        "light = {{ version = \"{v}\", features = [{features}] }}\n"
     ));
     for component in &components {
-        text.push_str(&format!(
-            "{} = \"{LIGHT_DEPENDENCY_VERSION}\"\n",
-            component.crate_name()
-        ));
+        text.push_str(&format!("{} = \"{v}\"\n", component.crate_name()));
     }
     text
 }
@@ -589,23 +597,23 @@ mod tests {
     fn cargo_toml_pins_light_version() {
         let text = cargo_toml("demo", &[]);
         assert!(text.contains("name = \"demo\""));
-        assert!(text.contains(&format!("light = \"{LIGHT_DEPENDENCY_VERSION}\"")));
+        let mv = minor_version();
+        assert!(text.contains(&format!("light = \"{mv}\"")));
         assert!(!text.contains("features ="));
     }
 
     #[test]
     fn cargo_toml_adds_form_dependency_and_feature() {
         let text = cargo_toml("demo", &[InitComponent::Form]);
+        let mv = minor_version();
         assert!(
             text.contains(&format!(
-                "light = {{ version = \"{LIGHT_DEPENDENCY_VERSION}\", features = [\"elements-form\"] }}"
+                "light = {{ version = \"{mv}\", features = [\"elements-form\"] }}"
             )),
             "{text}"
         );
         assert!(
-            text.contains(&format!(
-                "light-fw-element-form = \"{LIGHT_DEPENDENCY_VERSION}\""
-            )),
+            text.contains(&format!("light-fw-element-form = \"{mv}\"")),
             "{text}"
         );
         assert!(!text.contains("light-fw-behavior-validation"), "{text}");
@@ -621,9 +629,10 @@ mod tests {
                 InitComponent::Form,
             ],
         );
+        let mv = minor_version();
         assert!(
             text.contains(&format!(
-                "light = {{ version = \"{LIGHT_DEPENDENCY_VERSION}\", features = [\"elements-form\", \"validation\"] }}"
+                "light = {{ version = \"{mv}\", features = [\"elements-form\", \"validation\"] }}"
             )),
             "{text}"
         );
@@ -740,7 +749,7 @@ mod tests {
         assert!(dir.join(LOCKFILE_NAME).is_file());
 
         let lock = Lockfile::read(&dir).expect("read lock");
-        assert_eq!(lock.core, LIGHT_DEPENDENCY_VERSION);
+        assert_eq!(lock.core, minor_version());
     }
 
     #[test]

@@ -2,6 +2,13 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.15.2] - 2026-11-08
+
+### Fixed
+
+- `light init` записывает в новый `Cargo.toml` диапазон версий
+  `light = "0.15"` (minor), а не привязку к yanked-патчу `light = "0.15.0"`.
+
 ## [0.15.1] - 2026-11-07
 
 ### Fixed
