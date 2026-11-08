@@ -1571,7 +1571,16 @@ cargo run --features devtools -p my-app
    дочернего процесса.
 3. **Watcher** — наблюдает за `.rs` и `.html` файлами, debounce'ит изменения
    (100 мс для HTML, 500 мс для исходников), пересобирает в фоне и
-   перезапускает процесс, сохраняя состояние через DevTools.
+   перезапускает процесс, сохраняя состояние через DevTools. Перед kill
+   старого процесса supervisor шлёт `SAVE_ALL\n` по TCP 9229 (graceful save
+   state + geometry без debounce, ответ `ok` ≤ 500 мс); при таймауте —
+   fallback на `TerminateProcess`.
+
+   Env-переменные, которые supervisor передаёт дочернему процессу:
+   - `LIGHT_SWAP=1` — текущий запуск является hot-swap (не cold start).
+   - `LIGHT_RESUME_FROM_SWAP=1` — применить сохранённую геометрию окна.
+   - `LIGHT_STATE_FILE` / `LIGHT_WINDOW_FILE` — абсолютные пути к
+     `.light/state.json` и `.light/window.json`.
 
 ```bash
 # Запуск с горячей перезагрузкой
@@ -1599,7 +1608,7 @@ Hot-reload сохраняет артефакты сборки в `target/hot-bui
 
 1. **Auto-invalidation по версии light-fw-core.** При старте `light dev`
    читает `.light/build-info.json` (формат:
-   `{"light-fw-core-version": "0.14.0", "cargo-lock-hash": "..."}`) и
+   `{"light-fw-core-version": "0.15.1", "cargo-lock-hash": "..."}`) и
    сравнивает с версией из `Cargo.lock`. Если версия изменилась —
    `target/hot-build` удаляется один раз, и пишется новый `build-info.json`.
    Лог: `light dev: framework version changed → hot-build cache invalidated`.
@@ -1664,6 +1673,9 @@ Hot-reload сохраняет артефакты сборки в `target/hot-bui
 | `PING\n` | `PONG\n` | Проверка живости сервера. |
 | `CLICK <key>\n` | `ok\n` | Симулирует клик по элементу с ключом `key` (вызывает `Component::dispatch(key, Event::Click)` в UI-потоке при ближайшей перерисовке). |
 | `SET_STATE <field> <json>\n` | `not supported yet\n` | Заглушка: прямая запись в реактивные поля пока не реализована. |
+| `SAVE_STATE\n` | `ok\n` / `error\n` | Сохраняет `.light/state.json` (снимок реактивных полей). |
+| `RELOAD_TEMPLATE\n` | `ok\n` / `error\n` | Перезагружает HTML-шаблон без пересборки бинарника. |
+| `SAVE_ALL\n` | `ok\n` / `error\n` / `timeout\n` | Graceful save: `.light/state.json` + принудительная запись `.light/window.json` (обходит debounce). Используется supervisor'ом перед kill при hot-swap. |
 | `QUIT\n` | *(соединение закрывается)* | Корректно завершает сессию. |
 | *неизвестная* | `unknown command\n` | Сервер продолжает обслуживание. |
 

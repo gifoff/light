@@ -37,6 +37,22 @@
   ring/reqwest).
 - `scripts/check-features.ps1`: добавлена сборка примеров с дефолтными
   фичами; `$env:CARGO_BUILD_JOBS = "1"`.
+- Drift позиции окна при minimize + hot-swap: `flush_geometry` читал
+  `outer_position()` (WM-наблюдаемую, с frame-offset коррекцией), и следующий
+  swap применял сдвинутую координату (+26 px за swap). Теперь сохраняется
+  `last_applied_geometry` (desired), не observed. Drift = 0 за 5 свопов.
+- `WindowState.last_applied_geometry` — источник истины для save; обновляется
+  при `Moved`/`Resized` (вне restore) и при apply restore.
+- TCP-command `SAVE_ALL`: перед kill старого процесса supervisor шлёт
+  `SAVE_ALL\n` через 9229, ждёт `ok` до 500 ms — graceful save state+geometry
+  без debounce. При таймауте — fallback TerminateProcess.
+
+### Notes
+
+- Ring D8050 (MSVC command-line overflow): `CARGO_BUILD_JOBS=1` рекомендован
+  для Windows (см. AGENTS.md).
+- 2 dashboard avatar-теста падают локально (`PermissionDenied` в
+  `std::env::temp_dir()` под sandbox), проходят в CI.
 
 ## [0.15.0] - 2026-11-06
 

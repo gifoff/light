@@ -61,6 +61,36 @@
 - Нативный выбор файла через Cargo-фичу `file-dialog` (`rfd`) ✓.
 - Дашборд: редизайн профиля с выбором аватара и просмотр всех задач ✓.
 
+## Версия 0.14.0 (выполнено)
+
+- Hot Reload: `light dev` — .rs rebuild + swap, HTML-перезагрузка без
+  пересборки ✓.
+- `#[default(expr)]` в `#[proxy]` ✓.
+- DevTools TCP-сервер (127.0.0.1:9229): SNAPSHOT, CLICK, PING, QUIT ✓.
+- `light.config.json` с профилями dev/prod ✓.
+- Пример `examples/devtools-demo` ✓.
+
+## Версия 0.15.0 (выполнено)
+
+- `DeferredMinimize`, `WindowGeometry.minimized` ✓.
+- Env vars для supervisor: `LIGHT_STATE_FILE`, `LIGHT_WINDOW_FILE`,
+  `LIGHT_RESUME_FROM_SWAP`, `LIGHT_SWAP` ✓.
+- `#[transient]` удалён → computed-методы `impl App` ✓.
+- `light dev`: geometry при swap, user close удаляет state+window,
+  `--preserve-state` ✓.
+- Кириллица/пробелы, `parse_align_items("center")`, `eval_field` методы ✓.
+
+## Версия 0.15.1 (выполнено)
+
+- Backward-compat fix: компиляция примеров с дефолтными фичами ✓.
+- Drift-фикс: `last_applied_geometry` вместо `outer_position()` ✓.
+- Graceful `SAVE_ALL` перед kill при hot-swap ✓.
+- CI: `build-default` джоб, `CARGO_BUILD_JOBS=1` на Windows ✓.
+
+## Версия 0.16.0 (next)
+
+- Web UI DevTools: `light-devtools serve` (Axum + WS-прокси к 9229).
+
 ## Не в плане
 
 - Замена Rust на другой язык.

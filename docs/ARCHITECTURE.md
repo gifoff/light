@@ -80,6 +80,9 @@ Component::render()
   проценты, min/max-размеры, выравнивание, z-order и повреждённые области.
 - **`window`** — цикл `winit`: события мыши/клавиатуры/размера, вызов
   `Component::dispatch`, управление окнами, загрузка шрифта и отрисовка.
+  Подмодуль `devtools` (фича `devtools`) — TCP-сервер на 127.0.0.1:9229
+  для инспекции состояния UI и управления (SNAPSHOT, CLICK, SAVE_STATE,
+  RELOAD_TEMPLATE, SAVE_ALL).
 - **`window::paint`** — программная растеризация: прямоугольники, границы,
   текст через `ab_glyph`, фокусное кольцо и элементы форм.
 - **`a11y`** — построение дерева AccessKit, роли, фокус, клавиатурная
@@ -148,6 +151,9 @@ pub trait RendererBackend {
 - **`publish`** — топологический порядок по `cargo metadata`, pre-flight
   гейты, классификация ошибок crates.io и публикация.
 - **`backup`** — снимки файлов перед мутацией и откат при ошибке.
+- **`dev`** — hot-reload supervisor: warm-up build, watcher (PollWatcher),
+  debounce, копирование бинарника, graceful `SAVE_ALL` перед kill и
+  перезапуск дочернего процесса с env `LIGHT_SWAP`/`LIGHT_RESUME_FROM_SWAP`.
 
 Команды чтения (`check`, `suggest`, `doctor`, `search`) ничего не пишут на
 диск. Команды изменения (`add`, `remove`, `update`, `lock`, `init`, `vendor`)
