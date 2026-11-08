@@ -714,6 +714,7 @@ fn init_creates_full_project() {
     let main_rs = std::fs::read_to_string(project.join("src").join("main.rs")).expect("main.rs");
     assert!(main_rs.contains("#[template"), "{main_rs}");
     assert!(main_rs.contains("templates/app.html"), "{main_rs}");
+    assert!(main_rs.contains("run_with_config"), "{main_rs}");
     let app_html = project.join("templates").join("app.html");
     assert!(app_html.is_file(), "templates/app.html создаётся");
     let html = std::fs::read_to_string(&app_html).expect("app.html");

@@ -2,6 +2,27 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.15.4] - 2026-11-08
+
+### Fixed
+
+- **`light init`**: `src/main.rs` теперь использует
+  `light::run_with_config("light.config.json", App::new())`
+  вместо `light::run(App::new())`. DevTools запускаться
+  корректно при `light dev` (профиль `dev` в `light.config.json`
+  включает devtools на порту 9229).
+- **`light dev` auto-invalidation**: версия фреймворка ищется
+  не только в `[workspace.package].version`, но и в
+  `[dependencies] light = "0.15"` (обёрточный крейт) или
+  `[dependencies] light-fw-core = "0.15"`. Проекты, созданные
+  `light init` (не workspace), теперь проходят auto-invalidation
+  при смене версии.
+- **Layout h1 centering**: заголовки `h1`–`h5` больше не
+  растягиваются на 100% по ширине родителя (`align-items != Start`).
+  Остаются авто-размера (max-content); текст внутри центрируется
+  через `justify-content="center"`. `<div align-items="center">`
+  + `<h1>` → заголовок по центру.
+
 ## [0.15.3] - 2026-11-08
 
 ### Fixed

@@ -892,13 +892,13 @@ fn parse_fw_core_version_from_lock_text(text: &str) -> Option<String> {
     Some(rest[..ver_end].to_string())
 }
 
-/// Текущая версия workspace-пакета из `[workspace.package] version` в
-/// `Cargo.toml`. Читаем напрямую (без `cargo metadata`): пользователь меняет
-/// версию в манифесте до запуска `cargo build`, поэтому `Cargo.lock` ещё не
-/// обновлён и не отражает новую версию. `Cargo.lock` — только fallback.
+/// Текущая версия фреймворка в проекте. Порядок:
+/// 1. `[workspace.package].version` (workspace-проект).
+/// 2. `[dependencies] light = "0.15"` (обёрточный крейт — версия идентична).
+/// 3. `[dependencies] light-fw-core = "0.15"` (прямая зависимость).
 pub fn read_fw_core_version_from_workspace_toml(toml_path: &Path) -> Option<String> {
     let data = std::fs::read_to_string(toml_path).ok()?;
-    parse_workspace_package_version(&data)
+    parse_workspace_package_version(&data).or_else(|| parse_light_dep_version(&data))
 }
 
 /// Парсит `[workspace.package] version = "..."` из текста `Cargo.toml`
@@ -912,6 +912,30 @@ fn parse_workspace_package_version(text: &str) -> Option<String> {
         .as_str()?
         .to_string();
     Some(ver)
+}
+
+/// Парсит версию обёрточного крейта `light` из `[dependencies]`.
+/// Возвращает `None`, если зависимость `light` отсутствует (не workspace-проект
+/// и нет прямой зависимости `light`).
+fn parse_light_dep_version(text: &str) -> Option<String> {
+    let doc: toml_edit::DocumentMut = text.parse().ok()?;
+    let deps = doc.get("dependencies")?.as_table()?;
+    // Первый приоритет: обёрточный крейт `light`.
+    if let Some(entry) = deps.get("light") {
+        return extract_dep_version(entry);
+    }
+    // Fallback: прямая зависимость `light-fw-core`.
+    deps.get("light-fw-core").and_then(extract_dep_version)
+}
+
+/// Извлекает версионную строку из TOML-записи зависимости:
+/// `light = "0.15"` → `"0.15"`, `light = { version = "0.15" }` → `"0.15"`.
+fn extract_dep_version(entry: &toml_edit::Item) -> Option<String> {
+    match entry {
+        toml_edit::Item::Value(v) => v.as_str().map(str::to_string),
+        toml_edit::Item::Table(t) => t.get("version")?.as_str().map(str::to_string),
+        _ => None,
+    }
 }
 
 /// Удаляет всё, что нужно для полного сброса кэша dev-сборки (ТЗ 0.14.4):

@@ -359,7 +359,7 @@ pub fn main_rs(components: &[InitComponent]) -> String {
 struct App {}
 
 fn main() -> light::Result<()> {
-    light::run(App::new())
+    light::run_with_config("light.config.json", App::new())
 }
 "#
     .to_string();
@@ -660,6 +660,7 @@ mod tests {
         assert!(text.contains("templates/app.html"), "{text}");
         assert!(text.contains("#[proxy]"), "{text}");
         assert!(text.contains("App::new()"), "{text}");
+        assert!(text.contains("run_with_config"), "{text}");
         assert!(!text.contains("include_str!"));
         assert!(!text.contains("Пример формы"));
     }

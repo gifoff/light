@@ -299,14 +299,27 @@ fn build_element<C: Component + ?Sized>(
     if let Some(cfg) = window_config {
         elem = elem.with_window(cfg);
     }
+    // Заголовки `h1`–`h5`: не растягиваются на 100% по ширине (авто-размер
+    // по содержимому), а текст внутри центрируется (`justify-content="center"`),
+    // когда родитель имеет `align-items="center"`.
+    let is_heading = matches!(element.name.as_str(), "h1" | "h2" | "h3" | "h4" | "h5");
     // Vertical-контейнер (Column) без явного width — растягивается на 100%
     // по ширине родителя, как в static-layout (stretch по cross-оси).
+    // Исключение: заголовки (`h1`–`h5`) остаются авто-размера.
     if matches!(&kind, ElementKind::Container(NodeKind::Column))
         && attr_value(&element.attrs, "width").is_none()
+        && !is_heading
     {
         let mut s = elem.style;
         s.width = Size::Percent(100.0);
         elem = elem.with_style(s);
+    }
+    // Текст внутри заголовка центрируется (`justify-content="center"`),
+    // когда родитель имеет `align-items="center"`.
+    if is_heading && matches!(&kind, ElementKind::Container(NodeKind::Column)) {
+        if let Some(child) = elem.children.first_mut() {
+            child.style.justify_content = Align::Center;
+        }
     }
     // Button клипит содержимое по своим границам (аналог overflow:hidden в CSS),
     // но ТОЛЬКО при явном width: без width кнопка Auto по max-content и overflow
