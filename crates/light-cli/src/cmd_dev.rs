@@ -31,6 +31,10 @@ pub struct DevArgs {
     /// Эквивалент LIGHT_PRESERVE_STATE=1. По умолчанию false.
     #[arg(long, default_value_t = false)]
     pub preserve_state: bool,
+    /// ТЗ 0.16.0: режим агента — автоматически создавать session recorder,
+    /// логировать все DevTools-команды и генерировать summary.md при выходе.
+    #[arg(long, default_value_t = false)]
+    pub agent: bool,
     /// Дополнительные флаги cargo (включая `--`, если нужно передать аргументы
     /// самому приложению). Пример: `--release`.
     #[arg(trailing_var_arg = true)]
@@ -52,6 +56,9 @@ pub fn run(args: DevArgs) -> anyhow::Result<i32> {
     }
     if args.preserve_state {
         raw.push("--preserve-state".into());
+    }
+    if args.agent {
+        raw.push("--agent".into());
     }
     raw.extend(args.extra_cargo_args);
     // Повторно разбираем через чистую функцию `parse_dev_command`, чтобы

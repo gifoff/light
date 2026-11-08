@@ -2231,6 +2231,7 @@ dependencies = [
 name = "light-fw-cli-core"
 version = "0.15.5"
 dependencies = [
+ "base64 0.22.1",
  "dirs",
  "glob",
  "hex",
@@ -2254,6 +2255,7 @@ dependencies = [
  "ab_glyph",
  "accesskit",
  "accesskit_winit",
+ "base64 0.22.1",
  "criterion",
  "futures",
  "futures-timer",

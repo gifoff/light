@@ -305,10 +305,11 @@ fn build_element<C: Component + ?Sized>(
     // сам решает stretch через `flow.stretch` (stretch только при
     // `align_items == Start`).
     let is_heading = matches!(element.name.as_str(), "h1" | "h2" | "h3" | "h4" | "h5");
-    if is_heading && matches!(&kind, ElementKind::Container(NodeKind::Column)) {
-        if let Some(child) = elem.children.first_mut() {
-            child.style.justify_content = Align::Center;
-        }
+    if is_heading
+        && matches!(&kind, ElementKind::Container(NodeKind::Column))
+        && let Some(child) = elem.children.first_mut()
+    {
+        child.style.justify_content = Align::Center;
     }
     // Button клипит содержимое по своим границам (аналог overflow:hidden в CSS),
     // но ТОЛЬКО при явном width: без width кнопка Auto по max-content и overflow

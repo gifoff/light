@@ -29,6 +29,8 @@ png = { workspace = true, optional = true }
 rfd = { workspace = true, optional = true }
 accesskit = { version = "0.25", optional = true, features = ["serde"] }
 accesskit_winit = { version = "0.34", optional = true }
+# для кодирования PNG в SHOT
+base64 = "0.22"
 
 [features]
 # Набор по умолчанию: базовые элементы + окно + показ через softbuffer + a11y.
@@ -115,7 +117,8 @@ include = ["light-fw-macros/include"]
 # Инспекция состояния: JSON-снимок VDOM и реактивных свойств (DevTools).
 # Требует `async-runtime`: TCP-команды доставляются в UI-поток через
 # EventLoopProxy, который существует только при этой фиче.
-devtools = ["async-runtime"]
+# `png` нужен для команды SHOT (кодирование кадра в PNG).
+devtools = ["async-runtime", "dep:png"]
 # Шаблоны во время выполнения: `render()` читает HTML с диска (mtime-кэш),
 # поэтому правка разметки в dev-режиме видна без пересборки.
 runtime-templates = ["window", "elements-checkbox", "elements-radio", "elements-select"]

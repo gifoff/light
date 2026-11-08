@@ -874,3 +874,114 @@ fn init_rejects_invalid_name() {
         .failure()
         .code(1);
 }
+
+/// ТЗ 0.16.0: `light devtools tree` без запущенного приложения даёт
+/// понятную ошибку «Приложение не запущено» (порт никто не слушает).
+#[test]
+fn devtools_tree_not_running() {
+    light()
+        .arg("devtools")
+        .arg("tree")
+        .arg("--port")
+        .arg("19229")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Приложение не запущено"));
+}
+
+/// ТЗ 0.16.0: clap парсит флаги `find --tag --text --attr`.
+///
+/// Здесь нет запущенного app, поэтому ожидаем ту же ошибку «не запущено» —
+/// главное, что аргументы прошли валидацию clap (иначе exit 2 + «unexpected
+/// argument»).
+#[test]
+fn devtools_find_parses_flags() {
+    let output = light()
+        .arg("devtools")
+        .arg("find")
+        .arg("--tag")
+        .arg("button")
+        .arg("--text")
+        .arg("+1")
+        .arg("--attr")
+        .arg("class=btn")
+        .arg("--port")
+        .arg("19229")
+        .output()
+        .expect("run light");
+    assert!(
+        !output.status.success(),
+        "ожидался отказ из-за незапущенного app, stdout={:?}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Приложение не запущено"),
+        "флаги должны пройти парсинг и дойти до подключения, got: {stderr}"
+    );
+}
+
+/// ТЗ 0.16.0: неизвестный подаргумент → clap exit 2.
+#[test]
+fn devtools_unknown_subcommand_is_clap_error() {
+    light()
+        .arg("devtools")
+        .arg("bogus")
+        .assert()
+        .failure()
+        .code(2);
+}
+
+/// ТЗ 0.16.0: `session start` создаёт каталог сессии, `stop` — summary.md.
+///
+/// Работает в изолированном temp-каталоге, приложение не требуется.
+#[test]
+fn devtools_session_roundtrip() {
+    let scratch = scratch_dir("agent-session");
+    // start
+    light()
+        .arg("devtools")
+        .arg("session")
+        .arg("start")
+        .current_dir(scratch.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Session started: .light/agent-sessions/",
+        ));
+
+    let sessions = scratch.path().join(".light").join("agent-sessions");
+    assert!(sessions.is_dir(), "каталог сессий создан");
+    assert!(sessions.join("current").is_file(), "маркер current создан");
+    // ровно одна сессия (каталог)
+    let entries: Vec<_> = std::fs::read_dir(&sessions)
+        .expect("read sessions")
+        .filter_map(Result::ok)
+        .collect();
+    let dirs: Vec<_> = entries
+        .iter()
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.path())
+        .collect();
+    assert_eq!(dirs.len(), 1, "одна директория сессии: {entries:?}");
+    let sess = &dirs[0];
+    assert!(sess.join("actions.jsonl").is_file());
+    assert!(sess.join("screenshots").is_dir());
+    assert!(sess.join("state").is_dir());
+
+    // stop
+    light()
+        .arg("devtools")
+        .arg("session")
+        .arg("stop")
+        .current_dir(scratch.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Session stopped"));
+
+    assert!(!sessions.join("current").exists(), "маркер удалён");
+    assert!(sess.join("summary.md").is_file(), "summary.md сгенерирован");
+    let summary = std::fs::read_to_string(sess.join("summary.md")).expect("summary");
+    assert!(summary.contains("# Agent Session Summary"));
+    assert!(summary.contains("**Actions:**"));
+}

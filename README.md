@@ -149,6 +149,28 @@ light dev
 пересборки). При изменении исходников `.rs` происходит инкрементальная
 пересборка и подмена бинарника с сохранением состояния окна.
 
+### Agent-friendly DevTools (0.16)
+
+Light удобен для автономной разработки с ИИ-агентами: команда
+`light devtools <cmd>` даёт агенту «увидеть» UI (дерево VDOM, раскладка,
+поиск элемента, снимок состояния, скриншот) и «потрогать» его (клик, ввод
+текста, клавиши) — всё по стабильным ключам узлов, а не пикселям. Флаг
+`light dev --agent` автоматически пишет каждое действие в журнал сессии
+(`.light/agent-sessions/<id>/actions.jsonl`) и генерирует `summary.md` при
+выходе процесса — готовый артефакт для отчёта агента.
+
+```bash
+light dev --agent                 # запуск приложения под session recorder
+light devtools tree               # JSON-дерево VDOM
+light devtools find --tag button --text "+1"   # найти элемент → ключ + rect
+light devtools click --key 0.0.0  # клик
+light devtools shot --path shots  # PNG-скриншот
+```
+
+Подробности — в [`docs/guide.md`](docs/guide.md#devtools) (разделы
+«CLI-обёртка `light devtools`» и «Автоматизированное тестирование с ИИ»)
+и в [AGENTS.md](AGENTS.md#testing-ui-with-devtools-как-агенту-видеть-и-трогать-ui).
+
 ### Добавление компонентов
 
 ```bash

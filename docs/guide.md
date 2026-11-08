@@ -29,6 +29,8 @@ Light — декларативный реактивный GUI-фреймворк
 - [Полный пример](#полный-пример)
 - [Доступность](#доступность)
 - [DevTools](#devtools)
+  - [CLI-обёртка `light devtools`](#cli-обёртка-light-devtools)
+  - [Автоматизированное тестирование с ИИ (Session Recorder)](#автоматизированное-тестирование-с-ии-session-recorder)
 
 ## Философия и обзор
 
@@ -1677,9 +1679,88 @@ Hot-reload сохраняет артефакты сборки в `target/hot-bui
 | `RELOAD_TEMPLATE\n` | `ok\n` / `error\n` | Перезагружает HTML-шаблон без пересборки бинарника. |
 | `SAVE_ALL\n` | `ok\n` / `error\n` / `timeout\n` | Graceful save: `.light/state.json` + принудительная запись `.light/window.json` (обходит debounce). Используется supervisor'ом перед kill при hot-swap. |
 | `QUIT\n` | *(соединение закрывается)* | Корректно завершает сессию. |
+| `TREE\n` | JSON + `\n` / `no ui\n` | Дерево VDOM (ключи, теги, текст, дети). |
+| `LAYOUT\n` | JSON + `\n` / `no ui\n` | Плоское дерево раскладки с `x,y,w,h`. |
+| `FIND <json>\n` | JSON + `\n` / `not found\n` / `invalid json\n` | Поиск элемента по `{"tag","text","attr"}`; возвращает `{key,tag,rect}`. |
+| `TYPE <key> <text>\n` | `ok\n` / `error\n` | Вводит текст в поле (обходится до `Event::Input` при ближайшей перерисовке). |
+| `KEY <key> <name>\n` | `ok\n` / `error\n` | Именованная клавиша (`Enter`, `Tab`, `Escape`). |
+| `SHOT\n` | `base64:<png>\n` / `ok <path>\n` / `error\n` | Скриншот окна; путь в `ok <path>` — если задан `--path`. |
 | *неизвестная* | `unknown command\n` | Сервер продолжает обслуживание. |
 
 Ключ элемента (`key`) — это значение атрибута `key="..."` из шаблона, которое видно в JSON-снимке в поле `vdom`.
+
+### CLI-обёртка `light devtools`
+
+С версии 0.16 все команды выше доступны как подкоманды `light devtools …` — это основной способ для разработчика и для ИИ-агентов управлять запущенным приложением (headless). Все подкоманды принимают `--port` (по умолчанию 9229) и `--json` (машина-читаемый вывод):
+
+```bash
+# «увидеть» UI
+light devtools tree                     # JSON-дерево VDOM (ключи/теги/текст/дети)
+light devtools layout                   # плоская раскладка с rect x,y,w,h
+light devtools find --tag button --text "+1"      # найти элемент → ключ + rect
+light devtools find --attr class=btn              # поиск по атрибуту
+
+# «потрогать» UI
+light devtools click --key 0.0.0        # клик по ключу узла
+light devtools type  --key 0.0.1 "hi"   # ввести текст в поле
+light devtools key    --key 0.0.1 Enter # именованная клавиша
+
+# снять состояние и скриншот
+light devtools state                    # JSON-снимок реактивных полей
+light devtools shot                     # base64-PNG на stdout
+light devtools shot --path .shots       # сохранить PNG в каталог (.shots/<ts>.png)
+```
+
+Если приложение не запущено (порт никто не слушает), CLI выводит понятную ошибку
+`Приложение не запущено (порт 9229)` и не падает.
+
+### Автоматизированное тестирование с ИИ (Session Recorder)
+
+Флаг `light dev --agent` автоматически создаёт сессию перед запуском приложения и
+пишет каждый вызов `light devtools <cmd>` в журнал. Агент получает готовый «стек»
+действий с артефактами — без необходимости собирать их вручную.
+
+**Структура сессии** (в рабочей директории приложения):
+
+```
+.light/agent-sessions/
+├── current                         # id активной сессии (маркер)
+└── <YYYY-MM-DD_HH-MM-SS>_<rand>/
+    ├── actions.jsonl               # по одной строке JSON на действие
+    ├── screenshots/                 # 001_shot.png, 002_shot.png, …
+    ├── state/                       # снимки состояния/VDOM (если сохранены)
+    └── summary.md                   # генерируется при `session stop`
+```
+
+Каждая запись в `actions.jsonl`:
+
+```json
+{"ts":"2026-11-08T18:30:12Z","cmd":"find","args":{"tag":"button","text":"+1"},"result":{"key":"0.0.0","tag":"button","rect":{"x":10,"y":20,"w":80,"h":24}},"screenshot":null}
+```
+
+Команда `shot` внутри активной сессии дополнительно сохраняет PNG в
+`screenshots/` и сама дописывает ссылку на него в `actions.jsonl`.
+
+**Полный цикл через CLI:**
+
+```bash
+light devtools session start            # → "Session started: .light/agent-sessions/2026-11-08_18-30-00_a1b2c"
+light devtools tree                     # логируется в actions.jsonl
+light devtools shot --path shots        # PNG + ссылка в actions.jsonl
+light devtools click --key 0.0.0
+light devtools session stop             # → "Session stopped: …"; пишет summary.md
+```
+
+**Автоматически через `light dev`:**
+
+```bash
+light dev --agent                      # сессия создаётся перед spawn;
+                                       # summary.md — при выходе процесса
+```
+
+`summary.md` — компактный Markdown-отчёт с датой, счётчиками
+`Actions:` / `Screenshots:` и нумерованной хроникой всех команд — то, что агент
+может напрямую приложить к своему отчёту вместе со скриншотами из `screenshots/`.
 
 ### Пример сеанса
 

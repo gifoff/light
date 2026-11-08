@@ -183,3 +183,26 @@ fn save_state_returns_ok_immediately() {
         "SAVE_STATE обязан ответить ok, got: {line:?}"
     );
 }
+
+/// ТЗ 0.16.0: новые агентовые команды распознаются (не «unknown command»).
+///
+/// Без запущенного приложения (UI-потока) они завершаются `timeout` — как и
+/// `CLICK`/`SET_STATE` — но главное: сервер их **парсит** и не выдаёт
+/// «unknown command». Проверяем на коротком `KEY` (таймаут 1 с).
+#[test]
+fn agentic_commands_are_recognized_not_unknown() {
+    let port = light::devtools::server::start(0).expect("server starts");
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    // KEY <key> <name> — самый короткий таймаут (1 с).
+    stream.write_all(b"KEY 0.0 Enter\n").expect("send");
+    let line = read_line(&mut stream);
+    assert_ne!(
+        line.trim(),
+        "unknown command",
+        "KEY обязан быть распознан, got: {line:?}"
+    );
+    // Соединение живо после timeout.
+    stream.write_all(b"PING\n").expect("ping");
+    let pong = read_line(&mut stream);
+    assert_eq!(pong.trim(), "PONG", "connection alive after agentic cmd");
+}

@@ -92,22 +92,22 @@ fn handle_client(mut stream: TcpStream) {
 /// Выполняет одну команду протокола и возвращает строку-ответ.
 fn dispatch_command(command: &str) -> String {
     // Разбираем команду: первое слово — имя, остальное — аргументы.
-    let mut parts = command.splitn(3, ' ');
-    let name = parts.next().unwrap_or("");
-    let arg1 = parts.next().unwrap_or("");
-    let arg2 = parts.next().unwrap_or(""); // для SET_STATE: JSON-значение
+    // Для FIND аргумент — JSON (может содержать пробелы), поэтому берём
+    // весь остаток строки как единый `rest`.
+    let (name, rest) = command.split_once(' ').unwrap_or((command, ""));
 
     match name {
         "SNAPSHOT" => super::read_latest_snapshot().unwrap_or_else(|| "null".to_owned()),
         "PING" => "PONG".to_owned(),
         "CLICK" => {
-            if !arg1.is_empty() {
+            let key = rest.trim();
+            if !key.is_empty() {
                 // Ожидаем результат обработки клика из UI-потока (1 с —
                 // достаточно, чтобы UI успел проснуться и обработать команду;
                 // если окно не запущено/зависло — ответим `timeout`).
                 let (tx, rx) = std::sync::mpsc::channel();
                 super::send_command(super::DevToolsCommand::Click {
-                    key: arg1.to_owned(),
+                    key: key.to_owned(),
                     response_tx: tx,
                 });
                 match rx.recv_timeout(std::time::Duration::from_secs(1)) {
@@ -120,12 +120,16 @@ fn dispatch_command(command: &str) -> String {
             }
         }
         "SET_STATE" => {
-            if arg1.is_empty() {
+            // `rest` = `<field> <json>` (JSON может содержать пробелы).
+            let mut sp = rest.splitn(2, ' ');
+            let field = sp.next().unwrap_or("");
+            let raw_value = sp.next().unwrap_or("");
+            if field.is_empty() {
                 return "missing field".to_owned();
             }
-            // `arg2` — JSON-значение поля; при его отсутствии или ошибке
+            // `raw_value` — JSON-значение поля; при его отсутствии или ошибке
             // разбора отвечаем сразу, не отправляя команду в UI-поток.
-            let value = match serde_json::from_str::<serde_json::Value>(arg2) {
+            let value = match serde_json::from_str::<serde_json::Value>(raw_value) {
                 Ok(value) => value,
                 Err(_) => return "invalid json".to_owned(),
             };
@@ -134,7 +138,7 @@ fn dispatch_command(command: &str) -> String {
             // `timeout`).
             let (tx, rx) = std::sync::mpsc::channel();
             super::send_command(super::DevToolsCommand::SetState {
-                field: arg1.to_owned(),
+                field: field.to_owned(),
                 value,
                 response_tx: tx,
             });
@@ -166,6 +170,91 @@ fn dispatch_command(command: &str) -> String {
                 Ok(true) => "ok".to_owned(),
                 Ok(false) => "error".to_owned(),
                 _ => "timeout".to_owned(),
+            }
+        }
+        // ─── ТЗ 0.16.0: агентовые команды ──────────────────────────────────
+        // TREE / LAYOUT / FIND / SHOT требуют доступа к живому VDOM-дереву,
+        // раскладке и буферу кадра — поэтому доставляются в UI-поток как
+        // команды с каналом возврата (как TYPE/KEY). Результат — JSON-строка
+        // или `base64:...`, либо `null` / `error: ...`.
+        "TREE" => {
+            let (tx, rx) = std::sync::mpsc::channel();
+            super::send_command(super::DevToolsCommand::Tree { response_tx: tx });
+            match rx.recv_timeout(std::time::Duration::from_secs(2)) {
+                Ok(Some(s)) => s,
+                Ok(None) | Err(_) => "timeout".to_owned(),
+            }
+        }
+        "LAYOUT" => {
+            let (tx, rx) = std::sync::mpsc::channel();
+            super::send_command(super::DevToolsCommand::LayoutCmd { response_tx: tx });
+            match rx.recv_timeout(std::time::Duration::from_secs(2)) {
+                Ok(Some(s)) => s,
+                Ok(None) | Err(_) => "timeout".to_owned(),
+            }
+        }
+        "FIND" => {
+            let query = rest.trim();
+            if query.is_empty() {
+                return "missing query".to_owned();
+            }
+            let (tx, rx) = std::sync::mpsc::channel();
+            super::send_command(super::DevToolsCommand::Find {
+                query: query.to_owned(),
+                response_tx: tx,
+            });
+            match rx.recv_timeout(std::time::Duration::from_secs(2)) {
+                Ok(Some(s)) => s,
+                Ok(None) | Err(_) => "timeout".to_owned(),
+            }
+        }
+        "TYPE" => {
+            // `rest` = `<key> <text>` (текст может содержать пробелы).
+            let mut sp = rest.splitn(2, ' ');
+            let key = sp.next().unwrap_or("").trim();
+            let text = sp.next().unwrap_or("");
+            if key.is_empty() {
+                return "missing key".to_owned();
+            }
+            let (tx, rx) = std::sync::mpsc::channel();
+            super::send_command(super::DevToolsCommand::Type {
+                key: key.to_owned(),
+                text: text.to_owned(),
+                response_tx: tx,
+            });
+            match rx.recv_timeout(std::time::Duration::from_secs(1)) {
+                Ok(Some(s)) => s,
+                Ok(None) | Err(_) => "timeout".to_owned(),
+            }
+        }
+        "KEY" => {
+            // `rest` = `<key> <KeyName>`.
+            let mut sp = rest.splitn(2, ' ');
+            let key = sp.next().unwrap_or("").trim();
+            let keyname = sp.next().unwrap_or("").trim();
+            if key.is_empty() || keyname.is_empty() {
+                return "missing key or keyname".to_owned();
+            }
+            let (tx, rx) = std::sync::mpsc::channel();
+            super::send_command(super::DevToolsCommand::Key {
+                key: key.to_owned(),
+                keyname: keyname.to_owned(),
+                response_tx: tx,
+            });
+            match rx.recv_timeout(std::time::Duration::from_secs(1)) {
+                Ok(Some(s)) => s,
+                Ok(None) | Err(_) => "timeout".to_owned(),
+            }
+        }
+        "SHOT" => {
+            // Захват кадра требует доступа к буферу рендера — доставляем
+            // команду в UI-поток через вариант Shot { response_tx }; ответ —
+            // `base64:<png>` либо `error: ...` / `timeout`.
+            let (tx, rx) = std::sync::mpsc::channel();
+            super::send_command(super::DevToolsCommand::Shot { response_tx: tx });
+            match rx.recv_timeout(std::time::Duration::from_secs(2)) {
+                Ok(Some(s)) => s,
+                Ok(None) | Err(_) => "timeout".to_owned(),
             }
         }
         _ => "unknown command".to_owned(),

@@ -77,6 +77,10 @@ pub struct DevArgs {
     /// Сохранять state.json между ВСЕМИ запусками (в т.ч. cold start).
     /// Эквивалент LIGHT_PRESERVE_STATE=1. По умолчанию false.
     pub preserve_state: bool,
+    /// ТЗ 0.16.0: запустить в режиме агента — автоматически создавать
+    /// session recorder, логировать все DevTools-команды и генерировать
+    /// summary.md при завершении процесса.
+    pub agent: bool,
 }
 
 /// Чистый разбор сырых аргументов командной строки в [`DevArgs`].
@@ -121,6 +125,9 @@ pub fn parse_dev_command(raw: &[String]) -> DevArgs {
         } else if arg == "--preserve-state" {
             // ТЗ 0.14.3-fix4: сохранять state между всеми запусками.
             out.preserve_state = true;
+        } else if arg == "--agent" {
+            // ТЗ 0.16.0: режим агента (session recorder + summary.md).
+            out.agent = true;
         } else if i == 0 && !arg.starts_with('-') {
             out.package = Some(arg.clone());
         } else {
@@ -1095,6 +1102,35 @@ pub fn check_cli_version_mismatch(
 /// Не вызывается автоматически из других частей библиотеки — только из
 /// бинарного `light-fw-cli` (см. `cmd_dev` в `light-cli`).
 pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
+    // ТЗ 0.16.0: `--agent` — автоматически создаём session recorder ДО запуска
+    // приложения и закрываем его (сгенерировав summary.md) при выходе/kill.
+    // Обёртка гарантирует завершение сессии на любом пути выхода (в т.ч. panic
+    // через `?`), потому что `run_inner` вызывается здесь единственно.
+    let cwd = std::env::current_dir()?;
+    let agent_session = if args.agent {
+        match crate::session::start_session(&cwd) {
+            Ok(id) => {
+                eprintln!("light dev: agent session started → {:?}", id);
+                Some(id)
+            }
+            Err(e) => {
+                eprintln!("light dev: не удалось создать agent session: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let code = run_inner(args)?;
+    if let Some(id) = agent_session
+        && let Ok(summary) = crate::session::stop_session(&cwd, &id)
+    {
+        eprintln!("light dev: agent session summary → {:?}", summary);
+    }
+    Ok(code)
+}
+
+fn run_inner(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     let cwd = std::env::current_dir()?;
     // Имя пакета: явное значение из CLI или автоопределение по cwd.
     let resolved = args

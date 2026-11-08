@@ -68,7 +68,64 @@ cargo test --workspace --all-features -j 2
 6. **Обновление документации (Obligatory)**:
    - Внесите правки в `README.md` и `docs/` (см. *Documentation-First Policy*).
    - Убедитесь, что оглавление (TOC) в измененных markdown-файлах осталось консистентным.
-7. **Коммит**: Используйте Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`). В сообщении коммита укажите, если были обновлены доки.
+7. **Коммит**: Используйте Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`). В сообщение коммита укажите, если были обновлены доки.
+
+## Testing UI with DevTools (как агенту видеть и трогать UI)
+
+Начиная с 0.16 Light **agent-friendly**: у агента есть headless-инструменты,
+чтобы «увидеть» окно, «потрогать» UI и получить готовый журнал действий — без
+ручного сбора артефактов. Всё идёт через `light devtools <cmd>`, который
+общается с запущенным приложением по DevTools TCP-порту (по умолчанию
+`127.0.0.1:9229`; все команды принимают `--port`).
+
+### Видеть
+
+| Команда | Что даёт агенту |
+|---------|-----------------|
+| `light devtools tree` | JSON-дерево VDOM: ключи узлов, теги, текст, дети. Ключ = как кликнуть. |
+| `light devtools layout` | Плоская раскладка с координатами `x,y,w,h` каждого узла. |
+| `light devtools find --tag button --text "+1"` | Найти элемент по тегу/тексту/атрибутам → `{key, tag, rect}`. |
+| `light devtools state` | JSON-снимок реактивных полей (проверить счётчики, flags, text). |
+| `light devtools shot [--path dir]` | Скриншот PNG (base64 на stdout или в каталог). |
+
+### Трогать
+
+| Команда | Эффект |
+|---------|--------|
+| `light devtools click --key 0.0.0` | Клик по элементу (обходится до `Event::Click` при ближайшей перерисовке). |
+| `light devtools type --key 0.0.1 "hi"` | Ввод текста в поле. |
+| `light devtools key --key 0.0.1 Enter` | Именованная клавиша (`Enter`, `Tab`, `Escape`). |
+
+Ключи стабильны между перерисовками (это `key="..."` из шаблона) — **не**
+координаты; всегда работайте с ключами, а не пикселями.
+
+### Запустить приложение под агентом
+
+```bash
+light dev --agent
+```
+
+Флаг `--agent`:
+1. автоматически создаёт сессию в `.light/agent-sessions/<id>/` **до** spawn приложения;
+2. каждая команда `light devtools …` пишется в `actions.jsonl` (время, args, result, ссылка на скриншот);
+3. `shot` сохраняет PNG в `screenshots/` и сам ссылается на него;
+4. при выходе процесса — генерируется `summary.md` (хронология + счётчики).
+
+Агент читает `summary.md` и прикладывает скриншоты из `screenshots/` к своему
+отчёту. Полный цикл «вручную», без `light dev`:
+
+```bash
+light devtools session start
+light devtools tree
+light devtools find --tag button --text "+1"   # → {"key":"0.0.0",...}
+light devtools click --key 0.0.0
+light devtools state                            # проверить, что изменилось
+light devtools shot --path shots
+light devtools session stop                     # summary.md
+```
+
+Если приложение не запущено, CLI честно сообщает
+`Приложение не запущено (порт 9229)` и не падает — удобно для idempotent-скриптов.
 
 ## Release Workflow (Публикация)
 

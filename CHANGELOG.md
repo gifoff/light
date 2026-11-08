@@ -2,6 +2,42 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.16.0] - 2026-11-08
+
+### Added — Agentic DevTools
+
+- **`light devtools <cmd>`**: headless-инструменты для ИИ-агентов, общаются с
+  запущенным приложением по DevTools TCP-порту (по умолчанию 9229; все
+  принимают `--port` и `--json`):
+  - `tree` — JSON-дерево VDOM (ключи, теги, текст, дети).
+  - `layout` — плоская раскладка с координатами `x,y,w,h`.
+  - `find --tag <t> --text <s> --attr k=v` — поиск элемента по тегу/тексту/
+    атрибутам → `{key, tag, rect}`. Кнопка ищется по её подписи.
+  - `state` — JSON-снимок реактивных полей (протокольная `SNAPSHOT`).
+  - `click --key <key>` — симуляция клика по ключу узла.
+  - `type --key <key> "text"` — ввод текста в поле.
+  - `key --key <key> Enter|Tab|Escape` — именованная клавиша фокусному узлу.
+  - `shot [--path <dir>]` — PNG-скриншот (base64 на stdout или в каталог).
+  - `session start|stop` — управление session recorder.
+- **Session Recorder**: `.light/agent-sessions/<id>/` с `actions.jsonl`
+  (время, команда, аргументы, результат, ссылка на скриншот), каталогами
+  `screenshots/` и `state/`, и генерацией `summary.md` при остановке.
+- **`light dev --agent`**: автоматически создаёт сессию до spawn приложения,
+  логирует команды DevTools во время работы и пишет `summary.md` при выходе.
+- **Новые протокольные команды** TCP-сервера DevTools: `TREE`, `LAYOUT`,
+  `FIND <json>`, `TYPE <key> <text>`, `KEY <key> <name>`, `SHOT`.
+- Публичные хелперы `light-fw-core`: `VElement::collect_plain_text_public`
+  (поиск кнопки по подписи), `serialize_tree`, `serialize_layout`,
+  `find_element`, `encode_screenshot`.
+
+### Notes
+
+- Флаг `--coords` из черновика ТЗ намеренно **не** реализован (анти-фантом):
+  позиционирование идёт только по стабильным ключам узлов.
+- Документация обновлена: `AGENTS.md` (раздел «Testing UI with DevTools»),
+  `docs/guide.md` (CLI-обёртка + «Автоматизированное тестирование с ИИ»),
+  `README.md`, `docs/ROADMAP.md`.
+
 ## [0.15.5] - 2026-11-08
 
 ### Fixed

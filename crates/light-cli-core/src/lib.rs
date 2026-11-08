@@ -9,6 +9,8 @@ pub mod cargo;
 /// Супервизор `light dev`: горячая перезагрузка приложения с восстановлением
 /// состояния.
 pub mod dev;
+/// ТЗ 0.16.0: клиент DevTools по TCP (TREE/LAYOUT/FIND/TYPE/KEY/SHOT и др.).
+pub mod devtools;
 pub mod doctor;
 pub mod edit;
 /// Типы ошибок CLI.
@@ -32,6 +34,8 @@ pub mod resolve;
 /// Сканирование HTML-шаблонов проекта.
 pub mod scan;
 pub mod search;
+/// ТЗ 0.16.0: Session Recorder — журнал действий агента в `.light/agent-sessions/`.
+pub mod session;
 pub mod update;
 pub mod vendor;
 

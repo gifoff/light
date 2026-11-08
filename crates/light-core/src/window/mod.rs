@@ -2782,6 +2782,248 @@ impl App {
             crate::devtools::DevToolsCommand::ReloadTemplate => {
                 // Фича runtime-templates не включена — команда без эффекта.
             }
+            // ─── ТЗ 0.16.0: агентовые команды (TREE / LAYOUT / FIND / TYPE /
+            // KEY / SHOT) ──────────────────────────────────────────────────
+            // Все работают с активным окном (как Click/SetState): резолвим его
+            // по токену, при отсутствии отвечаем ошибкой.
+            #[allow(clippy::too_many_lines)]
+            crate::devtools::DevToolsCommand::Type {
+                key,
+                text,
+                response_tx,
+            } => {
+                let Some(id) = self.tokens.get(&crate::control::active_window()).copied() else {
+                    let _ = response_tx.send(Some("error: no active window".to_owned()));
+                    return;
+                };
+                let Some(window) = self.windows.get_mut(&id) else {
+                    let _ = response_tx.send(Some("error: no active window".to_owned()));
+                    return;
+                };
+                // Узел должен быть текстовым полем (не отключённым).
+                let is_textfield = window
+                    .layout
+                    .as_ref()
+                    .and_then(|l| l.node(&key))
+                    .is_some_and(|n| {
+                        matches!(
+                            &n.kind,
+                            crate::vdom::NodeKind::TextField {
+                                disabled: false,
+                                ..
+                            }
+                        )
+                    });
+                if !is_textfield {
+                    let _ = response_tx
+                        .send(Some("error: key not found or not a text field".to_owned()));
+                    return;
+                }
+                // Фокусируем поле, заменяем содержимое, применяем через
+                // commit_text (диспатчит TextChange и invalidates).
+                let key_owned = key.clone();
+                let before = window.editing.clone();
+                window.snapshot_before_edit(&before);
+                window.focused = Some(key_owned);
+                window.editing = text.clone();
+                window.caret = text.chars().count();
+                window.anchor = None;
+                window.commit_text();
+                let _ = response_tx.send(Some("ok".to_owned()));
+            }
+            crate::devtools::DevToolsCommand::Key {
+                key,
+                keyname,
+                response_tx,
+            } => {
+                let Some(id) = self.tokens.get(&crate::control::active_window()).copied() else {
+                    let _ = response_tx.send(Some("error: no active window".to_owned()));
+                    return;
+                };
+                let Some(window) = self.windows.get_mut(&id) else {
+                    let _ = response_tx.send(Some("error: no active window".to_owned()));
+                    return;
+                };
+                // Разбираем имя ключа. winit::KeyEvent в 0.30 имеет приватные
+                // поля и не конструируется извне, поэтому семантику нажатия
+                // воспроизводим напрямую (без построения KeyEvent).
+                use winit::keyboard::NamedKey;
+                let named = match keyname.as_str() {
+                    "Enter" => NamedKey::Enter,
+                    "Tab" => NamedKey::Tab,
+                    "Escape" => NamedKey::Escape,
+                    _ => {
+                        let _ = response_tx.send(Some(format!("error: invalid key {keyname}")));
+                        return;
+                    }
+                };
+                // Фокус переключаем на указанный узел, если он существует.
+                if window.layout.as_ref().and_then(|l| l.node(&key)).is_some() {
+                    window.focused = Some(key.clone());
+                }
+                let focused_key = window.focused.clone().unwrap_or_default();
+                // Enter: submit (если одиночная строка + кнопка submit), иначе
+                // диспатчим Keydown/KeyUp.
+                if named == NamedKey::Enter
+                    && !window.modifiers.shift_key()
+                    && !window.modifiers.control_key()
+                    && !window.modifiers.alt_key()
+                    && let Some(tree) = window.tree.clone()
+                {
+                    let single_line =
+                        tree.get(&focused_key)
+                            .map(|node| &node.kind)
+                            .is_some_and(|k| {
+                                matches!(
+                                    k,
+                                    crate::vdom::NodeKind::TextField {
+                                        multiline: false,
+                                        disabled: false,
+                                        ..
+                                    }
+                                )
+                            });
+                    if single_line
+                        && let Some(button) =
+                            crate::validation::find_submit_button(&tree, &focused_key)
+                    {
+                        let button_key = button.key.to_owned();
+                        window.dispatch_checked(&button_key, DomEvent::Click);
+                        window.invalidate();
+                        let _ = response_tx.send(Some("ok".to_owned()));
+                        return;
+                    }
+                }
+                // Escape: закрыть открытое select (если фича есть).
+                if named == NamedKey::Escape {
+                    #[cfg(feature = "elements-select")]
+                    if window.open_select.is_some() {
+                        window.open_select = None;
+                        window.select_hover = None;
+                        window.invalidate();
+                        let _ = response_tx.send(Some("ok".to_owned()));
+                        return;
+                    }
+                }
+                // Общий путь: диспатчим Keydown + KeyUp в компонент.
+                // `KeyInfo.key` — строковое представление именованного ключа
+                // (`format!("{named:?}"`), как в `key_info`). Модификаторы
+                // берём из `window.modifiers`.
+                let mods = window.modifiers;
+                let key_str = format!("{named:?}");
+                let down = DomEvent::Keydown(KeyInfo::new(
+                    key_str.clone(),
+                    mods.shift_key(),
+                    mods.control_key(),
+                    mods.alt_key(),
+                ));
+                window.dispatch(&focused_key, down);
+                let up = DomEvent::Keyup(KeyInfo::new(
+                    key_str,
+                    mods.shift_key(),
+                    mods.control_key(),
+                    mods.alt_key(),
+                ));
+                window.dispatch(&focused_key, up);
+                window.invalidate();
+                let _ = response_tx.send(Some("ok".to_owned()));
+            }
+            crate::devtools::DevToolsCommand::Tree { response_tx } => {
+                let id = self
+                    .tokens
+                    .get(&crate::control::active_window())
+                    .copied()
+                    .filter(|wid| self.windows.contains_key(wid))
+                    .or_else(|| {
+                        self.windows
+                            .iter()
+                            .find(|(_, w)| w.parent.is_none())
+                            .map(|(wid, _)| *wid)
+                    });
+                let Some(window) = id.and_then(|id| self.windows.get(&id)) else {
+                    let _ = response_tx.send(Some("null".to_owned()));
+                    return;
+                };
+                let json = window
+                    .tree
+                    .as_deref()
+                    .map(crate::devtools::serialize_tree)
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "null".to_owned());
+                let _ = response_tx.send(Some(json));
+            }
+            crate::devtools::DevToolsCommand::LayoutCmd { response_tx } => {
+                let id = self
+                    .tokens
+                    .get(&crate::control::active_window())
+                    .copied()
+                    .filter(|wid| self.windows.contains_key(wid))
+                    .or_else(|| {
+                        self.windows
+                            .iter()
+                            .find(|(_, w)| w.parent.is_none())
+                            .map(|(wid, _)| *wid)
+                    });
+                let Some(window) = id.and_then(|id| self.windows.get(&id)) else {
+                    let _ = response_tx.send(Some("null".to_owned()));
+                    return;
+                };
+                let json = match (&window.layout, window.tree.as_deref()) {
+                    (Some(layout), tree) => {
+                        crate::devtools::serialize_layout(layout, tree).to_string()
+                    }
+                    _ => "null".to_owned(),
+                };
+                let _ = response_tx.send(Some(json));
+            }
+            crate::devtools::DevToolsCommand::Find { query, response_tx } => {
+                let id = self
+                    .tokens
+                    .get(&crate::control::active_window())
+                    .copied()
+                    .filter(|wid| self.windows.contains_key(wid))
+                    .or_else(|| {
+                        self.windows
+                            .iter()
+                            .find(|(_, w)| w.parent.is_none())
+                            .map(|(wid, _)| *wid)
+                    });
+                let Some(window) = id.and_then(|id| self.windows.get(&id)) else {
+                    let _ = response_tx.send(Some("null".to_owned()));
+                    return;
+                };
+                let result = match &window.tree {
+                    Some(tree) => {
+                        crate::devtools::find_element(tree.as_ref(), window.layout.as_ref(), &query)
+                    }
+                    None => None,
+                };
+                let json = result
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "null".to_owned());
+                let _ = response_tx.send(Some(json));
+            }
+            crate::devtools::DevToolsCommand::Shot { response_tx } => {
+                let id = self
+                    .tokens
+                    .get(&crate::control::active_window())
+                    .copied()
+                    .filter(|wid| self.windows.contains_key(wid))
+                    .or_else(|| {
+                        self.windows
+                            .iter()
+                            .find(|(_, w)| w.parent.is_none())
+                            .map(|(wid, _)| *wid)
+                    });
+                let Some(window) = id.and_then(|id| self.windows.get_mut(&id)) else {
+                    let _ = response_tx.send(Some("error: no window".to_owned()));
+                    return;
+                };
+                let (w, h) = window.surface.size();
+                let buf: Vec<u8> = window.surface.frame_mut().to_vec();
+                let b64 = crate::devtools::encode_screenshot(&buf, w, h);
+                let _ = response_tx.send(Some(b64));
+            }
         }
     }
 }
