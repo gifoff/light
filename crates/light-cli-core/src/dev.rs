@@ -1055,6 +1055,25 @@ const STALE_RUN_AGE: Duration = Duration::from_secs(3600);
 /// бинарника) и версией `light-fw-core` в проекте (первоисточник —
 /// `[workspace.package].version` из `Cargo.toml`; fallback — `Cargo.lock`).
 /// Возвращает `(installed, project)` только если они различаются.
+/// Сравнивает две версионные строки по `major.minor`: `"0.15.3"` vs `"0.15"` →
+/// `true` (одна и та же минорная ветка); `"0.14"` vs `"0.15"` → `false`.
+fn same_minor(a: &str, b: &str) -> bool {
+    minor_key(a) == minor_key(b)
+}
+
+/// Извлекает `major.minor` из версионной строки: `"0.15.3"` → `"0.15"`,
+/// `"0.15"` → `"0.15"`.
+fn minor_key(v: &str) -> String {
+    let parts: Vec<&str> = v.splitn(3, '.').collect();
+    if parts.len() >= 2 {
+        format!("{}.{}", parts[0], parts[1])
+    } else {
+        v.to_string()
+    }
+}
+
+/// Предупреждение при рассинхроне между установленным CLI и версией
+/// light-fw-core в проекте (сравнение по `major.minor`).
 pub fn check_cli_version_mismatch(
     installed: &str,
     toml_path: &Path,
@@ -1062,7 +1081,7 @@ pub fn check_cli_version_mismatch(
 ) -> Option<(String, String)> {
     let project = read_fw_core_version_from_workspace_toml(toml_path)
         .or_else(|| read_fw_core_version_from_lock(lock_path))?;
-    if project == installed {
+    if same_minor(installed, &project) {
         None
     } else {
         Some((installed.to_string(), project))
@@ -1141,7 +1160,9 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     .and_then(|x| x.as_str())
                     .map(String::from)
             });
-        if saved.as_deref() != Some(current_version.as_str()) {
+        // Сравниваем major.minor: `"0.15.3"` vs `"0.15"` → same minor, skip;
+        // `"0.14"` vs `"0.15"` → different minor, invalidate.
+        if !same_minor(current_version, saved.as_deref().unwrap_or("")) {
             let hot_build = target_root.join("target").join("hot-build");
             if hot_build.exists() {
                 if std::fs::remove_dir_all(&hot_build).is_ok() {
@@ -1939,11 +1960,12 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
 mod tests {
     use super::{
         ChangeKind, RebuildOutcome, RebuildStateMachine, WatchAction, WatchState, bin_name,
-        build_info_path, classify_change, clean_dev_cache, cleanup_run_dir, copy_fresh_to_run,
-        file_hash, fresh_bin_path, handle_watch_event, parse_dev_command,
-        parse_workspace_package_version, prune_stale_run_exes, read_fw_core_version_from_lock,
-        read_fw_core_version_from_workspace_toml, resolve_package_root, resolve_startup_completion,
-        run_exe_path, save_build_info, wait_port_available,
+        build_info_path, check_cli_version_mismatch, classify_change, clean_dev_cache,
+        cleanup_run_dir, copy_fresh_to_run, file_hash, fresh_bin_path, handle_watch_event,
+        minor_key, parse_dev_command, parse_workspace_package_version, prune_stale_run_exes,
+        read_fw_core_version_from_lock, read_fw_core_version_from_workspace_toml,
+        resolve_package_root, resolve_startup_completion, run_exe_path, same_minor,
+        save_build_info, wait_port_available,
     };
     use std::io::Write as _;
     use std::net::TcpListener;
@@ -2852,6 +2874,59 @@ version = "1.0.0"
             removed_strs.iter().any(|s| s.contains("build-info")),
             "removed should contain build-info: {removed_strs:?}"
         );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // ===================== same_minor / minor_key / check_cli_version_mismatch =====
+
+    /// `"0.15.3"` → `"0.15"`, `"0.15"` → `"0.15"`, `"0.14"` → `"0.14"`.
+    #[test]
+    fn minor_key_extracts_major_minor() {
+        assert_eq!(minor_key("0.15.3"), "0.15");
+        assert_eq!(minor_key("0.15"), "0.15");
+        assert_eq!(minor_key("0.14"), "0.14");
+        assert_eq!(minor_key("1.2.3"), "1.2");
+        assert_eq!(minor_key("1.2"), "1.2");
+    }
+
+    /// Same minor: `"0.15.3"` vs `"0.15"` → true (no invalidation).
+    #[test]
+    fn same_minor_exact_vs_range() {
+        assert!(same_minor("0.15.3", "0.15"));
+        assert!(same_minor("0.15", "0.15.3"));
+        assert!(same_minor("0.15.3", "0.15.2"));
+        assert!(!same_minor("0.14", "0.15"));
+        assert!(!same_minor("0.15", "0.16"));
+        assert!(!same_minor("1.0", "0.99"));
+    }
+
+    /// `check_cli_version_mismatch`: project version from TOML is a range
+    /// (`light = "0.15"`), installed is exact (`0.15.4`) → no mismatch.
+    #[test]
+    fn cli_version_mismatch_same_minor() {
+        let tmp = test_tmp_dir("mismatch_same");
+        let _ = std::fs::create_dir_all(&tmp);
+        let toml_file = tmp.join("Cargo.toml");
+        std::fs::write(&toml_file, "[dependencies]\nlight = \"0.15\"\n").unwrap();
+        let lock = tmp.join("Cargo.lock");
+        // No mismatch: 0.15.4 vs 0.15 → same minor.
+        assert_eq!(
+            check_cli_version_mismatch("0.15.4", &toml_file, &lock),
+            None
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// `check_cli_version_mismatch`: different minor → Some warning.
+    #[test]
+    fn cli_version_mismatch_different_minor() {
+        let tmp = test_tmp_dir("mismatch_diff");
+        let _ = std::fs::create_dir_all(&tmp);
+        let toml_file = tmp.join("Cargo.toml");
+        std::fs::write(&toml_file, "[dependencies]\nlight = \"0.14\"\n").unwrap();
+        let lock = tmp.join("Cargo.lock");
+        let result = check_cli_version_mismatch("0.15.4", &toml_file, &lock);
+        assert_eq!(result, Some(("0.15.4".to_string(), "0.14".to_string())));
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
