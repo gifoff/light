@@ -206,6 +206,100 @@ pub fn resolve_workspace_root(cwd: &Path) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// Определяет имя пакета, в котором находится пользователь: поднимается вверх
+/// от `cwd`, ищет ближайший `Cargo.toml` с `[package].name`; если не найден —
+/// использует `cargo metadata --no-deps` (одиночный пакет → его имя,
+/// workspace-член → член, чей `manifest_path` ближе всего к `cwd`).
+///
+/// Возвращает `None`, если пакет определить невозможно.
+pub fn detect_package_from_cwd(cwd: &Path) -> Option<String> {
+    // Шаг 1: ближайший Cargo.toml вверх по дереву каталогов.
+    let mut dir = cwd.to_path_buf();
+    loop {
+        let manifest = dir.join("Cargo.toml");
+        if manifest.is_file()
+            && let Ok(text) = std::fs::read_to_string(&manifest)
+            && let Some(name) = parse_package_name(&text)
+        {
+            return Some(name);
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+
+    // Шаг 2: `cargo metadata --no-deps` в cwd.
+    let output = Command::new("cargo")
+        .args(["metadata", "--no-deps", "--format-version", "1"])
+        .current_dir(cwd)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let meta: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    let packages = meta.get("packages").and_then(|p| p.as_array())?;
+    if packages.len() == 1 {
+        return packages[0]
+            .get("name")
+            .and_then(|n| n.as_str())
+            .map(String::from);
+    }
+    // Workspace: выбираем пакет, чей manifest_path ближе всего к cwd
+    // (больше общих компонентов нормализованного пути — ближе).
+    let cwd_str = cwd.to_string_lossy().replace('\\', "/");
+    let mut best: Option<(usize, String)> = None;
+    for pkg in packages {
+        let manifest = pkg.get("manifest_path").and_then(|m| m.as_str())?;
+        let manifest_norm = manifest.replace('\\', "/");
+        let common = common_path_len(&cwd_str, &manifest_norm);
+        let name = pkg
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or_default()
+            .to_string();
+        if best.as_ref().is_none_or(|(d, _)| *d <= common) {
+            best = Some((common, name));
+        }
+    }
+    best.map(|(_, name)| name).filter(|n| !n.is_empty())
+}
+
+/// Извлекает `[package].name` из текста `Cargo.toml` (примитивный парсер:
+/// ищет секцию `[package]` и первое `name = "..."` в ней).
+fn parse_package_name(toml_text: &str) -> Option<String> {
+    let mut in_package = false;
+    for line in toml_text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_package = trimmed == "[package]";
+            if !in_package {
+                continue;
+            }
+        }
+        if in_package && trimmed.starts_with("name") {
+            let rest = trimmed.split_once('=')?.1.trim();
+            let rest = rest.strip_prefix('"')?.strip_suffix('"')?;
+            if !rest.is_empty() {
+                return Some(rest.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Длина общего префикса двух нормализованных (slash-разделителей) путей,
+/// по числу компонентов.
+fn common_path_len(a: &str, b: &str) -> usize {
+    let a_parts: Vec<&str> = a.split('/').collect();
+    let b_parts: Vec<&str> = b.split('/').collect();
+    a_parts
+        .iter()
+        .zip(b_parts.iter())
+        .take_while(|(x, y)| x == y)
+        .count()
+}
+
 /// Строит список путей для наблюдения: `src/` и `templates/` (только если
 /// существуют) плюс `Cargo.toml` (если есть).
 pub fn watch_paths(root: &std::path::Path) -> Vec<PathBuf> {
@@ -959,6 +1053,17 @@ pub fn check_cli_version_mismatch(
 /// бинарного `light-fw-cli` (см. `cmd_dev` в `light-cli`).
 pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     let cwd = std::env::current_dir()?;
+    // Имя пакета: явное значение из CLI или автоопределение по cwd.
+    let resolved = args
+        .package
+        .clone()
+        .or_else(|| detect_package_from_cwd(&cwd));
+    let Some(pkg_name) = resolved else {
+        eprintln!(
+            "light dev: cannot determine package; use `light dev <name>` or run inside crate directory"
+        );
+        return Ok(1);
+    };
     // Корень пакета: если передан `package`, ищем его через `cargo metadata`,
     // иначе — текущий каталог. Именно этот корень передаётся в `watch_paths`.
     let package_root = resolve_package_root(args.package.as_deref(), &cwd);
@@ -979,7 +1084,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     // (Windows не даёт перезаписать запущенный .exe, но копия свободна).
     let build_target = target_root.join("target").join("hot-build");
     let run_dir = target_root.join("target").join("hot-run");
-    let bin = bin_name(args.package.as_deref().unwrap_or("app"));
+    let bin = bin_name(&pkg_name);
     eprintln!(
         "light dev: build_target = {:?}, run_dir = {:?}",
         build_target, run_dir
@@ -990,7 +1095,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     // light-fw-core (build-info.json); (c) age-привка hot-run; (d) warning
     // при рассинхроне CLI/core.
     if args.clean {
-        let removed = clean_dev_cache(&target_root, args.package.as_deref());
+        let removed = clean_dev_cache(&target_root, Some(pkg_name.as_str()));
         eprintln!("light dev: cleaned cache (hot-build, hot-run, state, deps, build-info)");
         let _ = removed.len();
     }
@@ -1070,10 +1175,7 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         );
         let mut cmd = Command::new("cargo");
         cmd.arg("build");
-        if let Some(package) = &args.package {
-            cmd.args(["-p", package]);
-        }
-        cmd.args(["--features", "dev-mode"]);
+        cmd.args(["-p", &pkg_name, "--features", "light/dev-mode"]);
         cmd.args(["--target-dir", &build_target.to_string_lossy()]);
         cmd.args(&args.extra_cargo_args);
         cmd.stdin(Stdio::inherit())
@@ -1780,15 +1882,8 @@ pub fn run(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     // тот же путь, что и в warm-up (workspace_root/hot-build).
                     let mut cmd = Command::new("cargo");
                     cmd.arg("build");
-                    if let Some(p) = &args.package {
-                        cmd.args(["-p", p]);
-                    }
-                    cmd.args([
-                        "--features",
-                        "dev-mode",
-                        "--target-dir",
-                        &build_target.to_string_lossy(),
-                    ]);
+                    cmd.args(["-p", &pkg_name, "--features", "light/dev-mode"]);
+                    cmd.args(["--target-dir", &build_target.to_string_lossy()]);
                     cmd.args(&args.extra_cargo_args);
                     cmd.stdin(Stdio::inherit())
                         .stdout(Stdio::inherit())

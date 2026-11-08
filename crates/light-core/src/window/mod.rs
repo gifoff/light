@@ -2187,15 +2187,18 @@ impl App {
                 // ТЗ 0.15.1-fix3: запоминаем «желаемую» геометрию — именно её
                 // будем писать в файл при flush (не WM-коррекцию).
                 self.last_applied_geometry = Some(geom.clone());
-                eprintln!(
-                    "[apply] desired=({}, {}, {}x{}) outer_pos={:?} inner_pos={:?}",
-                    geom.x,
-                    geom.y,
-                    geom.width,
-                    geom.height,
-                    window.outer_position(),
-                    window.inner_position(),
-                );
+                #[cfg(feature = "devtools")]
+                {
+                    eprintln!(
+                        "[apply] desired=({}, {}, {}x{}) outer_pos={:?} inner_pos={:?}",
+                        geom.x,
+                        geom.y,
+                        geom.width,
+                        geom.height,
+                        window.outer_position(),
+                        window.inner_position(),
+                    );
+                }
                 let _ = window
                     .request_inner_size(LogicalSize::new(geom.width as f64, geom.height as f64));
                 window.set_outer_position(PhysicalPosition::new(geom.x, geom.y));
@@ -2357,18 +2360,21 @@ impl App {
             };
             (p.x, p.y)
         };
-        eprintln!(
-            "[save] source={}, geom=({}, {}, {}x{})",
-            if self.last_applied_geometry.is_some() {
-                "last_applied"
-            } else {
-                "outer_position"
-            },
-            pos.0,
-            pos.1,
-            state.window.inner_size().width,
-            state.window.inner_size().height,
-        );
+        #[cfg(feature = "devtools")]
+        {
+            eprintln!(
+                "[save] source={}, geom=({}, {}, {}x{})",
+                if self.last_applied_geometry.is_some() {
+                    "last_applied"
+                } else {
+                    "outer_position"
+                },
+                pos.0,
+                pos.1,
+                state.window.inner_size().width,
+                state.window.inner_size().height,
+            );
+        }
         // ТЗ 0.14.3-fix7: свёрнутое окно имеет мусорные координаты Windows
         // (например (-32000, -32000)) + уменьшенный размер. Не записываем их:
         // в файл уходит последняя «нормальная» геометрия из кэша, чтобы restore
@@ -2466,10 +2472,13 @@ impl App {
         if !geom.maximized {
             self.cached_normal_geometry = Some(geom.clone());
         }
-        eprintln!(
-            "[save] force: source=last_applied, geom=({}, {}, {}x{})",
-            geom.x, geom.y, geom.width, geom.height
-        );
+        #[cfg(feature = "devtools")]
+        {
+            eprintln!(
+                "[save] force: source=last_applied, geom=({}, {}, {}x{})",
+                geom.x, geom.y, geom.width, geom.height
+            );
+        }
         if let Err(error) = geom.save() {
             eprintln!("light: не удалось принудительно сохранить геометрию: {error}");
         } else {
@@ -3001,10 +3010,13 @@ impl ApplicationHandler<UserEvent> for App {
                 self.flush_geometry(id);
             }
             WindowEvent::Moved(position) => {
-                eprintln!(
-                    "[moved] pos=({}, {}), restoring={}",
-                    position.x, position.y, self.restoring_geometry
-                );
+                #[cfg(feature = "devtools")]
+                {
+                    eprintln!(
+                        "[moved] pos=({}, {}), restoring={}",
+                        position.x, position.y, self.restoring_geometry
+                    );
+                }
                 // ТЗ 0.15.1-fix3: вне restore-окна обновляем «желаемую»
                 // позицию на фактическую (пользователь перетащил окно). Если
                 // запись ещё не существует (cold start, без restore) —

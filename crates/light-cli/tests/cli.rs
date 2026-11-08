@@ -712,7 +712,12 @@ fn init_creates_full_project() {
         "{manifest}"
     );
     let main_rs = std::fs::read_to_string(project.join("src").join("main.rs")).expect("main.rs");
-    assert!(main_rs.contains("Hello, Light!"), "{main_rs}");
+    assert!(main_rs.contains("#[template"), "{main_rs}");
+    assert!(main_rs.contains("templates/app.html"), "{main_rs}");
+    let app_html = project.join("templates").join("app.html");
+    assert!(app_html.is_file(), "templates/app.html создаётся");
+    let html = std::fs::read_to_string(&app_html).expect("app.html");
+    assert!(html.contains("Hello, Light!"), "{html}");
     let gitignore = std::fs::read_to_string(project.join(".gitignore")).expect(".gitignore");
     assert!(gitignore.contains("target/"), "{gitignore}");
     assert!(project.join("light.lock").is_file(), "light.lock создаётся");

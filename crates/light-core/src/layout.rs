@@ -659,10 +659,16 @@ impl Layout {
             height: (definite_h - inset.top - inset.bottom).max(0.0),
         };
         // Ось, по которой узел растягивает своих детей (если размер известен).
-        let child_stretch = match vnode.kind {
-            NodeKind::Row | NodeKind::TitleBar if height_known => Some(Axis::Height),
-            NodeKind::Column | NodeKind::Window if width_known => Some(Axis::Width),
-            _ => None,
+        // При `align-items != start` дети не растягиваются — они авторазмеряются,
+        // и выравнивание (Center/End) вычисляется в `align_container_content`.
+        let child_stretch = if style.align_items == Align::Start {
+            match vnode.kind {
+                NodeKind::Row | NodeKind::TitleBar if height_known => Some(Axis::Height),
+                NodeKind::Column | NodeKind::Window if width_known => Some(Axis::Width),
+                _ => None,
+            }
+        } else {
+            None
         };
         let child_flow = FlowContext {
             content: child_content,

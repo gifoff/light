@@ -275,6 +275,17 @@ fn normalized_components(components: &[InitComponent]) -> Vec<InitComponent> {
 }
 
 /// Содержимое `Cargo.toml` нового проекта.
+/// Шаблон-заглушка для проекта без `--template`: минимальное окно с
+/// приветствием, центрированным в контентной области.
+const APP_HTML: &str = r#"<window title="Hello, Light!" width="480" height="320">
+    <div width="100%" height="100%" direction="vertical" justify-content="center" align-items="center" padding="16">
+        <h1>Hello, Light!</h1>
+    </div>
+</window>
+"#;
+
+/// Содержимое `Cargo.toml` для нового проекта: зависимости `light`,
+/// компоненты и фича `dev-mode` (алиас `light/dev-mode`).
 pub fn cargo_toml(name: &str, components: &[InitComponent]) -> String {
     let components = normalized_components(components);
     let mut text = format!(
@@ -288,21 +299,24 @@ pub fn cargo_toml(name: &str, components: &[InitComponent]) -> String {
 
     if components.is_empty() {
         text.push_str(&format!("light = \"{}\"\n", minor_version()));
-        return text;
+    } else {
+        let features = components
+            .iter()
+            .map(|component| format!("\"{}\"", component.light_feature()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let v = minor_version();
+        text.push_str(&format!(
+            "light = {{ version = \"{v}\", features = [{features}] }}\n"
+        ));
+        for component in &components {
+            text.push_str(&format!("{} = \"{v}\"\n", component.crate_name()));
+        }
     }
 
-    let features = components
-        .iter()
-        .map(|component| format!("\"{}\"", component.light_feature()))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let v = minor_version();
-    text.push_str(&format!(
-        "light = {{ version = \"{v}\", features = [{features}] }}\n"
-    ));
-    for component in &components {
-        text.push_str(&format!("{} = \"{v}\"\n", component.crate_name()));
-    }
+    // Фича `dev-mode` — алиас для `light/dev-mode` (runtime-templates, hot
+    // reload). Необходима для `light dev` и `.cargo/config.toml`.
+    text.push_str("\n[features]\ndev-mode = [\"light/dev-mode\"]\n");
     text
 }
 
@@ -335,39 +349,17 @@ const FORM_EXAMPLE: &str = r#"
 // </window>
 "#;
 
-/// Содержимое `src/main.rs` — минимальное приложение из одного окна.
+/// Содержимое `src/main.rs` — минимальное приложение с HTML-шаблоном
+/// (`templates/app.html`) и пустой прокси-структурой.
 pub fn main_rs(components: &[InitComponent]) -> String {
     let mut text = r#"use light::prelude::*;
 
-struct App;
-
-impl Component for App {
-    fn render(&self) -> VElement {
-        VElement::container(
-            "",
-            NodeKind::Window,
-            vec![VElement::container(
-                "0",
-                NodeKind::Column,
-                vec![VElement::leaf(
-                    "0.0",
-                    NodeKind::Text {
-                        content: "Hello, Light!".to_string(),
-                    },
-                )],
-            )],
-        )
-        .with_window(WindowConfig {
-            title: "Hello, Light!".to_string(),
-            width: 320,
-            height: 200,
-            ..Default::default()
-        })
-    }
-}
+#[template("templates/app.html")]
+#[proxy]
+struct App {}
 
 fn main() -> light::Result<()> {
-    light::run(App)
+    light::run(App::new())
 }
 "#
     .to_string();
@@ -422,6 +414,12 @@ pub fn plan(options: &InitOptions) -> Result<InitPlan> {
         for (path, content) in template.template_files() {
             files.push((PathBuf::from(path), (*content).to_string()));
         }
+    } else {
+        // Проект без `--template`: `main.rs` ссылается на `templates/app.html`.
+        files.push((
+            PathBuf::from("templates").join("app.html"),
+            APP_HTML.to_string(),
+        ));
     }
     if !options.minimal {
         files.push((PathBuf::from(".gitignore"), GITIGNORE.to_string()));
@@ -550,9 +548,18 @@ mod tests {
             .collect();
         assert!(names.contains(&"Cargo.toml".to_string()));
         assert!(names.contains(&"src/main.rs".to_string()));
+        assert!(names.contains(&"templates/app.html".to_string()));
         assert!(names.contains(&".gitignore".to_string()));
         assert!(names.contains(&".cargo/config.toml".to_string()));
         assert!(names.contains(&"light.config.json".to_string()));
+        // main.rs использует `#[template]` (HTML-шаблон).
+        let main = plan
+            .files
+            .iter()
+            .find(|(path, _)| path.to_string_lossy().replace('\\', "/") == "src/main.rs")
+            .map(|(_, c)| c.as_str())
+            .expect("main.rs in plan");
+        assert!(main.contains("#[template"), "{main}");
         assert!(plan.write_lockfile);
     }
 
@@ -599,7 +606,9 @@ mod tests {
         assert!(text.contains("name = \"demo\""));
         let mv = minor_version();
         assert!(text.contains(&format!("light = \"{mv}\"")));
-        assert!(!text.contains("features ="));
+        // Фича `dev-mode` всегда присутствует (алиас `light/dev-mode`).
+        assert!(text.contains("[features]"), "{text}");
+        assert!(text.contains("dev-mode = [\"light/dev-mode\"]"), "{text}");
     }
 
     #[test]
@@ -645,11 +654,13 @@ mod tests {
     }
 
     #[test]
-    fn main_rs_is_self_contained() {
+    fn main_rs_uses_template_macro() {
         let text = main_rs(&[]);
-        assert!(text.contains("Hello, Light!"));
+        assert!(text.contains("#[template"), "{text}");
+        assert!(text.contains("templates/app.html"), "{text}");
+        assert!(text.contains("#[proxy]"), "{text}");
+        assert!(text.contains("App::new()"), "{text}");
         assert!(!text.contains("include_str!"));
-        assert!(!text.contains("#[template"));
         assert!(!text.contains("Пример формы"));
     }
 
