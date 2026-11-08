@@ -2,6 +2,14 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.15.5] - 2026-11-08
+
+### Fixed
+
+- **Layout**: Колонки (`Column`) больше не получают принудительный `width=100%` внутри `align-items="center"`. Текстовые узлы (и любые auto-sized Column) теперь корректно центрируются по горизонтали.
+- **CLI**: Сравнение версий фреймворка происходит по `major.minor` (0.15.3 ≡ 0.15). Убран ложный warning при hot-build.
+- **CLI**: Удалён устаревший debug println при запуске `light dev`.
+
 ## [0.15.4] - 2026-11-08
 
 ### Fixed
