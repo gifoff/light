@@ -2,6 +2,29 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.15.3] - 2026-11-08
+
+### Fixed
+
+- **`light dev` без positional**: auto-detect package из cwd
+  (`Cargo.toml` вверх по дереву или `cargo metadata`).
+  Больше не требует явного `light dev <name>`.
+- **`light dev` feature path**: `--features light/dev-mode`
+  (crate-qualified), работает без `[features] dev-mode` в
+  Cargo.toml пользователя.
+- **`light init`**: генерирует template-based skeleton
+  (`templates/app.html`, `#[template]` + `#[proxy]`,
+  `[features] dev-mode = ["light/dev-mode"]` в Cargo.toml).
+- **Layout centering**: `align-items != Start` больше не
+  stretch'ит child по cross-оси — align pass центрирует
+  auto-sized child. `<div align-items="center">` центрирует
+  потомков по горизонтали (Column) / вертикали (Row).
+- **Debug eprintlns**: `[save]`, `[moved]`, `[apply]`,
+  `runtime-templates DISABLED` — только под
+  `#[cfg(feature = "devtools")]`. В `cargo run` без devtools —
+  тишина.
+- Удалён устаревший debug println "light dev: запускаю ...".
+
 ## [0.15.2] - 2026-11-08
 
 ### Fixed
