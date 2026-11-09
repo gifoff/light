@@ -1,0 +1,15 @@
+<window title="Invalid align-items check" width="480" height="320" resizable="false">
+    <titlebar background="#0F172A" height="34" padding-left="12" padding-right="8" align-items="center">
+        <div direction="horizontal" align-items="center" font-color="#F8FAFC" font-size="16">Invalid align-items check</div>
+        <div direction="horizontal" align-items="center" position-x="right">
+            <button @click="close()" type="button" width="30" height="24" font-size="14" background="#0F172A" border-color="#0F172A" font-color="#F8FAFC">x</button>
+        </div>
+    </titlebar>
+    <div direction="vertical" padding="18" background="#F8FAFC" :align-items="align_value">
+        <h1>Hello, Light!</h1>
+        <div font-size="13" font-color="#64748B">
+            Если вы видите это окно — приложение не упало:
+            динамическое значение align-items="ыефке" обработано как warning + 'start'.
+        </div>
+    </div>
+</window>

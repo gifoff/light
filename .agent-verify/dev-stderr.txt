@@ -1,0 +1,110 @@
+light dev: запускаю `cargo run --features dev-mode --features devtools`
+light dev: agent session started → "2026-11-09_15-58-53_daefc"
+light dev: workspace_root = "C:\\dev\\rust_projects\\light\\.agent-verify\\invalid-align"
+light dev: build_target = "C:\\dev\\rust_projects\\light\\.agent-verify\\invalid-align\\target\\hot-build", run_dir = "C:\\dev\\rust_projects\\light\\.agent-verify\\invalid-align\\target\\hot-run"
+light dev: framework version changed (? → 0.16.2) → hot-build cache invalidated
+⚠ light dev: installed CLI version 0.15.5 differs from project 0.16.2. Run `cargo install --path crates/light-cli`
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling windows-link v0.2.1
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling windows_x86_64_msvc v0.52.6
+   Compiling simd-adler32 v0.3.10
+   Compiling windows-strings v0.5.1
+   Compiling windows-result v0.4.1
+   Compiling windows-threading v0.2.1
+   Compiling adler2 v2.0.1
+   Compiling foldhash v0.2.0
+   Compiling crc32fast v1.5.4
+   Compiling cfg_aliases v0.2.2
+   Compiling tracing-core v0.1.36
+   Compiling pin-project-lite v0.2.17
+   Compiling winit v0.30.13
+   Compiling hashbrown v0.17.1
+   Compiling windows-targets v0.52.6
+   Compiling zmij v1.0.23
+   Compiling raw-window-handle v0.6.2
+   Compiling cfg-if v1.0.5
+   Compiling tracing v0.1.44
+   Compiling windows-sys v0.52.0
+   Compiling miniz_oxide v0.9.1
+   Compiling unicode-segmentation v1.13.3
+   Compiling static_assertions v1.1.0
+   Compiling syn v2.0.119
+   Compiling syn v3.0.10
+   Compiling ttf-parser v0.25.1
+   Compiling serde_json v1.0.154
+   Compiling cursor-icon v1.2.0
+   Compiling smol_str v0.2.2
+   Compiling thiserror v2.0.21
+   Compiling bitflags v2.13.2
+   Compiling dpi v0.1.2
+   Compiling flate2 v1.1.11
+   Compiling miniz_oxide v0.8.9
+   Compiling fdeflate v0.3.7
+   Compiling windows-sys v0.61.2
+   Compiling uuid v1.29.2
+   Compiling bitflags v1.3.2
+   Compiling ab_glyph_rasterizer v0.1.10
+   Compiling memchr v2.8.3
+   Compiling light-fw-html v0.16.2 (C:\dev\rust_projects\light\crates\light-html)
+   Compiling owned_ttf_parser v0.25.1
+   Compiling itoa v1.0.19
+   Compiling ab_glyph v0.2.32
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling softbuffer v0.4.8
+   Compiling png v0.17.16
+   Compiling base64 v0.22.1
+   Compiling windows-interface v0.59.3
+   Compiling windows-implement v0.60.2
+   Compiling enumn v0.1.14
+   Compiling light-fw-macros v0.16.2 (C:\dev\rust_projects\light\crates\light-macros)
+   Compiling windows-core v0.62.2
+   Compiling windows-numerics v0.3.1
+   Compiling windows-collections v0.3.2
+   Compiling windows-future v0.3.2
+   Compiling accesskit v0.25.2
+   Compiling windows v0.62.2
+   Compiling accesskit_consumer v0.39.2
+   Compiling accesskit_windows v0.35.2
+   Compiling accesskit_winit v0.34.2
+   Compiling light-fw-core v0.16.2 (C:\dev\rust_projects\light\crates\light-core)
+   Compiling light v0.16.2 (C:\dev\rust_projects\light\crates\light)
+   Compiling invalid-align v0.1.0 (C:\dev\rust_projects\light\.agent-verify\invalid-align)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 38.58s
+light dev: spawning "C:\\dev\\rust_projects\\light\\.agent-verify\\invalid-align\\target\\hot-run\\invalid-align-1794239972561.exe" (build "C:\\dev\\rust_projects\\light\\.agent-verify\\invalid-align\\target\\hot-build\\debug\\invalid-align.exe")
+light dev: state file for child: "C:\\dev\\rust_projects\\light\\.agent-verify\\invalid-align\\.light\\state.json"
+light dev: window file for child: "C:\\dev\\rust_projects\\light\\.agent-verify\\invalid-align\\.light\\window.json"
+light dev: watching ["C:\\dev\\rust_projects\\light\\.agent-verify\\invalid-align\\src", "C:\\dev\\rlight: runtime parse failed at "div" (attr ":align-itemsust_pr"="align_value"oject)
+s\light: runtime parse failed at "div" (attr ":align-items"="\lighalign_value")
+t\\.awarning: invalid align-items value: "ыефке"gent, using 'start'
+-verify\\invalight: loaded fallback font "Clid-:\\Waligindon\\tws\\Femplaotes"n, "C:ts\\\\deseguv\\riemju.ttfst_pr"ojec (seguiemj.ttf)
+ts\\liglight: loaded fallback font "hC:\\t\\.aWindogentws\\F-veriofy\\innts\\svalidegoe-uisaligl.ttn\\Caf" (segoeuisl.ttfrgo.)
+toml"]
+light: cold start — state.json not applied
+light: runtime parse failed at "div" (attr ":align-items"="align_value")
+light: runtime parse failed at "div" (attr ":align-items"="align_value")
+warning: invalid align-items value: "ыефке", using 'start'
+light: cold start — geometry not restored
+light: runtime parse failed at "div" (attr ":align-items"="align_value")
+light: runtime parse failed at "div" (attr ":align-items"="align_value")
+warning: invalid align-items value: "ыефке", using 'start'
+[save] source=last_applied, geom=(104, 104, 480x320)
+light: runtime parse failed at "div" (attr ":align-items"="align_value")
+light: runtime parse failed at "div" (attr ":align-items"="align_value")
+warning: invalid align-items value: "ыефке", using 'start'
+[save] source=last_applied, geom=(104, 104, 480x320)
+light: runtime parse failed at "div" (attr ":align-items"="align_value")
+light: runtime parse failed at "div" (attr ":align-items"="align_value")
+warning: invalid align-items value: "ыефке", using 'start'
+[save] source=last_applied, geom=(104, 104, 480x320)
+light: runtime parse failed at "div" (attr ":align-items"="align_value")
+light: runtime parse failed at "div" (attr ":align-items"="align_value")
+warning: invalid align-items value: "ыефке", using 'start'
+light: runtime parse failed at "div" (attr ":align-items"="align_value")
+light: runtime parse failed at "div" (attr ":align-items"="align_value")
+warning: invalid align-items value: "ыефке", using 'start'
+light dev: окно игнорирования снято (дедлайн 30s истёк), очередь pending (HTML=false, Source=false)
