@@ -133,6 +133,21 @@ use crate::{config::Config, error::AppError};
 - Публичные элементы должны иметь doc-комментарии (`///`).
 - Примеры в doc-комментариях должны компилироваться (проверяются через `cargo test`).
 
+## Testing UI with DevTools (как агенту видеть и трогать UI)
+
+Light предоставляет headless-инструменты для автономного тестирования UI:
+
+1. **Запуск с сессией:** `light dev --agent` — создаёт `.light/agent-sessions/<id>/` и пишет каждый вызов `light devtools` в `actions.jsonl`.
+2. **Скриншот:** `light devtools shot --path shots` — сохраняет PNG в `shots/`. Без `--path` выводит base64.
+3. **Поиск элемента:** `light devtools find --tag button --text "+1"` → `{key, tag, rect}`.
+4. **Клик:** `light devtools click --key 0.0.0`.
+5. **Ввод:** `light devtools type --key 0.0.1 "Hello"`.
+6. **Клавиша:** `light devtools key --key 0.0.1 Enter`.
+7. **Состояние:** `light devtools state` (JSON) и `light devtools tree`.
+8. **Завершение:** `light devtools session stop` → генерирует `summary.md`.
+
+**Агент обязан:** после тестирования приложить `summary.md` и скриншоты из `screenshots/` к отчёту.
+
 ## Запрещённые практики
 
 - ❌ `unwrap()` / `expect()` в production-коде без крайней необходимости.
