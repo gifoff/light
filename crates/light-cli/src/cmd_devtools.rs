@@ -187,20 +187,36 @@ pub fn run(args: DevtoolsArgs) -> anyhow::Result<i32> {
     // shot: при --path сохраняем PNG в пользовательский каталог; в активной
     // сессии дополнительно копируем в screenshots/ и логируем в actions.jsonl.
     if req.cmd == "shot" {
+        // Баг 3 (ТЗ 0.16.1): проверяем ответ ДО записи в сессию и сохранения
+        // PNG. Иначе `session::save_screenshot` упадёт на decode() с «Invalid
+        // symbol» (или ошибками вида `SessionError::Decode`) на ответе, который
+        // не является изображением (например, `unknown command` устаревшего
+        // сервера) — до сообщения ниже просто не дойдёт.
+        if !light_fw_cli_core::devtools::is_screenshot_response(&raw) {
+            // Логируем фактическую команду (с ошибкой) в actions.jsonl, чтобы
+            // журнал отражал реальный ход, и выдаём точное сообщение ТЗ.
+            log_action(&cwd, &req, &raw)?;
+            eprintln!("{}", light_fw_cli_core::devtools::shot_error_message(&raw));
+            return Ok(1);
+        }
         if let Some(rel) = light_fw_cli_core::session::save_screenshot(&cwd, &raw, "shot")? {
             log_shot_with_screenshot(&cwd, &rel, &raw)?;
         } else {
             log_action(&cwd, &req, &raw)?;
         }
         if let Some(path) = &req.save_path {
+            // Баг 2 (ТЗ 0.16.1): путь-каталог → автоимя `<ts>.png`;
+            // ошибка `os error 5` при существующей папке исключена.
             let p = save_png(&raw, path)?;
             println!("{}", p.display());
-        } else if json {
-            println!("{raw}");
         } else {
+            // Баг 1 (ТЗ 0.16.1): выводим СЫРОЙ base64 (без префикса
+            // `base64:` и без заглушки), чтобы агент мог перенаправить его
+            // в файл: `light devtools shot | xargs -I{} base64 -d > out.png`.
             let b64 = raw.strip_prefix("base64:").unwrap_or(&raw);
-            let n = b64.len();
-            println!("screenshot: {n} base64 chars (~{} KB)", n * 3 / 4 / 1024);
+            print!("{b64}");
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
         }
         return Ok(0);
     }

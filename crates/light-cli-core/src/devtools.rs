@@ -101,26 +101,110 @@ pub fn send_request(
     Ok(line)
 }
 
+/// Путь к целевому PNG: если указан только каталог (существующая директория
+/// или имя без расширения), добавляем `<ts>.png`; иначе путь как есть.
+fn resolve_png_path(path: &std::path::Path) -> std::path::PathBuf {
+    if path.is_dir() {
+        let ts = format_unix_now();
+        path.join(format!("{ts}.png"))
+    } else if path.extension().is_none() {
+        // Имя без расширения → считаем каталогом: `<name>_<ts>.png` внутри.
+        // Для `.` / `` имя заменяем на `screenshot`.
+        let base = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .filter(|n| !n.is_empty() && *n != ".")
+            .map(String::from)
+            .unwrap_or_else(|| "screenshot".to_owned());
+        path.join(format!("{base}_{}.png", format_unix_now()))
+    } else {
+        path.to_path_buf()
+    }
+}
+
+/// Локальная метка времени для имени файла (YYYYMMDD_HHMMSS), без зависимостей.
+fn format_unix_now() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let days = (secs / 86400) as i64;
+    let sod = (secs % 86400) as u32;
+    let (y, mo, day) = civil_from_days_local(days);
+    format!(
+        "{y:04}{mo:02}{day:02}_{:02}{:02}{:02}",
+        sod / 3600,
+        (sod % 3600) / 60,
+        sod % 60
+    )
+}
+
+/// Алгоритм «civil from days» (Howard Hinnant) — копия из session.rs, чтобы
+/// не тянуть приватную функцию.
+fn civil_from_days_local(z: i64) -> (i64, u32, u32) {
+    let z = z + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let mo = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let y = if mo <= 2 { y + 1 } else { y };
+    (y, mo, d)
+}
+
+/// Проверка ответа сервера: если он НЕ похож на скриншот (`base64:`), CLI
+/// обязан вернуть читаемую ошибку, а не падать с `Invalid symbol` при
+/// декодировании (баг 3 ТЗ 0.16.1).
+pub fn is_screenshot_response(raw: &str) -> bool {
+    raw.starts_with("base64:")
+}
+
+/// Сообщение об ошибке, когда сервер не вернул изображение (узнаётся по
+/// строкам `unknown command`, `error: …`, `timeout` и т.п.).
+pub fn shot_error_message(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed == "unknown command" {
+        "Сервер не поддерживает команду SHOT (возможно, устаревшая версия приложения)".to_owned()
+    } else if trimmed.starts_with("error:") || trimmed == "timeout" {
+        format!("Ошибка от сервера DevTools: {trimmed}")
+    } else {
+        format!("Ожидался ответ `base64:<png>`, получен: `{trimmed}`")
+    }
+}
+
 /// Декодирует base64-PNG (ответ `base64:<data>`) и сохраняет его в файл.
 /// Возвращает путь к сохранённому файлу.
+///
+/// Баг 2 (ТЗ 0.16.1): если `--path` указывает на существующий каталог (или
+/// имя без расширения), автоматически дописываем `_<ts>.png`. Родительский
+/// каталог создаётся, если отсутствует. Ошибка `os error 5` больше не
+/// возникает, если папка существует и доступна на запись.
 pub fn save_png(
     base64_payload: &str,
     path: &std::path::Path,
 ) -> std::io::Result<std::path::PathBuf> {
     use base64::Engine;
+    if !is_screenshot_response(base64_payload) {
+        return Err(std::io::Error::other(shot_error_message(base64_payload)));
+    }
+    let target = resolve_png_path(path);
     let b64 = base64_payload
         .strip_prefix("base64:")
         .unwrap_or(base64_payload);
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(b64)
         .map_err(|e| std::io::Error::other(format!("base64: {e}")))?;
-    if let Some(parent) = path.parent()
+    if let Some(parent) = target.parent()
         && !parent.as_os_str().is_empty()
     {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(path, &bytes)?;
-    Ok(path.to_path_buf())
+    std::fs::write(&target, &bytes)?;
+    Ok(target)
 }
 
 /// Разбирает флаг `--attr k=v` в пару (ключ, значение).
@@ -182,5 +266,83 @@ mod tests {
             ("class".to_owned(), "btn".to_owned())
         );
         assert!(parse_attr("no-equals").is_err());
+    }
+
+    /// ТЗ 0.16.1, баг 3: ответ сервера «не скриншот» детектируется.
+    #[test]
+    fn shot_error_detection() {
+        assert!(is_screenshot_response("base64:AAAA"));
+        assert!(!is_screenshot_response("unknown command"));
+        assert!(!is_screenshot_response("timeout"));
+        assert!(!is_screenshot_response("error: no frame"));
+        let m = shot_error_message("unknown command");
+        assert!(m.contains("SHOT"), "{m}");
+        assert!(m.contains("устаревша"), "{m}");
+    }
+
+    /// ТЗ 0.16.1, баг 2: путь-каталог получает имя `<ts>.png`.
+    #[test]
+    fn resolve_png_path_dir_gets_timestamped_name() {
+        let base = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let dir = base.join(format!("_resolve_dir_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create");
+        let p = resolve_png_path(&dir);
+        assert!(p.starts_with(&dir), "{}", p.display());
+        assert!(
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .ends_with(".png")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// ТЗ 0.16.1, баг 2: имя без расширения → `<name>_<ts>.png` внутри.
+    #[test]
+    fn resolve_png_path_no_extension() {
+        let p = resolve_png_path(std::path::Path::new("shots/shots"));
+        assert!(
+            p.starts_with(std::path::Path::new("shots/shots")),
+            "{}",
+            p.display()
+        );
+        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        assert!(name.ends_with(".png"), "{name}");
+        assert!(name.starts_with("shots_"), "{name}");
+    }
+
+    /// ТЗ 0.16.1, баг 2: путь с расширением `.png` возвращается как есть.
+    #[test]
+    fn resolve_png_path_with_png_ext() {
+        let p = resolve_png_path(std::path::Path::new("out/frame.png"));
+        assert_eq!(p, std::path::PathBuf::from("out/frame.png"));
+    }
+
+    /// ТЗ 0.16.1, баг 2 + 3: `save_png` в каталог создаёт файл и не падает;
+    /// неизвестная команда → читаемая ошибка, не `Invalid symbol`.
+    #[test]
+    fn save_png_writes_file_and_rejects_unknown_command() {
+        use base64::Engine;
+        // Уникальный каталог рядом с исполняемым файлом — обходим `C:\Temp`
+        // (в этой среде на него нет прав записи, os error 5).
+        let dir = std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+            .join(format!("_save_png_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create dir");
+        // Ложные "PNG" данные (не настоящий PNG) — проверяется только round-trip.
+        let png_bytes: Vec<u8> = vec![137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4];
+        let b64 = format!(
+            "base64:{}",
+            base64::engine::general_purpose::STANDARD.encode(&png_bytes)
+        );
+        let p = save_png(&b64, &dir).expect("save");
+        assert!(p.is_file(), "{} должен существовать", p.display());
+        assert_eq!(std::fs::read(&p).unwrap(), png_bytes);
+        // Баг 3: неизвестная команда → читаемая ошибка, не Invalid symbol.
+        let err = save_png("unknown command", &dir).expect_err("должен быть error");
+        assert!(err.to_string().contains("SHOT"), "{}", err);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

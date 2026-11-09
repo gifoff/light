@@ -1250,8 +1250,10 @@ fn run_inner(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     // Блокирующий `cargo build` в отдельный target-dir. При ошибке — сразу
     // exit 1 (старого процесса нет, «оставлять живым» нечего).
     {
-        eprintln!(
-            "light dev: warm-up build (cargo build --target-dir {:?})…",
+        // ТЗ 0.16.1, задача 4: статус на stdout до и после сборки, чтобы
+        // агент не думал, что «зависло» (раньше выходил только stderr).
+        println!(
+            "light dev: building (cargo build) — target {:?}…",
             build_target
         );
         let mut cmd = Command::new("cargo");
@@ -1264,7 +1266,7 @@ fn run_inner(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
             .stderr(Stdio::inherit());
         let status = cmd.status();
         match status {
-            Ok(s) if s.success() => eprintln!("light dev: warm-up build succeeded"),
+            Ok(s) if s.success() => println!("light dev: build done, launching app…"),
             Ok(s) => {
                 eprintln!(
                     "light dev: warm-up build FAILED (exit {:?}) — exit 1",

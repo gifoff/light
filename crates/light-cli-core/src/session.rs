@@ -17,6 +17,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde_json::Value;
+
 /// Имя маркера активной сессии.
 const CURRENT_MARKER: &str = "current";
 /// Подкаталоги внутри каждой сессии.
@@ -53,6 +55,29 @@ fn sessions_dir(cwd: &Path) -> PathBuf {
 
 fn current_marker_path(cwd: &Path) -> PathBuf {
     sessions_dir(cwd).join(CURRENT_MARKER)
+}
+
+/// Метаданные сессии (`state/session.json`): время начала/окончания.
+///
+/// ТЗ 0.16.1, задача 3: `started_at` фиксируется при `Session::start`,
+/// `ended_at` — при `stop()`. Это позволяет `summary.md` показывать даты даже
+/// для пустых/аварийно завершённых сессий (раньше обе строки были `?`).
+pub fn read_session_meta(cwd: &Path, id: &str) -> Option<Value> {
+    let p = sessions_dir(cwd)
+        .join(id)
+        .join(STATE_DIR)
+        .join("session.json");
+    let s = fs::read_to_string(&p).ok()?;
+    serde_json::from_str(&s).ok()
+}
+
+fn write_session_meta(cwd: &Path, id: &str, meta: &Value) {
+    let dir = sessions_dir(cwd).join(id).join(STATE_DIR);
+    let _ = fs::create_dir_all(&dir);
+    let _ = fs::write(
+        dir.join("session.json"),
+        serde_json::to_string(meta).unwrap_or_default(),
+    );
 }
 
 /// ID активной сессии (содержимое файла `current`), если сессия запущена.
@@ -98,6 +123,15 @@ pub fn start_session(cwd: &Path) -> Result<String> {
     let mut actions = File::create(session_dir.join(ACTIONS_FILE))?;
     actions.flush()?;
     fs::write(current_marker_path(cwd), &id)?;
+    // ТЗ 0.16.1, задача 3: сохраняем точное время начала сессии в
+    // `state/session.json`, чтобы `summary.md` имел `Started:` даже при
+    // пустых/аварийных сессиях (раньше писалось `?`).
+    let started_at = now_rfc3339();
+    let meta = serde_json::json!({ "started_at": started_at, "ended_at": Value::Null });
+    fs::write(
+        session_dir.join("state").join("session.json"),
+        serde_json::to_string(&meta)?,
+    )?;
     Ok(id)
 }
 
@@ -128,14 +162,28 @@ pub fn stop_session(cwd: &Path, id: &str) -> Result<PathBuf> {
             entries.push(v);
         }
     }
-    let started = entries
-        .first()
-        .and_then(|v| v.get("ts").and_then(|t| t.as_str()))
-        .unwrap_or("?");
-    let ended = entries
-        .last()
-        .and_then(|v| v.get("ts").and_then(|t| t.as_str()))
-        .unwrap_or(started);
+    // ТЗ 0.16.1, задача 3: `Started:`/`Ended:` — из метаданных сессии
+    // (`state/session.json`), а не из первого/последнего действия. Так даты
+    // есть и у пустых сессий. `Started:` берётся из `started_at`; `Ended:` —
+    // текущее время (только здесь вызывается `stop()`). Если метаданные
+    // отсутствуют (например, сессия создана старой версией) — `?`.
+    let now = now_rfc3339();
+    let meta = read_session_meta(cwd, id).unwrap_or(Value::Null);
+    let started = meta
+        .get("started_at")
+        .and_then(|t| t.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("?")
+        .to_owned();
+    let ended = now.clone();
+    // Фиксируем `ended_at` в метаданных на случай повторного чтения.
+    let mut new_meta = meta.clone();
+    if let Value::Object(m) = &mut new_meta {
+        m.insert("ended_at".into(), Value::String(ended.clone()));
+    } else {
+        new_meta = serde_json::json!({ "started_at": started.clone(), "ended_at": ended.clone() });
+    }
+    write_session_meta(cwd, id, &new_meta);
     let screenshots = entries
         .iter()
         .filter_map(|e| e.get("screenshot").and_then(|s| s.as_str()))
@@ -264,4 +312,51 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let mo = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
     let y = if mo <= 2 { y + 1 } else { y };
     (y, mo, d)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Каталог под сессию рядом с исполняемым файлом (обходим `C:\Temp`, на
+    /// который в этой среде нет прав записи — os error 5).
+    fn scratch_dir() -> PathBuf {
+        let base = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        base.join(format!("_session_test_{}", std::process::id()))
+    }
+
+    /// ТЗ 0.16.1, задача 3: у пустой сессии `Started:`/`Ended:` имеют даты
+    /// (из метаданных), а не `?`; после `stop()` `ended_at` фиксируется.
+    #[test]
+    fn empty_session_has_timestamps_in_summary() {
+        let dir = scratch_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        let id = start_session(&dir).expect("start");
+        // До stop(): в метаданных `started_at`, `ended_at: null`.
+        let meta_before = read_session_meta(&dir, &id).expect("meta");
+        assert!(
+            meta_before
+                .get("started_at")
+                .and_then(|v| v.as_str())
+                .is_some(),
+            "started_at задан"
+        );
+        assert!(meta_before.get("ended_at").is_none() || meta_before["ended_at"].is_null());
+        let _summary = stop_session(&dir, &id).expect("stop");
+        let summary = std::fs::read_to_string(sessions_dir(&dir).join(&id).join(SUMMARY_FILE))
+            .expect("summary");
+        // Обе строки содержат дату (RFC3339), а не "?".
+        assert!(!summary.contains("Started:** ?"), "Started: {summary}");
+        assert!(!summary.contains("Ended:** ?"), "Ended: {summary}");
+        // После stop(): `ended_at` — строка с датой.
+        let meta_after = read_session_meta(&dir, &id).expect("meta after");
+        assert!(
+            meta_after
+                .get("ended_at")
+                .and_then(|v| v.as_str())
+                .is_some(),
+            "ended_at задан после stop"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

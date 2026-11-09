@@ -317,6 +317,10 @@ pub fn cargo_toml(name: &str, components: &[InitComponent]) -> String {
     // Фича `dev-mode` — алиас для `light/dev-mode` (runtime-templates, hot
     // reload). Необходима для `light dev` и `.cargo/config.toml`.
     text.push_str("\n[features]\ndev-mode = [\"light/dev-mode\"]\n");
+    // ТЗ 0.16.1, задача 2: пустой `[workspace]` в самом конце — чтобы проект
+    // не «попадал» в чужой workspace, если создан внутри папки с Cargo.toml
+    // («current package believes it's in a workspace when it's not»).
+    text.push_str("\n[workspace]\n");
     text
 }
 
@@ -609,6 +613,8 @@ mod tests {
         // Фича `dev-mode` всегда присутствует (алиас `light/dev-mode`).
         assert!(text.contains("[features]"), "{text}");
         assert!(text.contains("dev-mode = [\"light/dev-mode\"]"), "{text}");
+        // ТЗ 0.16.1: в самом конце — пустой `[workspace]`.
+        assert!(text.trim_end().ends_with("[workspace]"), "{text}");
     }
 
     #[test]
