@@ -167,6 +167,15 @@ fn button_extra_padding(vnode: &VElement, style: &Style) -> Edges {
     }
 }
 
+/// Заголовок `h1`–`h5` — это контейнер-колонка с тегом `h1`–`h5`.
+/// Его ширина остаётся `auto` (max-content), поэтому при родителе с
+/// `align-items != start` (`flow.stretch == None`) колонка получает базовую
+/// ширину `0`, и внутренний текст, растянутый на `100%` родительской
+/// контентной ширины, обнуляется вместе с ним.
+fn is_heading(vnode: &VElement) -> bool {
+    matches!(vnode.kind, NodeKind::Column) && matches!(vnode.tag, "h1" | "h2" | "h3" | "h4" | "h5")
+}
+
 /// Ось `cross`-растяжения потомков в потоке родителя.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Axis {
@@ -964,10 +973,27 @@ impl Layout {
             NodeKind::Column | NodeKind::Row | NodeKind::TitleBar | NodeKind::Window => {
                 let index = self.push(vnode, Rect::default(), parent);
                 let horizontal = matches!(vnode.kind, NodeKind::Row | NodeKind::TitleBar);
+                // Заголовок `h1`–`h5` (`Column` с теком-меткой) при `align-items !=
+                // start` родителя получает нулевую базу ширины и его внутренний текст
+                // (`width=100%`) обнуляется. Как у кнопки: авторазмер по max-content —
+                // детей раскладываем в безлимитной ширине и считаем её по содержимому.
+                let is_head = !root && is_heading(vnode) && matches!(style.width, Size::Auto);
                 // Контентная область, которую узел отдаёт детям под проценты:
                 // собственный определённый размер минус внутренние отступы.
-                let mut cursor_x = child_content.left;
-                let mut cursor_y = child_content.top;
+                // Для заголовка с авто-шириной — ширина не ограничена, чтобы внутренний
+                // `width=100%` текст измерялся при intrinsic-размере (не `Infinity`).
+                let measure_content = if is_head {
+                    ContentBox {
+                        left: flow_x + inset.left,
+                        top: flow_y + inset.top,
+                        width: f32::INFINITY,
+                        height: f32::INFINITY,
+                    }
+                } else {
+                    child_content
+                };
+                let mut cursor_x = measure_content.left;
+                let mut cursor_y = measure_content.top;
                 let mut content_w = 0.0_f32;
                 let mut content_h = 0.0_f32;
                 let mut child_sizes = Vec::with_capacity(vnode.children.len());
@@ -977,18 +1003,48 @@ impl Layout {
                         continue;
                     }
                     any_flow = true;
-                    let (child_w, child_h) = self.place(
-                        child,
-                        Point::new(cursor_x, cursor_y),
-                        child_flow,
-                        Some(index),
-                        metrics,
-                        Inherited {
-                            size: font_size,
-                            color: font_color,
-                            white_space,
-                        },
-                    );
+                    // Для заголовка: копируем ребёнка и сбрасываем `width` в `Auto`,
+                    // чтобы внутренний текст (`width=100%`) измерялся при своей
+                    // intrinsic-ширине, а не растягивался до `Infinity`. Копия
+                    // временная: в дереве остаётся исходный `Percent(100%)`, который
+                    // мы растянем на итоговую ширину в блоке ниже.
+                    let (child_w, child_h) = if is_head {
+                        let mut copy = child.clone();
+                        copy.style.width = Size::Auto;
+                        let ctx = FlowContext {
+                            content: measure_content,
+                            width_known: false,
+                            height_known: true,
+                            stretch: None,
+                            forced_w: None,
+                            forced_h: None,
+                        };
+                        self.place(
+                            &copy,
+                            Point::new(cursor_x, cursor_y),
+                            ctx,
+                            Some(index),
+                            metrics,
+                            Inherited {
+                                size: font_size,
+                                color: font_color,
+                                white_space,
+                            },
+                        )
+                    } else {
+                        self.place(
+                            child,
+                            Point::new(cursor_x, cursor_y),
+                            child_flow,
+                            Some(index),
+                            metrics,
+                            Inherited {
+                                size: font_size,
+                                color: font_color,
+                                white_space,
+                            },
+                        )
+                    };
                     child_sizes.push((child_w, child_h));
                     if horizontal {
                         cursor_x += child_w + SPACING;
@@ -1105,13 +1161,26 @@ impl Layout {
                         }
                     }
                 }
-                let w = flow.forced_w.unwrap_or(if root {
-                    avail_w
-                } else if stretch_w {
-                    style.resolve_width(avail_w, avail_w)
+                // Заголовок `h1`–`h5` с авто-шириной: ширина по max-content
+                // (аналог кнопки) — `content_w` уже посчитан по intrinsic-размерам
+                // детей, выложенных в безлимитной ширине выше. Явная ширина или
+                // процент — обычный путь; у заголовка они совпадают (100% → тот же
+                // max-content, потому что дети измерялись в Infinity).
+                let w = if is_head {
+                    if let Some(fw) = flow.forced_w {
+                        fw
+                    } else {
+                        content_w + inset.horizontal()
+                    }
                 } else {
-                    style.resolve_width(content_w + inset.horizontal(), avail_w)
-                });
+                    flow.forced_w.unwrap_or(if root {
+                        avail_w
+                    } else if stretch_w {
+                        style.resolve_width(avail_w, avail_w)
+                    } else {
+                        style.resolve_width(content_w + inset.horizontal(), avail_w)
+                    })
+                };
                 let h = flow.forced_h.unwrap_or(if root {
                     avail_h
                 } else if stretch_h {
@@ -1121,6 +1190,26 @@ impl Layout {
                 });
                 self.nodes[index].rect = Rect::new(flow_x, flow_y, w, h);
                 let content = ContentBox::from_rect(self.nodes[index].rect, inset);
+                if is_head {
+                    // Дети заголовка выкладывались в безлимитной content box на
+                    // нулевой базе; пересаживаем их целиком в итоговый (расширенный)
+                    // content box: позиция — по content box, ширина `width=100%`
+                    // текста растягивается на его `w`. Аналог центрирования кнопки.
+                    let dx = content.left - measure_content.left;
+                    let dy = content.top - measure_content.top;
+                    for ci in self.nodes[index].children.clone() {
+                        let lnode = &mut self.nodes[ci];
+                        lnode.rect.x += dx;
+                        lnode.rect.y += dy;
+                        // Прямой текст заголовка с `width=100%` заполняет ширину
+                        // content box; остальные размеры не трогаем.
+                        if matches!(lnode.kind, NodeKind::Text { .. })
+                            && matches!(lnode.style.width, Size::Percent(_))
+                        {
+                            lnode.rect.w = (content.width).max(0.0);
+                        }
+                    }
+                }
                 // В горизонтальном контейнере с высотой по содержимому дети с
                 // `height:auto` растягиваются на итоговую высоту после того,
                 // как она стала известна (аналог `align-items: stretch`).

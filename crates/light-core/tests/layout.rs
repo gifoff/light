@@ -1491,3 +1491,133 @@ fn image_explicit_size_and_padding() {
     assert_eq!(layout.rect_of("pad").unwrap().w, 100.0);
     assert_eq!(layout.rect_of("pad").unwrap().h, 55.0);
 }
+
+/// Заголовок `h1` внутри контейнера с `align-items=center` (non-stretch)
+/// должен получить положительную ширину: его внутренний текст — `width=100%`
+/// родительской контентной ширины — не может обнуляться вместе с нулевой базой
+/// колонки. Тестовая разметка зеркалит `light init` (480×320, padding 16,
+/// justify/align center): `<window><div ...><h1>Hello, Light!</h1></div></window>`.
+#[test]
+fn heading_h1_gets_positive_width_under_align_items_center() {
+    // "Hello, Light!" = 13 знаков; StubMetrics: 13 * 8 = 104 px, высота 16 px.
+    let mut inner = text("t", "Hello, Light!");
+    inner.style.width = Size::Percent(100.0); // как в runtime::build_children
+    let mut h1 = column("h1", vec![inner]);
+    h1 = h1.with_tag("h1"); // заголовок (tag h1)
+    // колонка h1: width=Auto (max-content), height=Auto
+    // `direction="vertical"` → NodeKind::Column (см. runtime::build_element)
+    let mut div = column("div", vec![h1]);
+    div.style = Style {
+        width: Size::Percent(100.0),
+        height: Size::Percent(100.0),
+        justify_content: Align::Center,
+        align_items: Align::Center,
+        padding: Edges::all(16.0),
+        ..Style::default()
+    };
+    let window = VElement::container("win", NodeKind::Window, vec![div]);
+    let layout = Layout::build(&window, (480.0, 320.0), &StubMetrics);
+
+    let h1_rect = layout.rect_of("h1").expect("h1 node");
+    let t_rect = layout.rect_of("t").expect("text node");
+    assert!(h1_rect.w > 0.0, "h1: ширина > 0, получено {}", h1_rect.w);
+    assert!(t_rect.w > 0.0, "текст: ширина > 0, получено {}", t_rect.w);
+    // Заголовок по max-content: 104 + padding 0 (у h1 нет своего padding).
+    assert!(
+        (h1_rect.w - 104.0).abs() < 0.5,
+        "h1 w ≈ 104, получено {}",
+        h1_rect.w
+    );
+    // Внутренний текст растягивается на 100% content box h1.
+    assert!(
+        (t_rect.w - 104.0).abs() < 0.5,
+        "текст w = 100% h1, получено {}",
+        t_rect.w
+    );
+    // Вертикально по центру окна: y = (320 - 16 - 16) / 2 = 144 (padding не влияет).
+    // h1 центрируется по vertical axis: y ≈ 144.
+    assert!(
+        (h1_rect.y - (320.0 - h1_rect.h) / 2.0).abs() < 1.0,
+        "h1 vertically centered, y={}",
+        h1_rect.y
+    );
+}
+
+/// Тот же сценарий для всех пяти уровней заголовков h1–h5: каждый получает
+/// положительную ширину и не обнуляется под `align-items=center`.
+#[test]
+fn headings_h1_to_h5_all_get_positive_width_when_centered() {
+    for (tag, key, tkey) in [
+        ("h1", "hd1", "t1"),
+        ("h2", "hd2", "t2"),
+        ("h3", "hd3", "t3"),
+        ("h4", "hd4", "t4"),
+        ("h5", "hd5", "t5"),
+    ] {
+        let mut inner = text(tkey, "Привет"); // 6 зн. * 8 = 48 px
+        inner.style.width = Size::Percent(100.0);
+        let mut head = column(key, vec![inner]);
+        head = head.with_tag(tag);
+        let mut div = column("div", vec![head]);
+        div.style = Style {
+            width: Size::Percent(100.0),
+            height: Size::Percent(100.0),
+            justify_content: Align::Center,
+            align_items: Align::Center,
+            ..Style::default()
+        };
+        let window = VElement::container("win", NodeKind::Window, vec![div]);
+        let layout = Layout::build(&window, (200.0, 100.0), &StubMetrics);
+        let head_rect = layout.rect_of(key).unwrap_or_else(|| panic!("{tag} node not found"));
+        let t_rect = layout.rect_of(tkey).unwrap_or_else(|| panic!("text for {tag} not found"));
+        assert!(
+            head_rect.w > 0.0,
+            "{}: ширина > 0, получено {}",
+            tag,
+            head_rect.w
+        );
+        assert!(t_rect.w > 0.0, "{}: текст > 0, получено {}", tag, t_rect.w);
+        assert!(
+            (head_rect.w - 48.0).abs() < 0.5,
+            "{} w = 6*8 = 48, получено {}",
+            tag,
+            head_rect.w
+        );
+    }
+}
+
+/// Не-заголовок `<div>` с текстом и `align-items=center` **не** должен
+/// расширяться по max-content (только h1–h5): обычный div сохраняет прежнюю
+/// логику авторазмера. Это гарантирует, что фикс не «просачивается» на обычные
+/// колонки (требование 2.2 — clock-app с `<div font-size="32">` не ломается).
+#[test]
+fn plain_div_with_centered_text_is_not_max_content_sized() {
+    let inner = text("t", "Привет");
+    // Обычный div без тега: width=Auto, align-items=center.
+    let mut div = column("div", vec![inner]);
+    div.style = Style {
+        width: Size::Percent(100.0),
+        height: Size::Percent(100.0),
+        justify_content: Align::Center,
+        align_items: Align::Center,
+        font_size: Some(32.0),
+        ..Style::default()
+    };
+    let window = VElement::container("win", NodeKind::Window, vec![div]);
+    let layout = Layout::build(&window, (200.0, 100.0), &SizedMetrics);
+    let div_rect = layout.rect_of("div").unwrap();
+    // Размеченный text: 6 * 32 * 0.5 = 96 px (SizedMetrics).
+    // Div остаётся 100% родителя (stretch), а НЕ max-content (96+inset).
+    assert!(
+        (div_rect.w - 200.0).abs() < 0.5,
+        "div остаётся 100% родителя, получено {}",
+        div_rect.w
+    );
+    // Текст виден и центрирован по горизонтали.
+    let t_rect = layout.rect_of("t").unwrap();
+    assert!(t_rect.w > 0.0, "текст в div видим: w={}", t_rect.w);
+    assert!(
+        (div_rect.x + div_rect.w / 2.0 - t_rect.x - t_rect.w / 2.0).abs() < 1.0,
+        "текст по центру div"
+    );
+}
