@@ -164,12 +164,20 @@ light dev --agent                 # запуск приложения под ses
 light devtools tree               # JSON-дерево VDOM
 light devtools find --tag button --text "+1"   # найти элемент → ключ + rect
 light devtools click --key 0.0.0  # клик
-light devtools shot --path shots  # PNG-скриншот
+light devtools shot --path shots  # PNG → shots/<timestamp>.png
+light devtools shot > raw.b64     # base64 в stdout (для редиректа)
 ```
 
 Подробности — в [`docs/guide.md`](docs/guide.md#devtools) (разделы
 «CLI-обёртка `light devtools`» и «Автоматизированное тестирование с ИИ»)
 и в [AGENTS.md](AGENTS.md#testing-ui-with-devtools-как-агенту-видеть-и-трогать-ui).
+
+С версии 0.16.2 флаг `--path` у `shot` умеет автоматическое именование: при
+значении-каталоге (`shots`), имени без расширения или `.` файл получает имя
+`<YYYYMMDD_HHMMSS>.png`; точный путь с расширением (например, `out/frame.png`)
+используется как есть. Флаг `--json` для `shot` не имеет смысла: без `--path`
+stdout всегда содержит **сырой base64** (без префикса `base64:`) — его можно
+сразу перенаправить в файл (`base64 -d`, `certutil -decode`).
 
 ### Добавление компонентов
 

@@ -138,13 +138,14 @@ use crate::{config::Config, error::AppError};
 Light предоставляет headless-инструменты для автономного тестирования UI:
 
 1. **Запуск с сессией:** `light dev --agent` — создаёт `.light/agent-sessions/<id>/` и пишет каждый вызов `light devtools` в `actions.jsonl`.
-2. **Скриншот:** `light devtools shot --path shots` — сохраняет PNG в `shots/`. Без `--path` выводит base64.
+2. **Скриншот:** `light devtools shot --path shots` → `shots/<YYYYMMDD_HHMMSS>.png`: при `--path`, указывающем каталог (`shots`), имя без расширения или `.`, файл получает автоматическое имя `<ts>.png` внутри него; путь с расширением (например, `out/frame.png`) используется как есть. Без `--path` в stdout идёт **сырой base64** (без префикса `base64:`) — его можно сразу перенаправить: Windows — `light devtools shot | certutil -decode out.png` (через бинарный redirect), Unix — `light devtools shot > raw.b64 && base64 -d raw.b64 > out.png`. Если сервер не поддерживает команду (`unknown command`) или приложение не запущено, CLI печатает читаемую ошибку («Сервер не поддерживает команду SHOT…» / «Приложение не запущено…») и завершается с кодом 1 — падение с `Invalid symbol` исключено.
 3. **Поиск элемента:** `light devtools find --tag button --text "+1"` → `{key, tag, rect}`.
 4. **Клик:** `light devtools click --key 0.0.0`.
 5. **Ввод:** `light devtools type --key 0.0.1 "Hello"`.
 6. **Клавиша:** `light devtools key --key 0.0.1 Enter`.
 7. **Состояние:** `light devtools state` (JSON) и `light devtools tree`.
 8. **Завершение:** `light devtools session stop` → генерирует `summary.md`.
+9. **Центрирование заголовков:** `<h1>`–`<h5>` внутри центрированного блока (`align-items=center`) имеют ширину по контенту (max-content) и центрируются — до версии 0.16.2 такая ширина вычислялась как 0, и заголовки «исчезали». Проверка: `light devtools layout` — у узла `h*` должно быть положительное `w`, а его центр совпадать с центром родителя.
 
 **Агент обязан:** после тестирования приложить `summary.md` и скриншоты из `screenshots/` к отчёту.
 

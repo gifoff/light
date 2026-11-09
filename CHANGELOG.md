@@ -2,6 +2,26 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.16.2] - 2026-11-09
+
+### Fixed
+
+- **`layout`: заголовки `<h1>`–`<h5>` при `align-items=center`** — ширина
+  заголовка вычислялась как 0 (текст обрезался/«исчезал»). Теперь узлы `h*`
+  (Column с тегами h1–h5) измеряются в бесконечном контент-боксе и получают
+  max-content-ширину, после чего центрируются по cross-оси; дочерние
+  Percent-тексты растягиваются до фактической ширины. Реализация — в
+  контейнерной ветке раскладки (Button-arm model); добавлены 3 интеграционных
+  теста (`heading_h1_gets_positive_width_under_align_items_center`,
+  `headings_h1_to_h5_all_get_positive_width_when_centered`,
+  `plain_div_with_centered_text_is_not_max_content_sized`).
+- Документация синхронизирована с поведением 0.16.x DevTools: `AGENTS.md`
+  (раздел «Testing UI with DevTools» — автоименование `shot --path`, сырой
+  base64 в stdout, читаемые ошибки, новый пункт о центрировании заголовков),
+  `README.md` (раздел «Agent-friendly DevTools»), `docs/guide.md`
+  («Сохранение скриншота», реальные `Started`/`Ended` RFC3339 в `summary.md`,
+  «Заголовки h1–h5 при align-items»).
+
 ## [0.16.0] - 2026-11-08
 
 ### Added — Agentic DevTools

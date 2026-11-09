@@ -1568,8 +1568,12 @@ fn headings_h1_to_h5_all_get_positive_width_when_centered() {
         };
         let window = VElement::container("win", NodeKind::Window, vec![div]);
         let layout = Layout::build(&window, (200.0, 100.0), &StubMetrics);
-        let head_rect = layout.rect_of(key).unwrap_or_else(|| panic!("{tag} node not found"));
-        let t_rect = layout.rect_of(tkey).unwrap_or_else(|| panic!("text for {tag} not found"));
+        let head_rect = layout
+            .rect_of(key)
+            .unwrap_or_else(|| panic!("{tag} node not found"));
+        let t_rect = layout
+            .rect_of(tkey)
+            .unwrap_or_else(|| panic!("text for {tag} not found"));
         assert!(
             head_rect.w > 0.0,
             "{}: ширина > 0, получено {}",
