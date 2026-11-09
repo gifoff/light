@@ -496,14 +496,17 @@ pub fn parse_justify(value: &str) -> Align {
     })
 }
 
-/// Разбирает `align-items` (`start`/`center`/`end`). Некорректное значение в
-/// debug-сборке вызывает `debug_assert!`, а в release возвращает
-/// [`Align::Start`].
+/// Разбирает `align-items` (`start`/`center`/`end`). Некорректное значение
+/// не прерывает работу приложения: печатается warning в stderr и
+/// возвращается [`Align::Start`].
 pub fn parse_align_items(value: &str) -> Align {
-    align_impl(value, "start", "end").unwrap_or_else(|| {
-        debug_assert!(false, "invalid align-items value: \"{value}\"");
-        Align::Start
-    })
+    match align_impl(value, "start", "end") {
+        Some(align) => align,
+        None => {
+            eprintln!("warning: invalid align-items value: {value:?}, using 'start'");
+            Align::Start
+        }
+    }
 }
 
 fn overflow_impl(value: &str) -> Option<Overflow> {
@@ -2068,5 +2071,20 @@ mod tests {
         assert_eq!(parse_align_items("center"), Align::Center);
         assert_eq!(parse_align_items("start"), Align::Start);
         assert_eq!(parse_align_items("end"), Align::End);
+    }
+
+    #[test]
+    fn invalid_align_items_returns_start_not_panic() {
+        let result = std::panic::catch_unwind(|| {
+            // Некорректное значение не должно вызывать panic (в debug-сборке —
+            // раньше это был `debug_assert!`); ожидается warning в stderr и
+            // возврат значения по умолчанию.
+            parse_align_items("ыефке")
+        });
+        assert!(
+            result.is_ok(),
+            "parse_align_items panicked on invalid value"
+        );
+        assert_eq!(result.unwrap(), Align::Start);
     }
 }
