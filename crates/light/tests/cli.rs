@@ -708,7 +708,7 @@ fn init_creates_full_project() {
     let manifest = std::fs::read_to_string(project.join("Cargo.toml")).expect("Cargo.toml");
     assert!(manifest.contains("name = \"cool-app\""), "{manifest}");
     assert!(
-        manifest.contains(&format!("light = \"{}\"", light_minor_version())),
+        manifest.contains(&format!("light-fw = \"{}\"", light_minor_version())),
         "{manifest}"
     );
     let main_rs = std::fs::read_to_string(project.join("src").join("main.rs")).expect("main.rs");
@@ -743,7 +743,7 @@ fn init_with_components_adds_dependencies_and_features() {
     let mv = light_minor_version();
     assert!(
         manifest.contains(&format!(
-            "light = {{ version = \"{mv}\", features = [\"elements-form\", \"validation\"] }}"
+            "light-fw = {{ version = \"{mv}\", features = [\"elements-form\", \"validation\"] }}"
         )),
         "{manifest}"
     );

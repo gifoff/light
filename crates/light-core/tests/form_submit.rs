@@ -1,9 +1,9 @@
 //! Тесты поиска кнопки отправки формы (submit по `Enter`).
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
-use light::validation::find_submit_button;
-use light::vdom::{ButtonType, NodeKind, Resize, VElement};
+use light_fw::validation::find_submit_button;
+use light_fw::vdom::{ButtonType, NodeKind, Resize, VElement};
 
 fn form(key: &'static str, children: Vec<VElement>) -> VElement {
     let mut node = VElement::container(key, NodeKind::Column, children);

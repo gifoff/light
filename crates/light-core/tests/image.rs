@@ -2,11 +2,11 @@
 
 //! Проверяет макрос `<image>`: встраивание PNG, размеры из IHDR и alt.
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
-use light::ImageData;
-use light::prelude::*;
-use light::vdom::{NodeKind, VElement, diff};
+use light_fw::ImageData;
+use light_fw::prelude::*;
+use light_fw::vdom::{NodeKind, VElement, diff};
 
 #[template("tests/templates/image.html")]
 #[proxy]
@@ -47,8 +47,8 @@ fn image_alt_is_exposed_to_accessibility() {
     assert_eq!(image.attr("alt"), Some("Проверочное изображение"));
     #[cfg(feature = "a11y")]
     assert_eq!(
-        light::a11y::roles::role_for(image),
-        light::a11y::AriaRole::Image
+        light_fw::a11y::roles::role_for(image),
+        light_fw::a11y::AriaRole::Image
     );
 }
 

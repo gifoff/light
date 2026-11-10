@@ -3,14 +3,14 @@
 Самый простой способ создать проект — установить CLI и выбрать шаблон:
 
 ```bash
-cargo install light-fw-cli
+cargo install light
 light init my-app --template counter
 cd my-app
 light dev
 ```
 
-Доступны три showcase-шаблона: `counter`, `todo` и `calculator`. Их исходники
-лежат в каталоге [`examples/`](https://github.com/gifoff/light/tree/master/examples).
+Доступны четыре showcase-шаблона: `counter`, `todo`, `calculator` и `dashboard`.
+Их исходники лежат в каталоге [`examples/`](https://github.com/gifoff/light/tree/master/examples).
 
 Для пустого проекта без шаблона:
 
@@ -37,16 +37,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-light = { git = "https://github.com/gifoff/light" }
+light-fw = { git = "https://github.com/gifoff/light" }
 
 [features]
-dev-mode = ["light/dev-mode"]
+dev-mode = ["light-fw/dev-mode"]
 ```
 
 `src/main.rs`:
 
 ```rust
-use light::prelude::*;
+use light_fw::prelude::*;
 
 #[template("templates/app.html")]
 #[proxy]
@@ -97,6 +97,7 @@ Light не изобретает свою build-систему — приложе
 | Запуск release | `cargo run --release` |
 | Hot-reload (HTML + `.rs`) | `light dev` |
 | Hot-reload + сессия агента | `light dev --agent` |
+| Сборка release + путь к бинарнику | `light build` |
 
 **Разница между `cargo run` и `light dev`:**
 - `cargo run` — обычная сборка и запуск. Правки в HTML **не подхватываются** (шаблон встроен в бинарник на этапе компиляции).

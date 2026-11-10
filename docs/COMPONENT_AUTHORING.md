@@ -53,7 +53,7 @@ repository = "https://github.com/<user>/light-widget-datepicker"
 
 [dependencies]
 # Крейт `light` реэкспортирует ядро и макросы `#[template]`/`#[proxy]`.
-light = { version = "0.15", default-features = false, features = [
+light-fw = { version = "0.16", default-features = false, features = [
     "elements-basic",
     "elements-form",
 ] }
@@ -95,7 +95,7 @@ components = [
 `src/lib.rs`:
 
 ```rust
-use light::prelude::*;
+use light_fw::prelude::*;
 
 #[template("templates/datepicker.html")]
 #[proxy]

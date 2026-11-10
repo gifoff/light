@@ -1,9 +1,9 @@
 //! Тесты встроенных клавиатурных сокращений.
 #![cfg(feature = "a11y-keyboard")]
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
-use light::a11y::keyboard::{builtin_action, is_activation_key, is_builtin};
+use light_fw::a11y::keyboard::{builtin_action, is_activation_key, is_builtin};
 
 #[test]
 fn tab_without_shift_is_builtin() {

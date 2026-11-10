@@ -45,7 +45,7 @@ pub struct ResolvedComponent {
     pub version: semver::Version,
     /// Требование к версии ядра.
     pub core: semver::VersionReq,
-    /// Фичи мета-крейта `light`, которые включает компонент.
+    /// Фичи мета-крейта `light-fw`, которые включает компонент.
     pub light_features: Vec<String>,
     /// Что предоставляет компонент.
     pub provides: Provides,

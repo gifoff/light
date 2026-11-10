@@ -1,4 +1,4 @@
-//! Перечень того, что принято подключать в прикладном коде: `use light::prelude::*;`.
+//! Перечень того, что принято подключать в прикладном коде: `use light_fw::prelude::*;`.
 
 pub use crate::collection::Collection;
 pub use crate::component::{Component, WindowConfig};

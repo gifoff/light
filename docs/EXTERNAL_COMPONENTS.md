@@ -28,18 +28,18 @@ description = "Date picker component for Light"
 repository = "https://github.com/<user>/light-fw-datepicker"
 
 [dependencies]
-light = "0.15"
+light-fw = "0.16"
 
 # Для поддержки локальной разработки с Hot Reload
 [features]
-dev-mode = ["light/dev-mode"]
+dev-mode = ["light-fw/dev-mode"]
 ```
 
 Если компонент использует элементы формы, подключите `light-fw-element-form` и фичу `light/elements-form`:
 
 ```toml
 [dependencies]
-light = { version = "0.15", features = ["elements-form"] }
+light-fw = { version = "0.16", features = ["elements-form"] }
 light-fw-element-form = "0.15"
 ```
 
@@ -59,7 +59,7 @@ light-fw-element-form = "0.15"
 И опишите компонент в `src/lib.rs`:
 
 ```rust
-use light::prelude::*;
+use light_fw::prelude::*;
 
 #[template("templates/datepicker.html")]
 #[proxy]

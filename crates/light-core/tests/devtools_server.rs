@@ -5,7 +5,7 @@
 
 #![cfg(feature = "devtools")]
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -34,9 +34,9 @@ fn read_line(stream: &mut TcpStream) -> String {
 /// `SNAPSHOT` возвращает JSON с ключом `window_token` или `null`.
 #[test]
 fn server_returns_snapshot_on_request() {
-    let port = light::devtools::server::start(0).expect("server starts");
+    let port = light_fw::devtools::server::start(0).expect("server starts");
     // Обновляем глобальный снимок, чтобы ответ был не `null`.
-    light::update_latest_snapshot("{\"window_token\": 7}".to_owned());
+    light_fw::update_latest_snapshot("{\"window_token\": 7}".to_owned());
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     stream.write_all(b"SNAPSHOT\n").expect("send");
     let line = read_line(&mut stream);
@@ -49,7 +49,7 @@ fn server_returns_snapshot_on_request() {
 /// Неизвестная команда → `unknown command`, соединение не рвётся.
 #[test]
 fn unknown_command_returns_error_and_keeps_connection() {
-    let port = light::devtools::server::start(0).expect("server starts");
+    let port = light_fw::devtools::server::start(0).expect("server starts");
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     stream.write_all(b"FROBULATE\n").expect("send");
     let line = read_line(&mut stream);
@@ -63,7 +63,7 @@ fn unknown_command_returns_error_and_keeps_connection() {
 /// `QUIT` закрывает соединение: следующий `read` получает 0 (EOF).
 #[test]
 fn quit_closes_connection() {
-    let port = light::devtools::server::start(0).expect("server starts");
+    let port = light_fw::devtools::server::start(0).expect("server starts");
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     stream.write_all(b"QUIT\n").expect("send");
     let mut buf = [0u8; 1];
@@ -74,7 +74,7 @@ fn quit_closes_connection() {
 /// `PING\n` → `PONG\n`: сервер отвечает на проверку живости.
 #[test]
 fn server_responds_to_ping() {
-    let port = light::devtools::server::start(0).expect("server starts");
+    let port = light_fw::devtools::server::start(0).expect("server starts");
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     stream.write_all(b"PING\n").expect("send");
     let line = read_line(&mut stream);
@@ -84,7 +84,7 @@ fn server_responds_to_ping() {
 /// Неизвестная команда `BLAH\n` → `unknown command\n`, соединение живёт дальше.
 #[test]
 fn server_handles_unknown_command() {
-    let port = light::devtools::server::start(0).expect("server starts");
+    let port = light_fw::devtools::server::start(0).expect("server starts");
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     stream.write_all(b"BLAH\n").expect("send");
     let line = read_line(&mut stream);
@@ -106,7 +106,7 @@ fn server_handles_unknown_command() {
 /// доставляет именно эту команду в UI-поток.
 #[test]
 fn click_without_ui_times_out() {
-    let port = light::devtools::server::start(0).expect("server starts");
+    let port = light_fw::devtools::server::start(0).expect("server starts");
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     stream.write_all(b"CLICK inc_btn\n").expect("send");
     let line = read_line(&mut stream);
@@ -121,7 +121,7 @@ fn click_without_ui_times_out() {
 /// уходит в UI-поток.
 #[test]
 fn set_state_empty_field_returns_missing_field() {
-    let port = light::devtools::server::start(0).expect("server starts");
+    let port = light_fw::devtools::server::start(0).expect("server starts");
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     // Два пробела: имя поля пустое, есть JSON-значение.
     stream.write_all(b"SET_STATE  5\n").expect("send");
@@ -133,7 +133,7 @@ fn set_state_empty_field_returns_missing_field() {
 /// значение не разбирается как JSON.
 #[test]
 fn set_state_without_value_returns_invalid_json() {
-    let port = light::devtools::server::start(0).expect("server starts");
+    let port = light_fw::devtools::server::start(0).expect("server starts");
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     stream.write_all(b"SET_STATE count\n").expect("send");
     let line = read_line(&mut stream);
@@ -143,7 +143,7 @@ fn set_state_without_value_returns_invalid_json() {
 /// `SET_STATE <field> <не-json>` → `invalid json` (значение не разобрано).
 #[test]
 fn set_state_invalid_json_returns_error() {
-    let port = light::devtools::server::start(0).expect("server starts");
+    let port = light_fw::devtools::server::start(0).expect("server starts");
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     stream
         .write_all(b"SET_STATE count not-a-json\n")
@@ -157,7 +157,7 @@ fn set_state_invalid_json_returns_error() {
 /// для CLICK без UI).
 #[test]
 fn set_state_without_ui_times_out() {
-    let port = light::devtools::server::start(0).expect("server starts");
+    let port = light_fw::devtools::server::start(0).expect("server starts");
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     stream.write_all(b"SET_STATE count 5\n").expect("send");
     let line = read_line(&mut stream);
@@ -173,7 +173,7 @@ fn set_state_without_ui_times_out() {
 /// не произойдёт, но протокол-ответ тот же).
 #[test]
 fn save_state_returns_ok_immediately() {
-    let port = light::devtools::server::start(0).expect("server starts");
+    let port = light_fw::devtools::server::start(0).expect("server starts");
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     stream.write_all(b"SAVE_STATE\n").expect("send");
     let line = read_line(&mut stream);
@@ -191,7 +191,7 @@ fn save_state_returns_ok_immediately() {
 /// «unknown command». Проверяем на коротком `KEY` (таймаут 1 с).
 #[test]
 fn agentic_commands_are_recognized_not_unknown() {
-    let port = light::devtools::server::start(0).expect("server starts");
+    let port = light_fw::devtools::server::start(0).expect("server starts");
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     // KEY <key> <name> — самый короткий таймаут (1 с).
     stream.write_all(b"KEY 0.0 Enter\n").expect("send");

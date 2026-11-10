@@ -28,7 +28,7 @@ AccessKit-семантика, обработка событий, оконные 
 5. Каждая фича должна иметь rustdoc-документацию в `Cargo.toml`
    (секция `[features]` с комментариями) и раздел в `guide.md`.
 6. При добавлении фичи обязательно обновить:
-   - `crates/light/Cargo.toml` (секция `[features]`);
+   - `crates/light-fw/Cargo.toml` (секция `[features]`);
    - `docs/guide.md` (раздел «Установка и Cargo-фичи»);
    - `CHANGELOG.md`.
 7. Проверка на регрессию: `cargo build -p light --no-default-features` обязан
@@ -49,7 +49,7 @@ AccessKit-семантика, обработка событий, оконные 
 
 ### Как это устроено технически
 
-- Фичи `light` объявляются в `crates/light/Cargo.toml` и **форвардятся** в
+- Фичи `light-fw` объявляются в `crates/light-fw/Cargo.toml` и **форвардятся** в
   `light-fw-macros` (`elements-select = [..., "light-fw-macros/elements-select"]`),
   чтобы `#[template]` знал о включённых элементах.
 - Варианты `NodeKind`, относящиеся к опциональным элементам, гейтятся
@@ -99,11 +99,11 @@ AccessKit-семантика, обработка событий, оконные 
 <select v-model="country"></select>
 ```
 
-`src/main.rs` без фичи `elements-select` (`light = { default-features = false,
+`src/main.rs` без фичи `elements-select` (`light-fw = { default-features = false,
 features = ["elements-basic"] }`):
 
 ```rust
-use light::prelude::*;
+use light_fw::prelude::*;
 
 #[template("templates/form.html")]
 struct Form;
@@ -113,14 +113,14 @@ struct Form;
 
 ```text
 error: элемент <select> недоступен: Cargo-фича `elements-select` выключена у крейта `light`
-help: включите её в зависимости, например `light = { features = ["elements-select"] }`
+help: включите её в зависимости, например `light-fw = { features = ["elements-select"] }`
 ```
 
 Элемент нужно подключать явно:
 
 ```toml
 [dependencies]
-light = { version = "0.1", features = ["elements-basic", "elements-select"] }
+light-fw = { version = "0.1", features = ["elements-basic", "elements-select"] }
 ```
 
 Аналогично для `<checkbox>` (`elements-checkbox`), `<radio>` (`elements-radio`)

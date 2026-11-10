@@ -1,13 +1,13 @@
 //! Тесты сопоставления тегов, имён ролей и разбора значений атрибутов.
 #![cfg(feature = "a11y")]
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
 use accesskit::{Role, Toggled};
-use light::a11y::roles::{
+use light_fw::a11y::roles::{
     default_role, heading_level, parse_bool, parse_tristate, role_for_tag, role_from_name,
 };
-use light::vdom::NodeKind;
+use light_fw::vdom::NodeKind;
 
 // ---------- role_for_tag: только структурные теги ----------
 
@@ -130,7 +130,7 @@ fn default_role_for_leaf_widgets() {
     assert_eq!(
         default_role(&NodeKind::Button {
             disabled: false,
-            button_type: light::vdom::ButtonType::Submit,
+            button_type: light_fw::vdom::ButtonType::Submit,
         }),
         Role::Button
     );

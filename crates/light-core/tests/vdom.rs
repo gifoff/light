@@ -6,9 +6,9 @@
     feature = "elements-select"
 ))]
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
-use light::vdom::{NodeKind, Op, Patch, SelectOption, VElement, diff};
+use light_fw::vdom::{NodeKind, Op, Patch, SelectOption, VElement, diff};
 
 fn text(key: &'static str, content: &str) -> VElement {
     VElement::leaf(
@@ -24,7 +24,7 @@ fn button(key: &'static str, label: &str, disabled: bool) -> VElement {
         key,
         NodeKind::Button {
             disabled,
-            button_type: light::vdom::ButtonType::Submit,
+            button_type: light_fw::vdom::ButtonType::Submit,
         },
         vec![VElement::leaf(
             "t",
@@ -50,7 +50,7 @@ fn field(key: &'static str, value: &str) -> VElement {
             placeholder: String::new(),
             disabled: false,
             multiline: false,
-            resize: light::vdom::Resize::None,
+            resize: light_fw::vdom::Resize::None,
             masked: false,
         },
     )
@@ -220,7 +220,7 @@ fn finds_nodes_by_tag_attr_and_content() {
                 "1",
                 NodeKind::Button {
                     disabled: false,
-                    button_type: light::vdom::ButtonType::Submit,
+                    button_type: light_fw::vdom::ButtonType::Submit,
                 },
                 vec![VElement::leaf(
                     "1.0",
@@ -354,7 +354,7 @@ fn checkbox_and_radio_diff_by_field() {
 /// компиляции шаблонов.
 #[test]
 fn runtime_parsers_match_compile_time_rules() {
-    use light::vdom::{
+    use light_fw::vdom::{
         Align, ButtonType, Offset, RequiredIndicator, Resize, Size, parse_align_items,
         parse_align_x, parse_align_y, parse_bool, parse_button_type, parse_color, parse_justify,
         parse_offset, parse_px, parse_required_indicator, parse_resize, parse_size_or_auto,
@@ -436,7 +436,7 @@ fn diff_marks_attr_changes() {
 /// помечают узел как изменившийся.
 #[test]
 fn diff_marks_unmapped_node_kind_fields() {
-    use light::vdom::Resize;
+    use light_fw::vdom::Resize;
 
     let field = |multiline, resize| {
         VElement::leaf(

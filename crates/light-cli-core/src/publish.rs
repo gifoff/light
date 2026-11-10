@@ -1345,7 +1345,7 @@ mod tests {
             &runner,
             &sleeper,
             Path::new("."),
-            "light",
+            "light-fw",
             &PublishInvocation::default(),
             &RetryConfig::default(),
         )
@@ -1433,7 +1433,7 @@ mod tests {
             &runner,
             &sleeper,
             Path::new("."),
-            "light",
+            "light-fw",
             &PublishInvocation::default(),
             &config,
         )
@@ -1452,7 +1452,7 @@ mod tests {
             &runner,
             &sleeper,
             Path::new("."),
-            "light",
+            "light-fw",
             &PublishInvocation::default(),
             &RetryConfig::default(),
         )
@@ -1479,7 +1479,7 @@ mod tests {
             &runner,
             &sleeper,
             Path::new("."),
-            "light",
+            "light-fw",
             &PublishInvocation::default(),
             &config,
         )
@@ -1498,11 +1498,11 @@ mod tests {
             token: Some("secret".into()),
         };
         assert_eq!(
-            publish_args("light", &invocation),
+            publish_args("light-fw", &invocation),
             vec![
                 "publish",
                 "-p",
-                "light",
+                "light-fw",
                 "--no-verify",
                 "--allow-dirty",
                 "--token",
@@ -1514,8 +1514,8 @@ mod tests {
             ..PublishInvocation::default()
         };
         assert_eq!(
-            publish_args("light", &verifying),
-            vec!["publish", "-p", "light"]
+            publish_args("light-fw", &verifying),
+            vec!["publish", "-p", "light-fw"]
         );
     }
 
@@ -1562,8 +1562,12 @@ mod tests {
         };
         let mut tags = BTreeSet::new();
         tags.insert("v0.2.0".to_string());
-        let check =
-            check_already_published(&probe, Some(&tags), "light", &semver::Version::new(0, 2, 0));
+        let check = check_already_published(
+            &probe,
+            Some(&tags),
+            "light-fw",
+            &semver::Version::new(0, 2, 0),
+        );
         assert!(check.published);
         assert!(check.warnings.is_empty());
     }
@@ -1574,8 +1578,12 @@ mod tests {
             outcome: ApiOutcome::Versions(vec![semver::Version::new(0, 2, 0)]),
         };
         let tags = BTreeSet::new();
-        let check =
-            check_already_published(&probe, Some(&tags), "light", &semver::Version::new(0, 2, 0));
+        let check = check_already_published(
+            &probe,
+            Some(&tags),
+            "light-fw",
+            &semver::Version::new(0, 2, 0),
+        );
         assert!(!check.published);
         assert_eq!(check.warnings.len(), 1);
         assert!(
@@ -1592,8 +1600,12 @@ mod tests {
         };
         let mut tags = BTreeSet::new();
         tags.insert("v0.2.0".to_string());
-        let check =
-            check_already_published(&probe, Some(&tags), "light", &semver::Version::new(0, 2, 0));
+        let check = check_already_published(
+            &probe,
+            Some(&tags),
+            "light-fw",
+            &semver::Version::new(0, 2, 0),
+        );
         assert!(check.published);
         assert!(
             check.warnings[0].contains("falling back to git tags"),
@@ -1608,8 +1620,12 @@ mod tests {
             outcome: ApiOutcome::NotFound,
         };
         let tags = BTreeSet::new();
-        let check =
-            check_already_published(&probe, Some(&tags), "light", &semver::Version::new(0, 2, 0));
+        let check = check_already_published(
+            &probe,
+            Some(&tags),
+            "light-fw",
+            &semver::Version::new(0, 2, 0),
+        );
         assert!(!check.published);
         assert!(check.warnings.is_empty());
     }

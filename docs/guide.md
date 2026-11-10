@@ -50,17 +50,17 @@ Light строится на нескольких принципах:
 
 ```toml
 [dependencies]
-light = { path = "crates/light" }
+light-fw = { path = "crates/light-fw" }
 
 [features]
 # Включает поддержку hot-reload и DevTools
-dev-mode = ["light/dev-mode"]
+dev-mode = ["light-fw/dev-mode"]
 ```
 
 Компонент — это структура с атрибутом `#[proxy]` (реактивные свойства) и атрибутом `#[template("путь/к/шаблону.html")]`, который привязывает структуру к шаблону:
 
 ```rust
-use light::prelude::*;
+use light_fw::prelude::*;
 
 #[template("templates/app.html")]
 #[proxy]
@@ -140,7 +140,7 @@ Light собран по принципу «платите только за то
 интеграция доступности:
 
 ```toml
-light = { path = "crates/light" } # default = ["elements-basic", "window", "softbuffer-backend", "a11y-winit"]
+light-fw = { path = "crates/light-fw" } # default = ["elements-basic", "window", "softbuffer-backend", "a11y-winit"]
 ```
 
 Для показа через `wgpu` включите `wgpu-backend`. Если включены обе фичи,
@@ -159,7 +159,7 @@ light = { path = "crates/light" } # default = ["elements-basic", "window", "soft
 
 Крейт `light` транслирует свои фичи в фичи `light-fw-core` (например,
 `light/elements-form` → `light-fw-core/elements-form` и `light-fw-element-form`),
-поэтому прикладной код продолжает писать `use light::prelude::*;`. Базовые
+поэтому прикладной код продолжает писать `use light_fw::prelude::*;`. Базовые
 элементы и текстовые поля (`<text>`, `<password>`, `<textarea>`) входят в
 ядро и компонентов не требуют. Подробнее — в
 [docs/COMPONENT_MODEL.md](COMPONENT_MODEL.md).
@@ -231,7 +231,7 @@ light = { path = "crates/light" } # default = ["elements-basic", "window", "soft
 Минимальная сборка — только базовые элементы без окна:
 
 ```toml
-light = { path = "crates/light", default-features = false, features = ["elements-basic"] }
+light-fw = { path = "crates/light-fw", default-features = false, features = ["elements-basic"] }
 ```
 
 Если шаблон использует элемент, для которого фича не включена, компилятор сообщит об ошибке и подскажет, какую фичу добавить. Пользовательскую валидацию включает `validation`; ограничения размера — `min-max-size`.
@@ -275,8 +275,8 @@ pwsh scripts/bloat.ps1      # или bash scripts/bloat.sh
 [Управление компонентами (CLI)](#управление-компонентами-cli).
 
 ```bash
-cargo run -p light-fw-cli -- check     # отчёт по текущему каталогу
-cargo run -p light-fw-cli -- suggest   # что стоит добавить
+light check # отчёт по текущему каталогу
+light suggest # что стоит добавить
 ```
 
 По умолчанию путь — текущий каталог; его можно указать первым аргументом.
@@ -541,7 +541,7 @@ $ light add light-fw-datepicker --features calendar,timezone --yes
 Для `<image>` включите фичу `image-support`:
 
 ```toml
-light = { version = "0.15", features = ["image-support"] }
+light-fw = { version = "0.16", features = ["image-support"] }
 ```
 
 ```html
@@ -562,7 +562,7 @@ light = { version = "0.15", features = ["image-support"] }
 
 ```rust
 use std::path::Path;
-use light::ImageData;
+use light_fw::ImageData;
 
 fn load_avatar(path: &Path) -> light::Result<ImageData> {
     let bytes = std::fs::read(path)?;
@@ -575,7 +575,7 @@ fn load_avatar(path: &Path) -> light::Result<ImageData> {
 диалог доступен с фичей `file-dialog`:
 
 ```toml
-light = { version = "0.15", features = ["image-support", "file-dialog"] }
+light-fw = { version = "0.16", features = ["image-support", "file-dialog"] }
 ```
 
 ```rust
@@ -1273,7 +1273,7 @@ items.each(|item| println!("{item}"));
 `light::Dom` даёт глобальный доступ к виртуальному дереву активного окна (внутренний аналог `document` в браузере):
 
 ```rust
-use light::prelude::*;
+use light_fw::prelude::*;
 
 let tree = Dom::tree();                       // Option<Arc<VNode>> активного окна
 let node = Dom::get("0.1");                   // узел по ключу
@@ -1289,7 +1289,7 @@ let nodes: Vec<VNode> = Dom::nodes().into_vec();  // всё дерево кол�
 Каждый узел хранит своё имя HTML-тега (`node.tag`) и статические атрибуты разметки (`node.attr("…")`). Директивы (`v-model`, `v-if`, `:disabled` и т. п.) и обработчики (`@click`, …) в атрибуты не попадают — только «настоящие» атрибуты вроде `class`, `value`, `placeholder`:
 
 ```rust
-use light::prelude::*;
+use light_fw::prelude::*;
 
 let by_tag = tree.find_by_tag("h2");              // узел с тегом <h2>
 let by_tag = Dom::find_by_tag("select");           // первый в активном окне
@@ -1319,7 +1319,7 @@ let many = Dom::find_all(|n| n.tag == "button");   // Collection<VNode> всех
 
 ```rust
 use std::time::Duration;
-use light::prelude::*;
+use light_fw::prelude::*;
 
 // Внутри метода компонента (например, обработчика клика):
 fn start_async(&self) {
@@ -1346,7 +1346,7 @@ fn start_async(&self) {
 ```rust
 use std::time::Duration;
 use futures_timer::Delay;
-use light::prelude::*;
+use light_fw::prelude::*;
 
 fn start_async(&self) {
     self.set_loading(true);
@@ -1438,7 +1438,7 @@ fn cancel_async(&self) {
 ## Полный пример
 
 ```rust
-use light::prelude::*;
+use light_fw::prelude::*;
 
 #[template("templates/app.html", modal = Dialog)]
 #[proxy]
@@ -1550,7 +1550,7 @@ Light строит дерево доступности [AccessKit](https://acces
 Фокусом можно управлять программно:
 
 ```rust
-use light::{focus, blur, focused_key};
+use light_fw::{focus, blur, focused_key};
 
 focus("field-key");   // запросить фокус на узле
 blur();               // снять фокус
@@ -1564,7 +1564,7 @@ let key = focused_key(); // текущий узел в фокусе (None, ес�
 ### Управление фокусом и объявлениями
 
 ```rust
-use light::a11y::{self, Politeness};
+use light_fw::a11y::{self, Politeness};
 
 a11y::announce("Файл сохранён", Politeness::Polite);
 if let Some(window) = a11y::active_window() {
@@ -1582,7 +1582,7 @@ if let Some(window) = a11y::active_window() {
 1. Добавьте фичу в `Cargo.toml`:
    ```toml
    [features]
-   dev-mode = ["light/dev-mode"]
+   dev-mode = ["light-fw/dev-mode"]
    ```
 
 2. Используйте `light::run_with_config("light.config.json", App::new())` в `main.rs`.
@@ -1667,9 +1667,9 @@ Hot-reload сохраняет артефакты сборки в `target/hot-bui
    `light dev: pruned N stale executables from hot-run`.
 
 4. **Предупреждение о рассинхроне CLI.** Если установленная версия
-   `light-fw-cli` (бинарник `light`) отличается от версии `light` в `Cargo.lock`
+   `light` (CLI) отличается от версии `light-fw` в `Cargo.lock`
    проекта, выводится предупреждение:
-   `⚠ light dev: installed CLI version {installed} differs from project {project}. Run \`cargo install --path crates/light-cli\``.
+   `⚠ light dev: installed CLI version {installed} differs from project {project}. Run \`cargo install --path crates/light\``.
 
 ---
 
@@ -1685,7 +1685,7 @@ Hot-reload сохраняет артефакты сборки в `target/hot-bui
 1. Включите фичу `dev-mode` в манифесте (или используйте `light dev`):
    ```toml
    [features]
-   dev-mode = ["light/dev-mode"]
+   dev-mode = ["light-fw/dev-mode"]
    ```
 2. В `main()` вызовите `light::run_with_config("light.config.json", App::new())`.
 3. Запустите приложение через `light dev` или `cargo run --features dev-mode`. 

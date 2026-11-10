@@ -1,5 +1,5 @@
 //! Пример: два независимых окна с асинхронными обновлениями, адресованными
-//! к конкретному окну через [`light::post_update_to`].
+//! к конкретному окну через [`light_fw::post_update_to`].
 //!
 //! Корневым окном является [`Main`] (видимое окно «Окно 1»); кнопка
 //! «Открыть Окно 2» отправляет `WindowCommand::OpenWindow`, и бэкенд
@@ -10,7 +10,7 @@
 //! Каждое окно — самостоятельный компонент со своим счётчиком и своей
 //! асинхронной задачей. Обновления в одном окне не влияют на второе:
 //! каждая итерация цикла отправляется только в целевое окно, идентифицированное
-//! его [`WindowToken`] (полученным через [`light::current_window_token`]).
+//! его [`WindowToken`] (полученным через [`light_fw::current_window_token`]).
 //!
 //! Запуск:
 //! ```bash
@@ -21,10 +21,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use light::async_runtime::post_update_to;
-use light::control::{WindowCommand, request};
-use light::prelude::*;
-use light::{TaskContext, current_window_token, spawn};
+use light_fw::async_runtime::post_update_to;
+use light_fw::control::{WindowCommand, request};
+use light_fw::prelude::*;
+use light_fw::{TaskContext, current_window_token, spawn};
 
 /// Обёртка вокруг `Arc<AtomicBool>` для отмены задачи.
 ///
@@ -308,5 +308,5 @@ impl Second {
 }
 
 fn main() {
-    let _ = light::run(Main::default());
+    let _ = light_fw::run(Main::default());
 }

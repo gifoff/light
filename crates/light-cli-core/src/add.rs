@@ -54,7 +54,7 @@ pub struct AddPlan {
     pub feature: String,
     /// Фичи самого крейта (`--features`).
     pub crate_features: Vec<String>,
-    /// Фичи мета-крейта `light`, которые нужно включить.
+    /// Фичи мета-крейта `light-fw`, которые нужно включить.
     pub light_features: Vec<String>,
     /// Будет ли фича создана (иначе — уже существует).
     pub creates_feature: bool,
@@ -171,8 +171,19 @@ pub fn plan_add_with_catalog(
         component.version = semver::Version::parse(version)?;
     }
 
-    let core = resolve_dependency_version(project_root, "light-fw-core")?
-        .or(resolve_dependency_version(project_root, "light")?);
+    // Обёртка переименована: новый проект зависит от `light-fw`; старые
+    // (опубликованные) проекты могут всё ещё использовать `light` — обе
+    // версии дают версию ядра.
+    let core = resolve_dependency_version(project_root, "light-fw-core")?.or_else(|| {
+        resolve_dependency_version(project_root, "light-fw")
+            .ok()
+            .flatten()
+            .or_else(|| {
+                resolve_dependency_version(project_root, "light")
+                    .ok()
+                    .flatten()
+            })
+    });
     if let Some(core) = core
         && !component.core.matches(&core)
     {
@@ -333,7 +344,11 @@ fn do_add(
 
     let text = read_cargo_toml(&cargo_path)?;
     let mut doc = edit::parse(&text)?;
-    if edit::has_dependency(&doc, "light") {
+    // Фичи ставятся на обёртку: новый ключ `light-fw`, старый `light` — для
+    // уже опубликованных проектов (обратная совместимость).
+    if edit::has_dependency(&doc, "light-fw") {
+        edit::add_features_to_dependency(&mut doc, "light-fw", &plan.light_features)?;
+    } else if edit::has_dependency(&doc, "light") {
         edit::add_features_to_dependency(&mut doc, "light", &plan.light_features)?;
     }
     edit::add_dep_to_feature(&mut doc, &plan.feature, &plan.component.name)?;
@@ -426,7 +441,7 @@ fn split_requirement(requirement: &str) -> (&str, Option<&str>) {
 }
 
 fn is_core_name(name: &str) -> bool {
-    matches!(name, "light" | "light-fw-core")
+    matches!(name, "light" | "light-fw" | "light-fw-core")
 }
 
 #[cfg(test)]

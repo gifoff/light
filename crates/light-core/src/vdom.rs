@@ -335,7 +335,7 @@ pub enum ButtonType {
 /// Форма указателя мыши (`cursor`).
 ///
 /// Используется как значение атрибута `cursor`/`:cursor` и как результат
-/// автоматического выбора курсора для узла (см. `light::window`). Имена
+/// автоматического выбора курсора для узла (см. `light_fw::window`). Имена
 /// соответствуют CSS-значениям: `pointer`, `not-allowed`, `ew-resize` и т. д.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Cursor {

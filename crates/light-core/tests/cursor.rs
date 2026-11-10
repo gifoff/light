@@ -2,11 +2,11 @@
 //! и «всплытие» к ближайшему подходящему родителю.
 #![cfg(feature = "window")]
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
-use light::layout::{Layout, Point, TextMetrics};
-use light::vdom::{ButtonType, Cursor, NodeKind, Resize, VElement};
-use light::window::{cursor_for, default_cursor_for, resolve_cursor};
+use light_fw::layout::{Layout, Point, TextMetrics};
+use light_fw::vdom::{ButtonType, Cursor, NodeKind, Resize, VElement};
+use light_fw::window::{cursor_for, default_cursor_for, resolve_cursor};
 
 struct StubMetrics;
 

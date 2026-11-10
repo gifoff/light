@@ -4,6 +4,9 @@
 //! перезапускает его при изменении исходников, сохраняя состояние через
 //! DevTools (см. [`light_fw_cli_core::dev`]).
 
+use std::path::Path;
+
+use light_fw_cli_core::check::ensure_components_present;
 use light_fw_cli_core::dev::{parse_dev_command, run as run_dev};
 
 /// Аргументы подкоманды `dev`.
@@ -43,6 +46,25 @@ pub struct DevArgs {
 
 /// Точка входа подкоманды `light dev`.
 pub fn run(args: DevArgs) -> anyhow::Result<i32> {
+    // Автоматическая проверка компонентов перед запуском.
+    let project_root = Path::new(".");
+    if project_root.join("Cargo.toml").exists() {
+        let install_fn = |name: &str| -> light_fw_cli_core::Result<()> {
+            let plan = light_fw_cli_core::add::plan_add(project_root, name, &Default::default())?;
+            let _ = light_fw_cli_core::add::apply_add(
+                project_root,
+                &light_fw_cli_core::process::SystemRunner,
+                &plan,
+                &Default::default(),
+            )?;
+            Ok(())
+        };
+        let ready = ensure_components_present(project_root, &install_fn)?;
+        if !ready {
+            return Ok(1);
+        }
+    }
+
     let verbose = args.verbose;
     let mut raw: Vec<String> = Vec::new();
     if let Some(package) = &args.package {

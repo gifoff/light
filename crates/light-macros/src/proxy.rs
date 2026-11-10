@@ -117,11 +117,11 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         let field_vis = &field.vis;
         let field_ty = &field.ty;
         out_fields.push(quote! {
-            #field_vis #field_ident: ::light::reactive::Property<#field_ty>
+            #field_vis #field_ident: ::light_fw::reactive::Property<#field_ty>
         });
 
         let local = syn::Ident::new(&format!("__light_prop_{index}"), Span::call_site());
-        prop_news.push(quote!(let #local = ::light::reactive::Property::new(#default_expr);));
+        prop_news.push(quote!(let #local = ::light_fw::reactive::Property::new(#default_expr);));
         prop_locals.push(local);
         field_idents.push(field_ident.clone());
 
@@ -140,7 +140,7 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             }
 
             /// Доступ к ячейке свойства для программных привязок.
-            pub fn #property_ident(&self) -> &::light::reactive::Property<#field_ty> {
+            pub fn #property_ident(&self) -> &::light_fw::reactive::Property<#field_ty> {
                 &self.#field_ident
             }
         });
@@ -153,17 +153,17 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         #derive_partial_eq
         #vis #struct_token #ident {
             #(#out_fields,)*
-            __light_proxy: ::light::reactive::ProxyState,
+            __light_proxy: ::light_fw::reactive::ProxyState,
         }
 
         impl #ident {
             /// Создаёт объект со значениями свойств по умолчанию.
             pub fn new() -> Self {
                 #(#prop_news)*
-                let __light_ids: &[::light::reactive::PropertyId] = &[#(#prop_locals.id(),)*];
+                let __light_ids: &[::light_fw::reactive::PropertyId] = &[#(#prop_locals.id(),)*];
                 Self {
                     #(#field_idents: #prop_locals,)*
-                    __light_proxy: ::light::reactive::ProxyState::new::<Self>(__light_ids),
+                    __light_proxy: ::light_fw::reactive::ProxyState::new::<Self>(__light_ids),
                 }
             }
 
@@ -176,8 +176,8 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             }
         }
 
-        impl ::light::reactive::Proxy for #ident {
-            fn proxy_state(&self) -> &::light::reactive::ProxyState {
+        impl ::light_fw::reactive::Proxy for #ident {
+            fn proxy_state(&self) -> &::light_fw::reactive::ProxyState {
                 &self.__light_proxy
             }
         }

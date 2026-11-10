@@ -401,10 +401,19 @@ fn resolve_detail_version(dep: &DepDetail) -> Result<Option<semver::Version>> {
 /// Версия ядра Light в проекте: явный `light-fw-core` или мета-крейт `light`.
 ///
 /// Разрешает `path`-/`workspace`-зависимости, поэтому корректно работает и в
-/// кладках-workspace, где `light` подключается как `workspace = true`.
+/// воркспейсах, где обёртка подключается как `workspace = true`.
 pub fn resolve_core_version(project_dir: &Path) -> Result<Option<semver::Version>> {
     Ok(resolve_dependency_version(project_dir, "light-fw-core")?
-        .or(resolve_dependency_version(project_dir, "light")?))
+        .or_else(|| {
+            resolve_dependency_version(project_dir, "light-fw")
+                .ok()
+                .flatten()
+        })
+        .or_else(|| {
+            resolve_dependency_version(project_dir, "light")
+                .ok()
+                .flatten()
+        }))
 }
 
 #[cfg(test)]

@@ -7,11 +7,11 @@
     feature = "elements-select"
 ))]
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
-use light::prelude::*;
-use light::validation::{self, REQUIRED_CHECK, REQUIRED_SELECT, REQUIRED_TEXT};
-use light::vdom::{ButtonType, NodeKind, VElement};
+use light_fw::prelude::*;
+use light_fw::validation::{self, REQUIRED_CHECK, REQUIRED_SELECT, REQUIRED_TEXT};
+use light_fw::vdom::{ButtonType, NodeKind, VElement};
 
 /// Анкета с обязательными полями и пользовательскими проверками.
 #[template("tests/templates/validation.html")]

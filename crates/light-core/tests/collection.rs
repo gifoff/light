@@ -1,8 +1,8 @@
 //! Тесты коллекции в духе `Illuminate\Support\Collection`.
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
-use light::Collection;
+use light_fw::Collection;
 
 #[test]
 fn new_collection_is_empty() {

@@ -1,4 +1,4 @@
-use light::prelude::*;
+use light_fw::prelude::*;
 
 #[template("templates/todo.html")]
 #[proxy]
@@ -44,6 +44,6 @@ impl TodoApp {
     }
 }
 
-fn main() -> light::Result<()> {
-    light::run(TodoApp::new())
+fn main() -> light_fw::Result<()> {
+    light_fw::run(TodoApp::new())
 }

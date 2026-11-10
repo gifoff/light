@@ -1,14 +1,14 @@
 //! Тесты runtime-templates: парсинг HTML в VElement через
-//! [`light::runtime::parse_template`] и базовые свойства дерева.
+//! [`light_fw::runtime::parse_template`] и базовые свойства дерева.
 
 #![cfg(feature = "runtime-templates")]
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
 use std::any::Any;
 
-use light::component::Component;
-use light::vdom::{Event, NodeKind, VElement};
+use light_fw::component::Component;
+use light_fw::vdom::{Event, NodeKind, VElement};
 
 /// Минимальный тестовый компонент без реактивных полей.
 struct Empty;
@@ -30,7 +30,7 @@ impl Component for Empty {
 #[test]
 fn empty_html_gives_empty_column() {
     let c = Empty;
-    let el = light::runtime::parse_template("", &c).expect("parse");
+    let el = light_fw::runtime::parse_template("", &c).expect("parse");
     assert_eq!(el.kind, NodeKind::Column);
     assert!(el.children.is_empty());
 }
@@ -39,7 +39,7 @@ fn empty_html_gives_empty_column() {
 #[test]
 fn div_with_bare_text() {
     let c = Empty;
-    let el = light::runtime::parse_template(
+    let el = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><div>Hi</div></window>"#,
         &c,
     )
@@ -56,7 +56,7 @@ fn div_with_bare_text() {
 #[test]
 fn button_element() {
     let c = Empty;
-    let el = light::runtime::parse_template(
+    let el = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><button>Click</button></window>"#,
         &c,
     )
@@ -73,7 +73,7 @@ fn button_element() {
 #[test]
 fn h1_heading() {
     let c = Empty;
-    let el = light::runtime::parse_template(
+    let el = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><h1>Title</h1></window>"#,
         &c,
     )
@@ -89,7 +89,7 @@ fn h1_heading() {
 #[test]
 fn generated_key_from_index() {
     let c = Empty;
-    let el = light::runtime::parse_template(
+    let el = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80">
             <div>a</div>
             <div>b</div>
@@ -105,7 +105,7 @@ fn generated_key_from_index() {
 #[test]
 fn nested_key_inheritance() {
     let c = Empty;
-    let el = light::runtime::parse_template(
+    let el = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80">
             <div id="outer">
                 <div id="inner">x</div>
@@ -128,7 +128,7 @@ fn nested_key_inheritance() {
 #[test]
 fn strict_rejects_unknown_event_directive() {
     let c = Empty;
-    let result = light::runtime::parse_template(
+    let result = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><div @focus="h">D</div></window>"#,
         &c,
     );
@@ -139,7 +139,7 @@ fn strict_rejects_unknown_event_directive() {
 #[test]
 fn strict_rejects_unknown_v_directive() {
     let c = Empty;
-    let result = light::runtime::parse_template(
+    let result = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><div v-custom="x">D</div></window>"#,
         &c,
     );
@@ -150,7 +150,7 @@ fn strict_rejects_unknown_v_directive() {
 #[test]
 fn strict_rejects_v_if() {
     let c = Empty;
-    let result = light::runtime::parse_template(
+    let result = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><div v-if="x">D</div></window>"#,
         &c,
     );
@@ -165,7 +165,7 @@ fn strict_rejects_v_if() {
 #[test]
 fn text_without_model_gives_empty_textfield() {
     let c = Empty;
-    let el = light::runtime::parse_template(
+    let el = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><text placeholder="Enter"></text></window>"#,
         &c,
     )
@@ -207,7 +207,7 @@ fn text_with_model_reads_field() {
     let c = HasName {
         name: String::from("World"),
     };
-    let el = light::runtime::parse_template(
+    let el = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><text v-model="name"></text></window>"#,
         &c,
     )
@@ -238,7 +238,7 @@ fn password_is_masked() {
     }
 
     let c = P { pw: String::new() };
-    let el = light::runtime::parse_template(
+    let el = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><password placeholder="pw"></password></window>"#,
         &c,
     )
@@ -281,7 +281,7 @@ fn interpolation_resolves_field() {
     }
 
     let c = Counter { count: 7 };
-    let el = light::runtime::parse_template(
+    let el = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><div>{{ count }}</div></window>"#,
         &c,
     )
@@ -294,7 +294,7 @@ fn interpolation_resolves_field() {
 #[test]
 fn interpolation_unknown_field_gives_empty() {
     let c = Empty;
-    let result = light::runtime::parse_template(
+    let result = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><div>{{ missing }}</div></window>"#,
         &c,
     );
@@ -337,7 +337,7 @@ fn parse_app_html_returns_some() {
     }
     let c = DemoApp { count: 0 };
     let html = include_str!("../../../examples/devtools-demo/templates/app.html");
-    let el = light::runtime::parse_template(html, &c).expect("app.html must parse at runtime");
+    let el = light_fw::runtime::parse_template(html, &c).expect("app.html must parse at runtime");
     // Корневой window содержит titlebar и body div.
     assert!(
         el.children.len() >= 2,
@@ -375,7 +375,7 @@ fn checkbox_element() {
     }
 
     let c = HasChecked { checked: false };
-    let el = light::runtime::parse_template(
+    let el = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><checkbox v-model="checked">On</checkbox></window>"#,
         &c,
     )
@@ -410,7 +410,7 @@ fn radio_element() {
     let c = HasSel {
         sel: String::from("a"),
     };
-    let el = light::runtime::parse_template(
+    let el = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><radio v-model="sel" value="a">A</radio></window>"#,
         &c,
     )
@@ -445,7 +445,7 @@ fn select_element() {
     let c = HasOpt {
         opt: String::from("1"),
     };
-    let el = light::runtime::parse_template(
+    let el = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80">
             <select v-model="opt">
                 <option value="1">One</option>
@@ -491,7 +491,7 @@ fn simple_click_handler_accepted() {
     }
 
     let c = Handler { calls: 0 };
-    let el = light::runtime::parse_template(
+    let el = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><button @click="increment">+</button></window>"#,
         &c,
     )
@@ -508,7 +508,7 @@ fn simple_click_handler_accepted() {
 #[test]
 fn unknown_tag_rejected() {
     let c = Empty;
-    let result = light::runtime::parse_template(
+    let result = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><video src="x">V</video></window>"#,
         &c,
     );

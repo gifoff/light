@@ -313,13 +313,13 @@ mod tests {
         .unwrap();
         add_features_to_dependency(
             &mut doc,
-            "light",
+            "light-fw",
             &["elements-form".to_string(), "validation".to_string()],
         )
         .unwrap();
         add_features_to_dependency(&mut doc, "light-fw-element-form", &["default".to_string()])
             .unwrap();
-        add_features_to_dependency(&mut doc, "light", &["validation".to_string()]).unwrap();
+        add_features_to_dependency(&mut doc, "light-fw", &["validation".to_string()]).unwrap();
         let out = doc.to_string();
         assert!(
             out.contains(
@@ -401,7 +401,7 @@ mod tests {
         )
         .unwrap();
         set_dependency_version(&mut doc, "light-fw-element-form", "0.1.0").unwrap();
-        set_dependency_version(&mut doc, "light", "0.2.0").unwrap();
+        set_dependency_version(&mut doc, "light-fw", "0.2.0").unwrap();
         let out = doc.to_string();
         assert!(out.contains("light-fw-element-form = \"0.1.0\""));
         assert!(out.contains("version = \"0.2.0\""));

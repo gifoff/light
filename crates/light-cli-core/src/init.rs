@@ -1,6 +1,6 @@
 //! Команда `light init`: создание скелета нового проекта Light.
 //!
-//! Модуль генерирует минимальный проект: `Cargo.toml` с зависимостью `light`,
+//! Модуль генерирует минимальный проект: `Cargo.toml` с зависимостью `light-fw`,
 //! самодостаточный `src/main.rs` (окно с текстом «Hello, Light!»), `.gitignore`
 //! и `light.lock`. Внешние эффекты (проверка `cargo`) идут через трейт
 //! [`CommandRunner`], поэтому логика тестируется без запуска процессов.
@@ -12,7 +12,7 @@ use crate::error::{Error, Result};
 use crate::lockfile::{LOCKFILE_NAME, Lockfile};
 use crate::process::CommandRunner;
 
-/// Версия мета-крейта `light`, которую прописывает `light init`.
+/// Версия мета-крейта `light-fw`, которую прописывает `light init`.
 pub const LIGHT_DEPENDENCY_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Minor-диапазон версии (`major.minor`), используемый в `Cargo.toml` нового
@@ -30,7 +30,7 @@ pub const GITIGNORE: &str = "target/\n";
 
 /// Алиасы `cargo dev` / `cargo prod`: отладочный режим (DevTools) и релиз.
 pub const CARGO_CONFIG: &str =
-    "[alias]\ndev = \"run --features light/dev-mode\"\nprod = \"run --release\"\n";
+    "[alias]\ndev = \"run --features light-fw/dev-mode\"\nprod = \"run --release\"\n";
 
 /// Конфигурация `light.config.json`: профили `dev` (DevTools на 9229, debug)
 /// и `prod` (DevTools выключен, error).
@@ -145,7 +145,7 @@ impl InitComponent {
         }
     }
 
-    /// Фича мета-крейта `light`, включающая компонент.
+    /// Фича мета-крейта `light-fw`, включающая компонент.
     pub fn light_feature(self) -> &'static str {
         match self {
             Self::Form => "elements-form",
@@ -284,8 +284,8 @@ const APP_HTML: &str = r#"<window title="Hello, Light!" width="480" height="320"
 </window>
 "#;
 
-/// Содержимое `Cargo.toml` для нового проекта: зависимости `light`,
-/// компоненты и фича `dev-mode` (алиас `light/dev-mode`).
+/// Содержимое `Cargo.toml` для нового проекта: зависимости `light-fw`,
+/// компоненты и фича `dev-mode` (алиас `light-fw/dev-mode`).
 pub fn cargo_toml(name: &str, components: &[InitComponent]) -> String {
     let components = normalized_components(components);
     let mut text = format!(
@@ -314,9 +314,9 @@ pub fn cargo_toml(name: &str, components: &[InitComponent]) -> String {
         }
     }
 
-    // Фича `dev-mode` — алиас для `light/dev-mode` (runtime-templates, hot
+    // Фича `dev-mode` — алиас для `light-fw/dev-mode` (runtime-templates, hot
     // reload). Необходима для `light dev` и `.cargo/config.toml`.
-    text.push_str("\n[features]\ndev-mode = [\"light/dev-mode\"]\n");
+    text.push_str("\n[features]\ndev-mode = [\"light-fw/dev-mode\"]\n");
     // ТЗ 0.16.1, задача 2: пустой `[workspace]` в самом конце — чтобы проект
     // не «попадал» в чужой workspace, если создан внутри папки с Cargo.toml
     // («current package believes it's in a workspace when it's not»).
@@ -356,14 +356,14 @@ const FORM_EXAMPLE: &str = r#"
 /// Содержимое `src/main.rs` — минимальное приложение с HTML-шаблоном
 /// (`templates/app.html`) и пустой прокси-структурой.
 pub fn main_rs(components: &[InitComponent]) -> String {
-    let mut text = r#"use light::prelude::*;
+    let mut text = r#"use light_fw::prelude::*;
 
 #[template("templates/app.html")]
 #[proxy]
 struct App {}
 
-fn main() -> light::Result<()> {
-    light::run_with_config("light.config.json", App::new())
+fn main() -> light_fw::Result<()> {
+    light_fw::run_with_config("light.config.json", App::new())
 }
 "#
     .to_string();
@@ -610,9 +610,12 @@ mod tests {
         assert!(text.contains("name = \"demo\""));
         let mv = minor_version();
         assert!(text.contains(&format!("light = \"{mv}\"")));
-        // Фича `dev-mode` всегда присутствует (алиас `light/dev-mode`).
+        // Фича `dev-mode` всегда присутствует (алиас `light-fw/dev-mode`).
         assert!(text.contains("[features]"), "{text}");
-        assert!(text.contains("dev-mode = [\"light/dev-mode\"]"), "{text}");
+        assert!(
+            text.contains("dev-mode = [\"light-fw/dev-mode\"]"),
+            "{text}"
+        );
         // ТЗ 0.16.1: в самом конце — пустой `[workspace]`.
         assert!(text.trim_end().ends_with("[workspace]"), "{text}");
     }
@@ -732,7 +735,7 @@ mod tests {
         assert!(
             by_path(".cargo/config.toml")
                 .expect("cargo config")
-                .contains("dev = \"run --features light/dev-mode\"")
+                .contains("dev = \"run --features light-fw/dev-mode\"")
         );
         assert!(
             by_path("light.config.json")

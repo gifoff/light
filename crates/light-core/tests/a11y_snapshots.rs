@@ -17,11 +17,11 @@
     feature = "elements-select"
 ))]
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
 use accesskit::TreeUpdate;
-use light::a11y::tree::{build_update, find_key_for_node_id};
-use light::vdom::{ButtonType, NodeKind, Resize, SelectOption, VElement};
+use light_fw::a11y::tree::{build_update, find_key_for_node_id};
+use light_fw::vdom::{ButtonType, NodeKind, Resize, SelectOption, VElement};
 use serde_json::json;
 
 // ---------- Хелперы для сборки VElement ----------

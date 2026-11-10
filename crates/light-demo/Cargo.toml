@@ -10,7 +10,7 @@ description = "Демонстрационное приложение библи�
 [dependencies]
 # Базовый набор — элементы и окно. Компоненты и остальные возможности
 # добавляются через фичи (см. `[features]`).
-light = { workspace = true, default-features = false, features = [
+light-fw = { workspace = true, default-features = false, features = [
     "elements-basic",
     "window",
 ] }
@@ -21,33 +21,33 @@ light-fw-behavior-validation = { workspace = true, optional = true }
 
 [features]
 default = ["full"]
-# DevTools: пробрасывает фичу в мета-крейт `light`, чтобы сгенерированный
-# код `#[template]` (`inspect_state`) нашёл `::light::serde_json`.
-devtools = ["light/devtools"]
+# DevTools: пробрасывает фичу в обёртку `light-fw`, чтобы сгенерированный
+# код `#[template]` (`inspect_state`) нашёл `::light_fw::serde_json`.
+devtools = ["light-fw/devtools"]
 # Доступность (AccessKit) поверх окна.
-a11y = ["light/a11y-winit"]
+a11y = ["light-fw/a11y-winit"]
 # Показ кадра через softbuffer (без wgpu/naga).
-softbuffer = ["light/softbuffer-backend"]
+softbuffer = ["light-fw/softbuffer-backend"]
 # Показ кадра через pixels (wgpu/naga).
-wgpu = ["light/wgpu-backend"]
+wgpu = ["light-fw/wgpu-backend"]
 # Общий набор возможностей приложения без выбора бэкенда.
 full-common = [
     "a11y",
     "dep:light-fw-element-form",
     "dep:light-fw-behavior-validation",
-    "light/align-content",
-    "light/z-order",
-    "light/cursor-theming",
-    "light/offset-position",
-    "light/dynamic-attrs",
-    "light/required-fields",
-    "light/min-max-size",
-    "light/include",
-    "light/window-transparent",
-    "light/window-modal",
-    "light/window-multi",
-    "light/window-by-id",
-    "light/window-resize",
+    "light-fw/align-content",
+    "light-fw/z-order",
+    "light-fw/cursor-theming",
+    "light-fw/offset-position",
+    "light-fw/dynamic-attrs",
+    "light-fw/required-fields",
+    "light-fw/min-max-size",
+    "light-fw/include",
+    "light-fw/window-transparent",
+    "light-fw/window-modal",
+    "light-fw/window-multi",
+    "light-fw/window-by-id",
+    "light-fw/window-resize",
 ]
 # Полный набор возможностей с softbuffer (по умолчанию).
 full = ["full-common", "softbuffer"]

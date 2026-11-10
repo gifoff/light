@@ -1,6 +1,7 @@
 use clap::Parser;
 
 mod cmd_add;
+mod cmd_build;
 mod cmd_check;
 mod cmd_dev;
 mod cmd_devtools;
@@ -45,6 +46,8 @@ enum Command {
     Vendor(cmd_vendor::VendorArgs),
     /// Опубликовать крейты воркспейса в crates.io.
     Publish(cmd_publish::PublishArgs),
+    /// Собрать приложение в release-режиме (`light build [ПУТЬ]`).
+    Build(cmd_build::BuildArgs),
     /// Разработать приложение Light с горячей перезагрузкой и восстановлением
     /// состояния (`light dev [ПАКЕТ] [аргументы cargo…]`).
     Dev(cmd_dev::DevArgs),
@@ -74,6 +77,7 @@ fn main() {
         Command::Update(args) => cmd_update::run(args),
         Command::Vendor(args) => cmd_vendor::run(args),
         Command::Publish(args) => cmd_publish::run(args),
+        Command::Build(args) => cmd_build::run(args),
         Command::Dev(args) => cmd_dev::run(args),
         Command::Devtools(args) => cmd_devtools::run(args),
     };

@@ -5,7 +5,11 @@
 
 pub mod add;
 pub mod backup;
+/// Сборка приложения: `cargo build --release` и поиск бинарного файла.
+pub mod build;
 pub mod cargo;
+/// Автоматическая проверка недостающих компонентов перед dev/build.
+pub mod check;
 /// Супервизор `light dev`: горячая перезагрузка приложения с восстановлением
 /// состояния.
 pub mod dev;

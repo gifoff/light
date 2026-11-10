@@ -1,4 +1,4 @@
-use light::prelude::*;
+use light_fw::prelude::*;
 
 #[template("templates/counter.html")]
 #[proxy]
@@ -37,6 +37,6 @@ impl Counter {
     }
 }
 
-fn main() -> light::Result<()> {
-    light::run(Counter::new())
+fn main() -> light_fw::Result<()> {
+    light_fw::run(Counter::new())
 }

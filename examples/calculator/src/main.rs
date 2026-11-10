@@ -1,4 +1,4 @@
-use light::prelude::*;
+use light_fw::prelude::*;
 
 #[template("templates/calculator.html")]
 #[proxy]
@@ -139,6 +139,6 @@ fn format_number(value: f64) -> String {
     }
 }
 
-fn main() -> light::Result<()> {
-    light::run(Calculator::new())
+fn main() -> light_fw::Result<()> {
+    light_fw::run(Calculator::new())
 }

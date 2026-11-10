@@ -7,7 +7,7 @@
 //! # echo -n "SNAPSHOT\n" | nc 127.0.0.1 9229
 //! ```
 
-use light::prelude::*;
+use light_fw::prelude::*;
 
 #[template("templates/app.html")]
 #[proxy]
@@ -48,9 +48,9 @@ impl App {
     }
 }
 
-fn main() -> light::Result<()> {
+fn main() -> light_fw::Result<()> {
     let app = App::new();
     // Конфигурация берётся из `light.config.json`: в debug-сборке (профиль
     // `dev`) DevTools включается на порту 9229, в release (`prod`) — нет.
-    light::run_with_config("light.config.json", app)
+    light_fw::run_with_config("light.config.json", app)
 }

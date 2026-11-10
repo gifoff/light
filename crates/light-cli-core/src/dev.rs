@@ -921,13 +921,18 @@ fn parse_workspace_package_version(text: &str) -> Option<String> {
     Some(ver)
 }
 
-/// Парсит версию обёрточного крейта `light` из `[dependencies]`.
-/// Возвращает `None`, если зависимость `light` отсутствует (не workspace-проект
-/// и нет прямой зависимости `light`).
+/// Парсит версию обёрточного крейта из `[dependencies]` (`light-fw`, затем старый `light`).
+/// Возвращает `None`, если ни одна из зависимостей отсутствует (не workspace-проект
+/// и нет прямой зависимости).
 fn parse_light_dep_version(text: &str) -> Option<String> {
     let doc: toml_edit::DocumentMut = text.parse().ok()?;
     let deps = doc.get("dependencies")?.as_table()?;
-    // Первый приоритет: обёрточный крейт `light`.
+    // Первый приоритет: обёрточный крейт `light-fw` (новый ключ), затем
+    // старый `light` для уже опубликованных проектов.
+    if let Some(entry) = deps.get("light-fw") {
+        return extract_dep_version(entry);
+    }
+    // Обратная совместимость: старый обёрточный крейт `light`.
     if let Some(entry) = deps.get("light") {
         return extract_dep_version(entry);
     }
@@ -1242,7 +1247,7 @@ fn run_inner(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         check_cli_version_mismatch(env!("CARGO_PKG_VERSION"), &toml_path, &lock_path)
     {
         eprintln!(
-            "⚠ light dev: installed CLI version {installed} differs from project {project}. Run `cargo install --path crates/light-cli`"
+            "⚠ light dev: installed CLI version {installed} differs from project {project}. Run `cargo install --path crates/light`"
         );
     }
 
@@ -1258,7 +1263,7 @@ fn run_inner(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         );
         let mut cmd = Command::new("cargo");
         cmd.arg("build");
-        cmd.args(["-p", &pkg_name, "--features", "light/dev-mode"]);
+        cmd.args(["-p", &pkg_name, "--features", "light-fw/dev-mode"]);
         cmd.args(["--target-dir", &build_target.to_string_lossy()]);
         cmd.args(&args.extra_cargo_args);
         cmd.stdin(Stdio::inherit())
@@ -1965,7 +1970,7 @@ fn run_inner(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
                     // тот же путь, что и в warm-up (workspace_root/hot-build).
                     let mut cmd = Command::new("cargo");
                     cmd.arg("build");
-                    cmd.args(["-p", &pkg_name, "--features", "light/dev-mode"]);
+                    cmd.args(["-p", &pkg_name, "--features", "light-fw/dev-mode"]);
                     cmd.args(["--target-dir", &build_target.to_string_lossy()]);
                     cmd.args(&args.extra_cargo_args);
                     cmd.stdin(Stdio::inherit())

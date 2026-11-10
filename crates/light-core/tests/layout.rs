@@ -1,11 +1,11 @@
 //! Тесты раскладки, поиска узлов по точке и областей перерисовки.
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
 use std::collections::{BTreeSet, HashMap};
 
-use light::layout::{Layout, Point, Rect, SPACING, TextMetrics, damage_regions, snapshot_rects};
-use light::vdom::{
+use light_fw::layout::{Layout, Point, Rect, SPACING, TextMetrics, damage_regions, snapshot_rects};
+use light_fw::vdom::{
     Align, Edges, NodeKind, Offset, Overflow, Position, Size, Style, VElement, WhiteSpace, diff,
 };
 
@@ -45,7 +45,7 @@ fn button(key: &'static str, label: &str, disabled: bool) -> VElement {
         key,
         NodeKind::Button {
             disabled,
-            button_type: light::vdom::ButtonType::Submit,
+            button_type: light_fw::vdom::ButtonType::Submit,
         },
         vec![text("t", label)],
     )
@@ -1132,7 +1132,7 @@ fn content_button(key: &'static str, children: Vec<VElement>) -> VElement {
         key,
         NodeKind::Button {
             disabled: false,
-            button_type: light::vdom::ButtonType::Submit,
+            button_type: light_fw::vdom::ButtonType::Submit,
         },
         children,
     )

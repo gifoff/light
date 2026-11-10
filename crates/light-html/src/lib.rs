@@ -645,7 +645,7 @@ mod file_tests {
 
     #[test]
     fn parses_doc_template() {
-        let src = include_str!("../../light/templates/doc_example.html");
+        let src = include_str!("../../light-fw/templates/doc_example.html");
         let nodes = super::parse(src).expect("шаблон из документации должен разбираться");
         assert_eq!(nodes.len(), 1, "в корне ровно один элемент");
     }

@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::Path;
 
-use light::ImageData;
-use light::prelude::*;
+use light_fw::ImageData;
+use light_fw::prelude::*;
 
 const MAX_AVATAR_BYTES: u64 = 100 * 1024;
 const MAX_AVATAR_DIMENSION: u32 = 512;
@@ -141,7 +141,7 @@ impl Dashboard {
     }
 
     fn pick_avatar(&self) -> bool {
-        let Some(path) = light::file_dialog::pick_image_file() else {
+        let Some(path) = light_fw::file_dialog::pick_image_file() else {
             return true;
         };
         match load_avatar(&path) {
@@ -287,8 +287,8 @@ fn load_avatar(path: &Path) -> Result<ImageData, String> {
         .map_err(|error| format!("Не удалось загрузить PNG: {error}"))
 }
 
-fn main() -> light::Result<()> {
-    light::run(Dashboard::new())
+fn main() -> light_fw::Result<()> {
+    light_fw::run(Dashboard::new())
 }
 
 #[cfg(test)]

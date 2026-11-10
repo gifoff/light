@@ -7,7 +7,7 @@
 //! успехе меняется текст статуса, а соответствующий фрагмент дерева
 //! доступности помечается как живой регион — скринридер объявит его сам.
 
-use light::prelude::*;
+use light_fw::prelude::*;
 
 /// Компонент из `examples/templates/a11y_form.html`.
 #[template("examples/templates/a11y_form.html")]
@@ -56,16 +56,16 @@ impl A11yForm {
     }
 }
 
-fn main() -> light::Result<()> {
+fn main() -> light_fw::Result<()> {
     let app = A11yForm::new();
     if std::env::args().any(|arg| arg == "--dump-a11y") {
         let tree = app.render();
-        let update = light::a11y::tree::build_update(&tree, None);
+        let update = light_fw::a11y::tree::build_update(&tree, None);
         println!(
             "{}",
             serde_json::to_string_pretty(&update).expect("сериализация дерева доступности")
         );
         return Ok(());
     }
-    light::run(app)
+    light_fw::run(app)
 }

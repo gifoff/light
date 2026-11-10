@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/light",
+    "crates/light-fw",
     "crates/light-core",
     "crates/light-element-form",
     "crates/light-behavior-validation",
@@ -9,7 +10,6 @@ members = [
     "crates/light-html",
     "crates/light-demo",
     "crates/light-cli-core",
-    "crates/light-cli",
     "examples/counter",
     "examples/todo",
     "examples/calculator",
@@ -35,6 +35,7 @@ png = "0.17"
 rfd = "0.14"
 
 light = { path = "crates/light", version = "0.16.3" }
+light-fw = { path = "crates/light-fw", version = "0.16.3" }
 light-fw-core = { path = "crates/light-core", version = "0.16.3" }
 light-fw-element-form = { path = "crates/light-element-form", version = "0.16.3" }
 light-fw-behavior-validation = { path = "crates/light-behavior-validation", version = "0.16.3" }

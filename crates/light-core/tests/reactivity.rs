@@ -1,12 +1,12 @@
 //! Тесты реактивного ядра: свойства, наблюдатели и запросы перерисовки.
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
 use std::cell::Cell;
 use std::rc::Rc;
 
-use light::prelude::*;
-use light::reactive::{set_repaint_requester, with_observer};
+use light_fw::prelude::*;
+use light_fw::reactive::{set_repaint_requester, with_observer};
 
 #[proxy]
 struct State {

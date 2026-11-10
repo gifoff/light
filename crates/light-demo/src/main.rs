@@ -5,7 +5,7 @@
 
 use std::cell::OnceCell;
 
-use light::prelude::*;
+use light_fw::prelude::*;
 
 /// Реактивное состояние, разделяемое между окнами приложения.
 #[proxy]
@@ -209,12 +209,12 @@ impl App {
     }
 }
 
-fn main() -> light::Result<()> {
+fn main() -> light_fw::Result<()> {
     let app = App::new();
 
     // Обозреватель перезапускается при изменении счётчика.
     let counter = app.counter();
     let _counter_watcher = watch(move || println!("обозреватель: счётчик = {}", counter.count()));
 
-    light::run(app)
+    light_fw::run(app)
 }

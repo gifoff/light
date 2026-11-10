@@ -4,15 +4,15 @@
 //! window's token updates only that window and leaves others untouched.
 //! Since the winit event loop cannot be driven from an integration test,
 //! the ТЗ-sanctioned fallback extracts the dispatch logic into
-//! [`light::apply_action`] and exercises it directly with stub components.
+//! [`light_fw::apply_action`] and exercises it directly with stub components.
 
 #![cfg(feature = "async-runtime")]
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
 use std::any::TypeId;
 
-use light::{Component, VElement, WindowToken};
+use light_fw::{Component, VElement, WindowToken};
 
 #[derive(Debug)]
 struct First {
@@ -23,7 +23,7 @@ impl Component for First {
     fn render(&self) -> VElement {
         VElement::leaf(
             "first",
-            light::NodeKind::Text {
+            light_fw::NodeKind::Text {
                 content: format!("first = {}", self.count),
             },
         )
@@ -43,7 +43,7 @@ impl Component for Second {
     fn render(&self) -> VElement {
         VElement::leaf(
             "second",
-            light::NodeKind::Text {
+            light_fw::NodeKind::Text {
                 content: format!("second = {}", self.count),
             },
         )
@@ -71,7 +71,7 @@ fn post_update_to_first_updates_only_first() {
     let mut first = First { count: 0 };
     let mut second = Second { count: 0 };
 
-    let applied = light::apply_action(
+    let applied = light_fw::apply_action(
         two_windows(&mut first, &mut second),
         Some(1),
         TypeId::of::<First>(),
@@ -93,7 +93,7 @@ fn post_update_to_second_updates_only_second() {
     let mut first = First { count: 0 };
     let mut second = Second { count: 0 };
 
-    let applied = light::apply_action(
+    let applied = light_fw::apply_action(
         two_windows(&mut first, &mut second),
         Some(2),
         TypeId::of::<Second>(),
@@ -115,7 +115,7 @@ fn unknown_token_returns_none_and_no_mutation() {
     let mut first = First { count: 0 };
     let mut second = Second { count: 0 };
 
-    let applied = light::apply_action(
+    let applied = light_fw::apply_action(
         two_windows(&mut first, &mut second),
         Some(99),
         TypeId::of::<First>(),
@@ -138,7 +138,7 @@ fn broadcast_updates_first_matching_typeid() {
     let mut first = First { count: 0 };
     let mut second = Second { count: 0 };
 
-    let applied = light::apply_action(
+    let applied = light_fw::apply_action(
         two_windows(&mut first, &mut second),
         None,
         TypeId::of::<First>(),
@@ -160,7 +160,7 @@ fn broadcast_with_no_match_returns_none() {
     let mut first = First { count: 0 };
     let mut second = Second { count: 0 };
 
-    let applied = light::apply_action(
+    let applied = light_fw::apply_action(
         two_windows(&mut first, &mut second),
         None,
         TypeId::of::<u32>(),

@@ -1,7 +1,7 @@
 //! Асинхронное обновление состояния с возможностью отмены.
 //!
 //! Кнопка «Начать» запускает фоновую асинхронную задачу (через
-//! `light::spawn_async` + `futures-timer`), которая имитирует долгую работу.
+//! `light_fw::spawn_async` + `futures-timer`), которая имитирует долгую работу.
 //! Пока задача выполняется, можно нажать «Отмена» — фоновая задача увидит
 //! флаг отмены через `TaskContext` и завершится раньше, не обновляя состояние.
 //!
@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use futures_timer::Delay;
 
-use light::prelude::*;
+use light_fw::prelude::*;
 
 const TICKS: u32 = 20;
 const TICK_MS: u64 = 100;
@@ -68,7 +68,7 @@ impl App {
         self.set_loading(true);
 
         let delay = Duration::from_millis(TICK_MS);
-        let handle = light::spawn_async(move |ctx| async move {
+        let handle = light_fw::spawn_async(move |ctx| async move {
             // Асинхронная задержка: `Delay` блокирует поток на таймере
             // (без busy-wait), а после каждого тика проверяем флаг отмены.
             for _ in 0..TICKS {
@@ -80,7 +80,7 @@ impl App {
 
             // Задача завершилась без отмены — применяем результат.
             if !ctx.is_cancelled() {
-                let _ = light::post_update::<App>(move |app| {
+                let _ = light_fw::post_update::<App>(move |app| {
                     app.set_count(app.count() + 1);
                     app.set_loading(false);
                     app.set_cancel_flag(None);
@@ -103,6 +103,6 @@ impl App {
     }
 }
 
-fn main() -> light::Result<()> {
-    light::run(App::new())
+fn main() -> light_fw::Result<()> {
+    light_fw::run(App::new())
 }

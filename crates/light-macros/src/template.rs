@@ -82,7 +82,7 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         Some(path) => quote! {
             fn window_factory(
                 &self,
-            ) -> ::std::option::Option<::std::boxed::Box<dyn ::light::component::Component>> {
+            ) -> ::std::option::Option<::std::boxed::Box<dyn ::light_fw::component::Component>> {
                 ::std::option::Option::Some(::std::boxed::Box::new(#path::new()))
             }
         },
@@ -142,7 +142,7 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             quote! {
                 if let ::std::option::Option::Some(__value) = state.get(#name_str) {
                     if let ::std::result::Result::Ok(__parsed) =
-                        ::light::serde_json::from_value::<#ty>(__value.clone())
+                        ::light_fw::serde_json::from_value::<#ty>(__value.clone())
                     {
                         self.#setter(__parsed);
                     }
@@ -151,14 +151,14 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         })
         .collect::<Vec<_>>();
     let inject_state_method = quote! {
-        fn inject_state(&mut self, state: &::light::serde_json::Value) {
+        fn inject_state(&mut self, state: &::light_fw::serde_json::Value) {
             #(#inject_bodies)*
         }
     };
 
     // `inspect_state` — без cfg (0.15.1): трейт требует его в любом наборе
     // фич. Примитивные поля инлайнятся прямо через `serde::Serialize` — это
-    // не требует публичной зависимости на `::light::devtools::inspect_field`
+    // не требует публичной зависимости на `::light_fw::devtools::inspect_field`
     // (которая за фичей `devtools`) и сохраняет поведение с ней, но добавляет
     // только serde-serialize-impl примитивов к размеру бинаря.
     let inspect_state_method = if field_fields.is_empty() {
@@ -172,28 +172,28 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             // Примитивные типы всегда реализуют `Serialize`; сложные
             // (вложенные компоненты, `Vec`, кастомные newtype) — `null`.
             // Прямой вызов `serde_json::to_value` (0.15.1): без фичи
-            // `devtools` модуль `::light::devtools` закрыт, а код инлайнится
+            // `devtools` модуль `::light_fw::devtools` закрыт, а код инлайнится
             // в бинарь приложения и не требует публичного реэкспорта.
             let value = if is_primitive_serde(ty) {
-                quote!(match ::light::serde_json::to_value(&#getter) {
+                quote!(match ::light_fw::serde_json::to_value(&#getter) {
                     ::std::result::Result::Ok(v) => v,
-                    ::std::result::Result::Err(_) => ::light::serde_json::Value::Null,
+                    ::std::result::Result::Err(_) => ::light_fw::serde_json::Value::Null,
                 })
             } else {
-                quote!(::light::serde_json::Value::Null)
+                quote!(::light_fw::serde_json::Value::Null)
             };
             quote! {
                 #map_ident.insert(::std::string::String::from(#name_str), #value);
             }
         });
         quote! {
-            fn inspect_state(&self) -> ::light::serde_json::Value {
-                let mut #map_ident: ::light::serde_json::Map<
+            fn inspect_state(&self) -> ::light_fw::serde_json::Value {
+                let mut #map_ident: ::light_fw::serde_json::Map<
                     ::std::string::String,
-                    ::light::serde_json::Value,
-                > = ::light::serde_json::Map::new();
+                    ::light_fw::serde_json::Value,
+                > = ::light_fw::serde_json::Map::new();
                 #(#inserts)*
-                ::light::serde_json::Value::Object(#map_ident)
+                ::light_fw::serde_json::Value::Object(#map_ident)
             }
         }
     };
@@ -218,22 +218,22 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             let spec = parse_window(element)?;
             window_tokens(&spec)?
         }
-        None => quote!(::light::component::WindowConfig::default()),
+        None => quote!(::light_fw::component::WindowConfig::default()),
     };
     let render_body = if window.is_some() || !nodes.is_empty() {
         quote! {
-            ::light::vdom::VElement::container(
+            ::light_fw::vdom::VElement::container(
                 "",
-                ::light::vdom::NodeKind::Window,
+                ::light_fw::vdom::NodeKind::Window,
                 __children,
             )
             .with_window(#window_config)
         }
     } else {
         quote! {
-            ::light::vdom::VElement::container(
+            ::light_fw::vdom::VElement::container(
                 "",
-                ::light::vdom::NodeKind::Column,
+                ::light_fw::vdom::NodeKind::Column,
                 __children,
             )
         }
@@ -270,8 +270,8 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     // Runtime-рендер: проверка в начале `render()` — если файл на диске изменился
     // и успешно разобрался, используем его вместо статического дерева.
     let runtime_render_check = quote! {
-        if ::light::FEATURE_RUNTIME_TEMPLATES {
-            if let Some(__rt) = ::light::runtime::render_dynamic(
+        if ::light_fw::FEATURE_RUNTIME_TEMPLATES {
+            if let Some(__rt) = ::light_fw::runtime::render_dynamic(
                 #const_name,
                 include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/", #template_rel)),
                 self,
@@ -331,7 +331,7 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         quote! {}
     } else {
         quote! {
-            fn invoke_handler(&self, __handler: &str, __event: ::light::vdom::Event) -> bool {
+            fn invoke_handler(&self, __handler: &str, __event: ::light_fw::vdom::Event) -> bool {
                 match __handler {
                     #(#invoke_arms)*
                     _ => false,
@@ -454,7 +454,7 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     // Дочерний модальный компонент задаётся аргументом `modal = Компонент`.
     let modal_method = match &args.modal {
         Some(path) => quote! {
-            fn modal(&self) -> ::std::option::Option<::std::boxed::Box<dyn ::light::Component>> {
+            fn modal(&self) -> ::std::option::Option<::std::boxed::Box<dyn ::light_fw::Component>> {
                 ::std::option::Option::Some(::std::boxed::Box::new(#path::new()))
             }
         },
@@ -467,15 +467,15 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     } else {
         let factories = args.windows.iter().map(|path| {
             quote! {
-                (|| -> ::std::boxed::Box<dyn ::light::Component> {
+                (|| -> ::std::boxed::Box<dyn ::light_fw::Component> {
                     ::std::boxed::Box::new(#path::new())
-                }) as fn() -> ::std::boxed::Box<dyn ::light::Component>
+                }) as fn() -> ::std::boxed::Box<dyn ::light_fw::Component>
             }
         });
         quote! {
             fn windows(
                 &self,
-            ) -> ::std::vec::Vec<fn() -> ::std::boxed::Box<dyn ::light::Component>> {
+            ) -> ::std::vec::Vec<fn() -> ::std::boxed::Box<dyn ::light_fw::Component>> {
                 ::std::vec![#(#factories),*]
             }
         }
@@ -512,28 +512,28 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         #(#track_files)*
         #id_symbol
 
-        impl ::light::Component for #ident {
+        impl ::light_fw::Component for #ident {
             fn as_any_mut(&mut self) -> &mut dyn ::std::any::Any {
                 self
             }
 
-            fn render(&self) -> ::light::vdom::VElement {
+            fn render(&self) -> ::light_fw::vdom::VElement {
                 #runtime_render_check
                 let mut __children = ::std::vec::Vec::new();
                 #(#pushes)*
                 #render_body
             }
 
-            fn dispatch(&self, __key: &str, __event: ::light::vdom::Event) -> bool {
+            fn dispatch(&self, __key: &str, __event: ::light_fw::vdom::Event) -> bool {
                 #[allow(unused_imports)]
-                use ::light::dom::Dom;
+                use ::light_fw::dom::Dom;
                 #[allow(unused_imports)]
-                use ::light::vdom::{VNode as _, VWindow as _};
+                use ::light_fw::vdom::{VNode as _, VWindow as _};
                 let mut __handled = false;
                 #(#arms)*
                 __handled
                     || (
-                        ::light::FEATURE_RUNTIME_TEMPLATES && self.dispatch_by_name(__key, __event)
+                        ::light_fw::FEATURE_RUNTIME_TEMPLATES && self.dispatch_by_name(__key, __event)
                     )
             }
 
@@ -696,7 +696,7 @@ struct Generator {
 
 /// Ключ узла: известный на этапе компиляции либо вычисляемый во время работы
 /// (`v-for`). Статические ключи остаются `&'static str`-литералами, динамические
-/// интернируются через [`light::vdom::intern_key`].
+/// интернируются через [`light_fw::vdom::intern_key`].
 #[derive(Clone)]
 enum KeyExpr {
     /// Ключ, целиком известный на этапе компиляции.
@@ -712,7 +712,7 @@ impl KeyExpr {
             Self::Lit(base) => Self::Lit(format!("{base}.{index}")),
             Self::Dyn(expr) => {
                 let suffix = format!(".{index}");
-                Self::Dyn(quote!(::light::vdom::intern_key(
+                Self::Dyn(quote!(::light_fw::vdom::intern_key(
                     &::std::format!("{}{}", #expr, #suffix)
                 )))
             }
@@ -722,10 +722,10 @@ impl KeyExpr {
     /// Ключ элемента в цикле `v-for` (суффикс — индекс итерации).
     fn iteration(&self) -> Self {
         match self {
-            Self::Lit(base) => Self::Dyn(quote!(::light::vdom::intern_key(
+            Self::Lit(base) => Self::Dyn(quote!(::light_fw::vdom::intern_key(
                 &::std::format!("{}/{}", #base, __for_index)
             ))),
-            Self::Dyn(expr) => Self::Dyn(quote!(::light::vdom::intern_key(
+            Self::Dyn(expr) => Self::Dyn(quote!(::light_fw::vdom::intern_key(
                 &::std::format!("{}/{}", #expr, __for_index)
             ))),
         }
@@ -1028,9 +1028,9 @@ impl Generator {
                 let content = self.content_expr(segments)?;
                 let key = key.token();
                 Ok(quote! {
-                    __children.push(::light::vdom::VElement::leaf(
+                    __children.push(::light_fw::vdom::VElement::leaf(
                         #key,
-                        ::light::vdom::NodeKind::Text { content: #content },
+                        ::light_fw::vdom::NodeKind::Text { content: #content },
                     ));
                 })
             }
@@ -1107,9 +1107,9 @@ impl Generator {
             return Err(syn::Error::new(
                 Span::call_site(),
                 format!(
-                    "элемент <{}> недоступен: Cargo-фича `{}` выключена у крейта `light`\n\
+                    "элемент <{}> недоступен: Cargo-фича `{}` выключена у крейта `light-fw`\n\
                      help: включите её в зависимости, например \
-                     `light = {{ features = [\"{}\"] }}`",
+                     `light-fw = {{ features = [\"{}\"] }}`",
                     element.name, feature, feature
                 ),
             ));
@@ -1206,7 +1206,7 @@ impl Generator {
                     quote! { #call() }
                 };
                 branches.push(quote! {
-                    if ::std::matches!(&__event, ::light::vdom::Event::#variant) {
+                    if ::std::matches!(&__event, ::light_fw::vdom::Event::#variant) {
                         #body;
                         return true;
                     }
@@ -1219,7 +1219,7 @@ impl Generator {
                 let variant = Ident::new(variant, Span::call_site());
                 // `handler_call` с аргументом события уже вернул полновесный вызов.
                 branches.push(quote! {
-                    if let ::light::vdom::Event::#variant(__button) = &__event {
+                    if let ::light_fw::vdom::Event::#variant(__button) = &__event {
                         #call;
                         return true;
                     }
@@ -1229,7 +1229,7 @@ impl Generator {
         if let Some(handler) = attr_value(&element.attrs, "@mousemove") {
             let call = self.handler_call(handler, Some(quote!(*__x, *__y)))?;
             branches.push(quote! {
-                if let ::light::vdom::Event::Mousemove { x: __x, y: __y } = &__event {
+                if let ::light_fw::vdom::Event::Mousemove { x: __x, y: __y } = &__event {
                     #call;
                     return true;
                 }
@@ -1240,7 +1240,7 @@ impl Generator {
                 let call = self.handler_call(handler, Some(quote!(__info.clone())))?;
                 let variant = Ident::new(variant, Span::call_site());
                 branches.push(quote! {
-                    if let ::light::vdom::Event::#variant(__info) = &__event {
+                    if let ::light_fw::vdom::Event::#variant(__info) = &__event {
                         #call;
                         return true;
                     }
@@ -1376,9 +1376,9 @@ impl Generator {
             }
         };
         let kind = if horizontal {
-            quote!(::light::vdom::NodeKind::Row)
+            quote!(::light_fw::vdom::NodeKind::Row)
         } else {
-            quote!(::light::vdom::NodeKind::Column)
+            quote!(::light_fw::vdom::NodeKind::Column)
         };
         let pushes = self.gen_children(&element.children, Some(key))?;
         let style = style_token(self, element, default_font, self.visible_token(element)?)?;
@@ -1387,7 +1387,7 @@ impl Generator {
         Ok(quote! {{
             let mut __children = ::std::vec::Vec::new();
             #(#pushes)*
-            ::light::vdom::VElement::container(#key, #kind, __children)
+            ::light_fw::vdom::VElement::container(#key, #kind, __children)
                 .with_style(#style)
                 #meta
         }})
@@ -1402,7 +1402,7 @@ impl Generator {
         Ok(quote! {{
             let mut __children = ::std::vec::Vec::new();
             #(#pushes)*
-            ::light::vdom::VElement::container(#key, ::light::vdom::NodeKind::TitleBar, __children)
+            ::light_fw::vdom::VElement::container(#key, ::light_fw::vdom::NodeKind::TitleBar, __children)
                 .with_style(#style)
                 #meta
         }})
@@ -1437,9 +1437,9 @@ impl Generator {
         let key = key.token();
         self.push_events(element, &key)?;
         let fallback = quote! {
-            ::light::vdom::VElement::container(
+            ::light_fw::vdom::VElement::container(
                 #key,
-                ::light::vdom::NodeKind::Image {
+                ::light_fw::vdom::NodeKind::Image {
                     src: #src,
                     data: ::std::include_bytes!(#path_literal),
                     width: #width,
@@ -1454,9 +1454,9 @@ impl Generator {
             quote! {
                 match #expr {
                     ::std::option::Option::Some(__image) => {
-                        ::light::vdom::VElement::container(
+                        ::light_fw::vdom::VElement::container(
                             #key,
-                            ::light::vdom::NodeKind::RuntimeImage {
+                            ::light_fw::vdom::NodeKind::RuntimeImage {
                                 image: __image,
                                 alt: ::std::string::String::from(#alt),
                             },
@@ -1497,11 +1497,11 @@ impl Generator {
             None => quote!(false),
         };
         let button_type = match dynamic_value(self, element, "type")? {
-            Some(value) => quote!(::light::vdom::parse_button_type(&#value)),
+            Some(value) => quote!(::light_fw::vdom::parse_button_type(&#value)),
             None => match attr_value(&element.attrs, "type").map(str::trim) {
-                None | Some("") | Some("submit") => quote!(::light::vdom::ButtonType::Submit),
-                Some("button") => quote!(::light::vdom::ButtonType::Button),
-                Some("reset") => quote!(::light::vdom::ButtonType::Reset),
+                None | Some("") | Some("submit") => quote!(::light_fw::vdom::ButtonType::Submit),
+                Some("button") => quote!(::light_fw::vdom::ButtonType::Button),
+                Some("reset") => quote!(::light_fw::vdom::ButtonType::Reset),
                 Some(other) => {
                     return Err(syn::Error::new(
                         Span::call_site(),
@@ -1522,9 +1522,9 @@ impl Generator {
         Ok(quote! {{
             let mut __children = ::std::vec::Vec::new();
             #(#pushes)*
-            ::light::vdom::VElement::container(
+            ::light_fw::vdom::VElement::container(
                 #key,
-                ::light::vdom::NodeKind::Button {
+                ::light_fw::vdom::NodeKind::Button {
                     disabled: #disabled,
                     button_type: #button_type,
                 },
@@ -1594,7 +1594,7 @@ impl Generator {
             quote!(false)
         } else {
             match dynamic_value(self, element, "textarea")? {
-                Some(value) => quote!(::light::vdom::parse_bool(&#value)),
+                Some(value) => quote!(::light_fw::vdom::parse_bool(&#value)),
                 None => {
                     let value = match attr_value(&element.attrs, "textarea") {
                         None => false,
@@ -1606,15 +1606,15 @@ impl Generator {
             }
         };
         let resize = if masked {
-            quote!(::light::vdom::Resize::None)
+            quote!(::light_fw::vdom::Resize::None)
         } else {
             match dynamic_value(self, element, "resize")? {
-                Some(value) => quote!(::light::vdom::parse_resize(&#value)),
+                Some(value) => quote!(::light_fw::vdom::parse_resize(&#value)),
                 None => match attr_value(&element.attrs, "resize").map(str::trim) {
-                    None | Some("none") => quote!(::light::vdom::Resize::None),
-                    Some("horizontal") => quote!(::light::vdom::Resize::Horizontal),
-                    Some("vertical") => quote!(::light::vdom::Resize::Vertical),
-                    Some("both") => quote!(::light::vdom::Resize::Both),
+                    None | Some("none") => quote!(::light_fw::vdom::Resize::None),
+                    Some("horizontal") => quote!(::light_fw::vdom::Resize::Horizontal),
+                    Some("vertical") => quote!(::light_fw::vdom::Resize::Vertical),
+                    Some("both") => quote!(::light_fw::vdom::Resize::Both),
                     Some(other) => {
                         return Err(syn::Error::new(
                             Span::call_site(),
@@ -1631,7 +1631,7 @@ impl Generator {
         let key = key.token();
         let mut branches = self.event_branches(element)?;
         branches.push(quote! {
-            if let ::light::vdom::Event::TextChange(__value) = &__event {
+            if let ::light_fw::vdom::Event::TextChange(__value) = &__event {
                 #write; return true;
             }
         });
@@ -1642,9 +1642,9 @@ impl Generator {
         let style = style_token(self, element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;
         Ok(quote! {
-            ::light::vdom::VElement::leaf(
+            ::light_fw::vdom::VElement::leaf(
                 #key,
-                ::light::vdom::NodeKind::TextField {
+                ::light_fw::vdom::NodeKind::TextField {
                     value: ::std::string::ToString::to_string(&(#read)),
                     placeholder: #placeholder,
                     disabled: #disabled,
@@ -1694,7 +1694,7 @@ impl Generator {
         let key = key.token();
         let mut branches = self.event_branches(element)?;
         branches.push(quote! {
-            if let ::light::vdom::Event::Click = &__event {
+            if let ::light_fw::vdom::Event::Click = &__event {
                 #write; return true;
             }
         });
@@ -1705,9 +1705,9 @@ impl Generator {
         let style = style_token(self, element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;
         Ok(quote! {
-            ::light::vdom::VElement::leaf(
+            ::light_fw::vdom::VElement::leaf(
                 #key,
-                ::light::vdom::NodeKind::Checkbox {
+                ::light_fw::vdom::NodeKind::Checkbox {
                     label: #label,
                     checked: #read,
                     disabled: #disabled,
@@ -1762,7 +1762,7 @@ impl Generator {
         let key = key.token();
         let mut branches = self.event_branches(element)?;
         branches.push(quote! {
-            if let ::light::vdom::Event::Click = &__event {
+            if let ::light_fw::vdom::Event::Click = &__event {
                 #write; return true;
             }
         });
@@ -1773,9 +1773,9 @@ impl Generator {
         let style = style_token(self, element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;
         Ok(quote! {
-            ::light::vdom::VElement::leaf(
+            ::light_fw::vdom::VElement::leaf(
                 #key,
-                ::light::vdom::NodeKind::Radio {
+                ::light_fw::vdom::NodeKind::Radio {
                     label: #label,
                     value: #value,
                     selected: #read == #compare,
@@ -1837,7 +1837,7 @@ impl Generator {
                 },
             };
             options.push(quote! {
-                ::light::vdom::SelectOption {
+                ::light_fw::vdom::SelectOption {
                     label: (#label).clone(),
                     value: #value,
                 }
@@ -1848,7 +1848,7 @@ impl Generator {
         let key = key.token();
         let mut branches = self.event_branches(element)?;
         branches.push(quote! {
-            if let ::light::vdom::Event::TextChange(__value) = &__event {
+            if let ::light_fw::vdom::Event::TextChange(__value) = &__event {
                 #write; return true;
             }
         });
@@ -1859,9 +1859,9 @@ impl Generator {
         let style = style_token(self, element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;
         Ok(quote! {
-            ::light::vdom::VElement::leaf(
+            ::light_fw::vdom::VElement::leaf(
                 #key,
-                ::light::vdom::NodeKind::Select {
+                ::light_fw::vdom::NodeKind::Select {
                     value: ::std::string::ToString::to_string(&(#read)),
                     options: #options,
                     disabled: #disabled,
@@ -1907,16 +1907,16 @@ fn parse_size_attr(element: &Element, name: &str) -> syn::Result<Option<TokenStr
     };
     let token = if let Some(percent) = value.strip_suffix('%') {
         let number: f32 = percent.trim().parse().map_err(|_| invalid())?;
-        quote!(::light::vdom::Size::Percent(#number))
+        quote!(::light_fw::vdom::Size::Percent(#number))
     } else {
         let number = value.strip_suffix("px").unwrap_or(value).trim();
         let number: f32 = number.parse().map_err(|_| invalid())?;
-        quote!(::light::vdom::Size::Px(#number))
+        quote!(::light_fw::vdom::Size::Px(#number))
     };
     Ok(Some(token))
 }
 
-/// Собирает [`light::vdom::Style`] из атрибутов: `width`, `height` (px или %),
+/// Собирает [`light_fw::vdom::Style`] из атрибутов: `width`, `height` (px или %),
 /// `position-x` (`left`/`center`/`right`), `position-y` (`top`/`center`/
 /// `bottom`), `position-offset-x`/`position-offset-y` (px или %, в том числе
 /// отрицательные; псевдонимы `left`/`top`), `padding`/`margin` и их
@@ -1937,13 +1937,13 @@ fn style_token(
         generator,
         element,
         "width",
-        quote!(::light::vdom::Size::Auto),
+        quote!(::light_fw::vdom::Size::Auto),
     )?;
     let height = size_attr(
         generator,
         element,
         "height",
-        quote!(::light::vdom::Size::Auto),
+        quote!(::light_fw::vdom::Size::Auto),
     )?;
     let min_width = optional_size_attr(generator, element, "min-width")?;
     let min_height = optional_size_attr(generator, element, "min-height")?;
@@ -1960,8 +1960,8 @@ fn style_token(
         "position-x",
         "left",
         "right",
-        quote!(::light::vdom::parse_align_x),
-        quote!(::light::vdom::Align::Start),
+        quote!(::light_fw::vdom::parse_align_x),
+        quote!(::light_fw::vdom::Align::Start),
     )?;
     let align_y = align_attr(
         generator,
@@ -1969,8 +1969,8 @@ fn style_token(
         "position-y",
         "top",
         "bottom",
-        quote!(::light::vdom::parse_align_y),
-        quote!(::light::vdom::Align::Start),
+        quote!(::light_fw::vdom::parse_align_y),
+        quote!(::light_fw::vdom::Align::Start),
     )?;
     let offset_x = offset_attr(generator, element, "position-offset-x")?;
     let offset_y = offset_attr(generator, element, "position-offset-y")?;
@@ -1980,8 +1980,8 @@ fn style_token(
         "justify-content",
         "start",
         "end",
-        quote!(::light::vdom::parse_justify),
-        quote!(::light::vdom::Align::Start),
+        quote!(::light_fw::vdom::parse_justify),
+        quote!(::light_fw::vdom::Align::Start),
     )?;
     let align_items = align_attr(
         generator,
@@ -1989,8 +1989,8 @@ fn style_token(
         "align-items",
         "start",
         "end",
-        quote!(::light::vdom::parse_align_items),
-        quote!(::light::vdom::Align::Start),
+        quote!(::light_fw::vdom::parse_align_items),
+        quote!(::light_fw::vdom::Align::Start),
     )?;
     let padding = edges_attr(generator, element, "padding")?;
     let margin = edges_attr(generator, element, "margin")?;
@@ -2008,7 +2008,7 @@ fn style_token(
     let font_color = color_attr(generator, element, "font-color")?;
     let border_color = color_attr(generator, element, "border-color")?;
     let z = generator.z_token(element)?;
-    Ok(quote!(::light::vdom::Style {
+    Ok(quote!(::light_fw::vdom::Style {
         width: #width,
         height: #height,
         min_width: #min_width,
@@ -2052,7 +2052,7 @@ fn flex_attr(
     shorthand_part: usize,
 ) -> syn::Result<TokenStream> {
     if let Some(value) = dynamic_value(generator, element, name)? {
-        return Ok(quote!(::light::vdom::parse_px(&#value)));
+        return Ok(quote!(::light_fw::vdom::parse_px(&#value)));
     }
     if let Some(value) = attr_value(&element.attrs, name) {
         let number = parse_flex_number(element, name, value)?;
@@ -2116,9 +2116,9 @@ fn align_token(
         return Ok(default);
     };
     let token = match value.trim() {
-        value if value == start => quote!(::light::vdom::Align::Start),
-        "center" => quote!(::light::vdom::Align::Center),
-        value if value == end => quote!(::light::vdom::Align::End),
+        value if value == start => quote!(::light_fw::vdom::Align::Start),
+        "center" => quote!(::light_fw::vdom::Align::Center),
+        value if value == end => quote!(::light_fw::vdom::Align::End),
         other => {
             return Err(syn::Error::new(
                 Span::call_site(),
@@ -2137,7 +2137,7 @@ fn align_token(
 /// Допускает пиксели (`-8`, `12px`) и проценты (`10%`, в том числе со знаком).
 fn offset_token(element: &Element, name: &str) -> syn::Result<TokenStream> {
     let Some(value) = attr_value(&element.attrs, name) else {
-        return Ok(quote!(::light::vdom::Offset::Px(0.0)));
+        return Ok(quote!(::light_fw::vdom::Offset::Px(0.0)));
     };
     let value = value.trim();
     let invalid = || {
@@ -2151,11 +2151,11 @@ fn offset_token(element: &Element, name: &str) -> syn::Result<TokenStream> {
     };
     let token = if let Some(percent) = value.strip_suffix('%') {
         let number: f32 = percent.trim().parse().map_err(|_| invalid())?;
-        quote!(::light::vdom::Offset::Percent(#number))
+        quote!(::light_fw::vdom::Offset::Percent(#number))
     } else {
         let number = value.strip_suffix("px").unwrap_or(value).trim();
         let number: f32 = number.parse().map_err(|_| invalid())?;
-        quote!(::light::vdom::Offset::Px(#number))
+        quote!(::light_fw::vdom::Offset::Px(#number))
     };
     Ok(token)
 }
@@ -2187,13 +2187,13 @@ fn size_attr(
     default: TokenStream,
 ) -> syn::Result<TokenStream> {
     if let Some(value) = dynamic_value(generator, element, name)? {
-        return Ok(quote!(::light::vdom::parse_size_or_auto(&#value)));
+        return Ok(quote!(::light_fw::vdom::parse_size_or_auto(&#value)));
     }
     Ok(parse_size_attr(element, name)?.unwrap_or(default))
 }
 
 /// Необязательный размер (`min-width`/`max-width` и т. п.) как
-/// `Option<::light::vdom::Size>` с учётом динамической привязки.
+/// `Option<::light_fw::vdom::Size>` с учётом динамической привязки.
 fn optional_size_attr(
     generator: &Generator,
     element: &Element,
@@ -2201,7 +2201,7 @@ fn optional_size_attr(
 ) -> syn::Result<TokenStream> {
     if let Some(value) = dynamic_value(generator, element, name)? {
         return Ok(quote!(::std::option::Option::Some(
-            ::light::vdom::parse_size_or_auto(&#value)
+            ::light_fw::vdom::parse_size_or_auto(&#value)
         )));
     }
     optional_size_token(element, name)
@@ -2229,7 +2229,7 @@ fn align_attr(
 /// `:name="путь"` или статический `name`.
 fn offset_attr(generator: &Generator, element: &Element, name: &str) -> syn::Result<TokenStream> {
     if let Some(value) = dynamic_value(generator, element, name)? {
-        return Ok(quote!(::light::vdom::parse_offset(&#value)));
+        return Ok(quote!(::light_fw::vdom::parse_offset(&#value)));
     }
     offset_token(element, name)
 }
@@ -2237,11 +2237,11 @@ fn offset_attr(generator: &Generator, element: &Element, name: &str) -> syn::Res
 /// Участие в потоке (`position`): `flow`/`static`/`relative` или `absolute`.
 fn position_attr(generator: &Generator, element: &Element) -> syn::Result<TokenStream> {
     if let Some(value) = dynamic_value(generator, element, "position")? {
-        return Ok(quote!(::light::vdom::parse_position(&#value)));
+        return Ok(quote!(::light_fw::vdom::parse_position(&#value)));
     }
     Ok(match attr_value(&element.attrs, "position") {
-        Some(value) => quote!(::light::vdom::parse_position(#value)),
-        None => quote!(::light::vdom::Position::Flow),
+        Some(value) => quote!(::light_fw::vdom::parse_position(#value)),
+        None => quote!(::light_fw::vdom::Position::Flow),
     })
 }
 
@@ -2252,19 +2252,19 @@ fn overflow_attr(
     element: &Element,
 ) -> syn::Result<(TokenStream, TokenStream)> {
     let base = if let Some(value) = dynamic_value(generator, element, "overflow")? {
-        quote!(::light::vdom::parse_overflow(&#value))
+        quote!(::light_fw::vdom::parse_overflow(&#value))
     } else {
         match attr_value(&element.attrs, "overflow") {
-            Some(value) => quote!(::light::vdom::parse_overflow(#value)),
-            None => quote!(::light::vdom::Overflow::Visible),
+            Some(value) => quote!(::light_fw::vdom::parse_overflow(#value)),
+            None => quote!(::light_fw::vdom::Overflow::Visible),
         }
     };
     let axis = |name: &str| -> syn::Result<TokenStream> {
         if let Some(value) = dynamic_value(generator, element, name)? {
-            return Ok(quote!(::light::vdom::parse_overflow(&#value)));
+            return Ok(quote!(::light_fw::vdom::parse_overflow(&#value)));
         }
         Ok(match attr_value(&element.attrs, name) {
-            Some(value) => quote!(::light::vdom::parse_overflow(#value)),
+            Some(value) => quote!(::light_fw::vdom::parse_overflow(#value)),
             None => base.clone(),
         })
     };
@@ -2275,12 +2275,12 @@ fn overflow_attr(
 fn white_space_attr(generator: &Generator, element: &Element) -> syn::Result<TokenStream> {
     if let Some(value) = dynamic_value(generator, element, "white-space")? {
         return Ok(quote!(
-            ::std::option::Option::Some(::light::vdom::parse_white_space(&#value))
+            ::std::option::Option::Some(::light_fw::vdom::parse_white_space(&#value))
         ));
     }
     Ok(match attr_value(&element.attrs, "white-space") {
         Some(value) => quote!(
-            ::std::option::Option::Some(::light::vdom::parse_white_space(#value))
+            ::std::option::Option::Some(::light_fw::vdom::parse_white_space(#value))
         ),
         None => quote!(::std::option::Option::None),
     })
@@ -2292,7 +2292,7 @@ fn edges_attr(generator: &Generator, element: &Element, base: &str) -> syn::Resu
     let Some(value) = dynamic_value(generator, element, base)? else {
         return edges_token(element, base);
     };
-    let scalar = quote!(::light::vdom::parse_px(&#value));
+    let scalar = quote!(::light_fw::vdom::parse_px(&#value));
     let side = |suffix: &str| -> syn::Result<TokenStream> {
         Ok(match parse_px_attr(element, &format!("{base}-{suffix}"))? {
             Some(value) => quote!(#value),
@@ -2303,7 +2303,7 @@ fn edges_attr(generator: &Generator, element: &Element, base: &str) -> syn::Resu
     let right = side("right")?;
     let bottom = side("bottom")?;
     let left = side("left")?;
-    Ok(quote!(::light::vdom::Edges {
+    Ok(quote!(::light_fw::vdom::Edges {
         top: #top,
         right: #right,
         bottom: #bottom,
@@ -2319,7 +2319,7 @@ fn px_attr(
     name: &str,
 ) -> syn::Result<Option<TokenStream>> {
     if let Some(value) = dynamic_value(generator, element, name)? {
-        return Ok(Some(quote!(::light::vdom::parse_px(&#value))));
+        return Ok(Some(quote!(::light_fw::vdom::parse_px(&#value))));
     }
     Ok(parse_px_attr(element, name)?.map(|value| quote!(#value)))
 }
@@ -2328,7 +2328,7 @@ fn px_attr(
 /// с учётом динамической привязки.
 fn color_attr(generator: &Generator, element: &Element, name: &str) -> syn::Result<TokenStream> {
     if let Some(value) = dynamic_value(generator, element, name)? {
-        return Ok(quote!(::light::vdom::parse_color(&#value)));
+        return Ok(quote!(::light_fw::vdom::parse_color(&#value)));
     }
     Ok(color_token(parse_color_attr(element, name)?))
 }
@@ -2336,7 +2336,7 @@ fn color_attr(generator: &Generator, element: &Element, name: &str) -> syn::Resu
 /// Выражение флага `required` с учётом динамической привязки `:required`.
 fn required_attr(generator: &Generator, element: &Element) -> syn::Result<TokenStream> {
     if let Some(value) = dynamic_value(generator, element, "required")? {
-        return Ok(quote!(::light::vdom::parse_bool(&#value)));
+        return Ok(quote!(::light_fw::vdom::parse_bool(&#value)));
     }
     Ok(required_token(element))
 }
@@ -2345,7 +2345,7 @@ fn required_attr(generator: &Generator, element: &Element) -> syn::Result<TokenS
 /// `:required-indicator`.
 fn required_indicator_attr(generator: &Generator, element: &Element) -> syn::Result<TokenStream> {
     if let Some(value) = dynamic_value(generator, element, "required-indicator")? {
-        return Ok(quote!(::light::vdom::parse_required_indicator(&#value)));
+        return Ok(quote!(::light_fw::vdom::parse_required_indicator(&#value)));
     }
     required_indicator_token(element)
 }
@@ -2358,7 +2358,7 @@ fn color_token(value: Option<u32>) -> TokenStream {
     }
 }
 
-/// Собирает [`light::vdom::Edges`] из базового атрибута (`padding`/`margin`) и
+/// Собирает [`light_fw::vdom::Edges`] из базового атрибута (`padding`/`margin`) и
 /// переопределений по сторонам (`padding-top`, `margin-left` и т. п.).
 ///
 /// Базовый атрибут задаёт все четыре стороны (по умолчанию `0`), атрибут с
@@ -2372,7 +2372,7 @@ fn edges_token(element: &Element, base: &str) -> syn::Result<TokenStream> {
     let right = side("right")?;
     let bottom = side("bottom")?;
     let left = side("left")?;
-    Ok(quote!(::light::vdom::Edges {
+    Ok(quote!(::light_fw::vdom::Edges {
         top: #top,
         right: #right,
         bottom: #bottom,
@@ -2429,12 +2429,12 @@ fn required_token(element: &Element) -> TokenStream {
 /// (`#RRGGBB`/`#RRGGBBAA`) — акцентная полоса заданного цвета.
 fn required_indicator_token(element: &Element) -> syn::Result<TokenStream> {
     let Some(value) = attr_value(&element.attrs, "required-indicator") else {
-        return Ok(quote!(::light::vdom::RequiredIndicator::Asterisk));
+        return Ok(quote!(::light_fw::vdom::RequiredIndicator::Asterisk));
     };
     let value = value.trim();
     let token = match value {
-        "" | "*" => quote!(::light::vdom::RequiredIndicator::Asterisk),
-        "none" => quote!(::light::vdom::RequiredIndicator::None),
+        "" | "*" => quote!(::light_fw::vdom::RequiredIndicator::Asterisk),
+        "none" => quote!(::light_fw::vdom::RequiredIndicator::None),
         other => {
             let color = parse_hex_color(other).map_err(|_| {
                 syn::Error::new(
@@ -2446,7 +2446,7 @@ fn required_indicator_token(element: &Element) -> syn::Result<TokenStream> {
                     ),
                 )
             })?;
-            quote!(::light::vdom::RequiredIndicator::Accent(#color))
+            quote!(::light_fw::vdom::RequiredIndicator::Accent(#color))
         }
     };
     Ok(token)
@@ -2683,7 +2683,7 @@ fn text_segments(children: &[Node], element: &str) -> syn::Result<Vec<Segment>> 
 }
 
 /// Допустимые статические значения атрибута `cursor` (совпадают с
-/// [`light::vdom::Cursor::from_name`]).
+/// [`light_fw::vdom::Cursor::from_name`]).
 const CURSOR_VALUES: &[&str] = &[
     "default",
     "pointer",
@@ -2930,7 +2930,7 @@ fn parse_bool(value: &str) -> bool {
 }
 
 fn window_tokens(spec: &WindowSpec) -> syn::Result<TokenStream> {
-    let mut builder = quote! { let mut cfg = ::light::component::WindowConfig::default(); };
+    let mut builder = quote! { let mut cfg = ::light_fw::component::WindowConfig::default(); };
     if let Some(w) = spec.width {
         builder = quote! { #builder cfg.width = #w; };
     }
@@ -3005,7 +3005,7 @@ fn window_tokens(spec: &WindowSpec) -> syn::Result<TokenStream> {
                 Span::call_site(),
                 "атрибут icon у <window> недоступен: Cargo-фича `image-support` выключена\n\
                  help: включите её в зависимости, например \
-                 `light = { features = [\"image-support\"] }`",
+                 `light-fw = { features = [\"image-support\"] }`",
             ));
         }
         let icon = icon.trim();

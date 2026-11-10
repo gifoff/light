@@ -23,7 +23,7 @@ pub struct ComponentInfo {
     pub latest_version: semver::Version,
     /// Требование к версии ядра.
     pub core_requirement: semver::VersionReq,
-    /// Фичи мета-крейта `light`, которые включает компонент.
+    /// Фичи мета-крейта `light-fw`, которые включает компонент.
     pub light_features: Vec<String>,
     /// Что компонент предоставляет (теги, атрибуты, директивы).
     pub provides: Provides,

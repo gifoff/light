@@ -6,9 +6,9 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [features]
-devtools = ["light/devtools"]
-async-runtime = ["light/async-runtime"]
-dev-mode = ["light/dev-mode"]
+devtools = ["light-fw/devtools"]
+async-runtime = ["light-fw/async-runtime"]
+dev-mode = ["light-fw/dev-mode"]
 
 [dependencies]
-light = { path = "../../crates/light", features = ["async-runtime"] }
+light-fw = { path = "../../crates/light-fw", features = ["async-runtime"] }

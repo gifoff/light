@@ -29,7 +29,7 @@
 //! ## Пример
 //!
 //! ```no_run
-//! use light::prelude::*;
+//! use light_fw::prelude::*;
 //!
 //! #[template("templates/doc_example.html")]
 //! #[proxy]
@@ -61,8 +61,8 @@
 //! # #[cfg(not(feature = "window"))]
 //! # fn main() {}
 //! # #[cfg(feature = "window")]
-//! fn main() -> light::Result<()> {
-//!     light::run(App::new())
+//! fn main() -> light_fw::Result<()> {
+//!     light_fw::run(App::new())
 //! }
 //! ```
 //!
@@ -79,15 +79,16 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
-// Позволяет генерируемому коду обращаться к `::light::…` изнутри самой библиотеки.
-extern crate self as light;
+// Позволяет генерируемому коду обращаться к `::light_fw::…` изнутри самой
+// библиотеки (см. код, генерируемый `light-fw-macros`).
+extern crate self as light_fw;
 
 #[cfg(feature = "devtools")]
 use serde::Deserialize;
 
 // Основной API доступен всегда, без cfg (0.15.1). Глоб-реэкспорт ядра ниже
 // перетягивает `vdom::to_json` и всё остальное; здесь добавлены то, что glob
-// не даёт: `serde_json` — путь `::light::serde_json` для сгенерированного
+// не даёт: `serde_json` — путь `::light_fw::serde_json` для сгенерированного
 // макросом кода (доступен теперь в любом наборе фич), и `devtools` — только
 // при фиче.
 #[cfg(feature = "devtools")]
@@ -180,7 +181,7 @@ fn load_profile(config_path: &str) -> ConfigProfile {
 ///
 /// Пример:
 /// ```ignore
-/// use light::prelude::*;
+/// use light_fw::prelude::*;
 ///
 /// #[template("templates/doc_example.html")]
 /// #[proxy]
@@ -194,8 +195,8 @@ fn load_profile(config_path: &str) -> ConfigProfile {
 ///     }
 /// }
 ///
-/// fn main() -> light::Result<()> {
-///     light::run_with_config("light.config.json", App::new())
+/// fn main() -> light_fw::Result<()> {
+///     light_fw::run_with_config("light.config.json", App::new())
 /// }
 /// ```
 #[cfg(feature = "window")]

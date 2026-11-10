@@ -1,13 +1,13 @@
 //! Тесты фокуса и порядка обхода клавишей Tab.
 #![cfg(feature = "a11y")]
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
-use light::a11y::focus::{
+use light_fw::a11y::focus::{
     first_tabbable, focus_order, initial_focus, is_disabled, is_focusable, is_hidden, is_tabbable,
     next_focus, tabindex,
 };
-use light::vdom::{ButtonType, NodeKind, Resize, VElement};
+use light_fw::vdom::{ButtonType, NodeKind, Resize, VElement};
 
 // ---------- Хелперы ----------
 

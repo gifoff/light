@@ -1,11 +1,11 @@
 //! Тесты построения дерева доступности.
 #![cfg(feature = "a11y")]
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
 use accesskit::{Invalid, Role};
-use light::a11y::tree::{build_update, find_key_for_node_id, node_id_for_key};
-use light::vdom::{ButtonType, NodeKind, VElement};
+use light_fw::a11y::tree::{build_update, find_key_for_node_id, node_id_for_key};
+use light_fw::vdom::{ButtonType, NodeKind, VElement};
 
 fn button(key: &'static str, label: &str) -> VElement {
     let child_key: &'static str = Box::leak(format!("{key}.t").into_boxed_str());

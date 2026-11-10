@@ -1,9 +1,9 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use light_fw_core as light;
+use light_fw_core as light_fw;
 
-use light::layout::{Layout, Point, Rect, TextMetrics};
-use light::render::{Color, RendererBackend};
-use light::vdom::{NodeKind, VElement, diff};
+use light_fw::layout::{Layout, Point, Rect, TextMetrics};
+use light_fw::render::{Color, RendererBackend};
+use light_fw::vdom::{NodeKind, VElement, diff};
 
 const ROWS: usize = 100;
 const CELLS: usize = 9;
@@ -34,7 +34,7 @@ impl MemoryBackend {
 }
 
 impl RendererBackend for MemoryBackend {
-    fn resize(&mut self, width: u32, height: u32) -> light::Result<()> {
+    fn resize(&mut self, width: u32, height: u32) -> light_fw::Result<()> {
         self.width = width;
         self.height = height;
         self.frame = vec![0; (width * height * 4) as usize];
@@ -49,7 +49,7 @@ impl RendererBackend for MemoryBackend {
         &mut self.frame
     }
 
-    fn present(&mut self) -> light::Result<()> {
+    fn present(&mut self) -> light_fw::Result<()> {
         Ok(())
     }
 }
@@ -101,8 +101,8 @@ fn bench_layout(c: &mut Criterion) {
     });
 }
 
-fn load_font() -> Option<light::window::font::FontMetrics> {
-    light::window::font::FontMetrics::load().ok()
+fn load_font() -> Option<light_fw::window::font::FontMetrics> {
+    light_fw::window::font::FontMetrics::load().ok()
 }
 
 fn bench_render(c: &mut Criterion) {

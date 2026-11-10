@@ -6,7 +6,7 @@
 //! можно крестиком в заголовке, а результат подтверждения объявляется
 //! скринридером через живой регион.
 
-use light::prelude::*;
+use light_fw::prelude::*;
 
 /// Компонент из `examples/templates/a11y_dialog.html`.
 #[template("examples/templates/a11y_dialog.html")]
@@ -35,16 +35,16 @@ impl A11yDialog {
     }
 }
 
-fn main() -> light::Result<()> {
+fn main() -> light_fw::Result<()> {
     let app = A11yDialog::new();
     if std::env::args().any(|arg| arg == "--dump-a11y") {
         let tree = app.render();
-        let update = light::a11y::tree::build_update(&tree, None);
+        let update = light_fw::a11y::tree::build_update(&tree, None);
         println!(
             "{}",
             serde_json::to_string_pretty(&update).expect("сериализация дерева доступности")
         );
         return Ok(());
     }
-    light::run(app)
+    light_fw::run(app)
 }

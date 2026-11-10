@@ -40,8 +40,8 @@
 //! Пример компонента (шаблон `templates/counter.html`):
 //!
 //! ```rust
-//! # extern crate light_fw_core as light;
-//! # use light::prelude::*;
+//! # extern crate light_fw_core as light_fw;
+//! # use light_fw::prelude::*;
 //!
 //! #[template("templates/counter.html")]
 //! #[proxy]
@@ -70,8 +70,8 @@
 //! Запуск окна:
 //!
 //! ```rust,no_run
-//! # extern crate light_fw_core as light;
-//! # use light::prelude::*;
+//! # extern crate light_fw_core as light_fw;
+//! # use light_fw::prelude::*;
 //! # #[template("templates/counter.html")]
 //! # #[proxy]
 //! # struct Counter { title: String, count: i64 }
@@ -83,8 +83,8 @@
 //! # #[cfg(not(feature = "window"))]
 //! # fn main() {}
 //! # #[cfg(feature = "window")]
-//! fn main() -> light::Result<()> {
-//!     light::run(Counter::new())
+//! fn main() -> light_fw::Result<()> {
+//!     light_fw::run(Counter::new())
 //! }
 //! ```
 //!
@@ -98,8 +98,9 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
-// Позволяет генерируемому коду обращаться к `::light::…` изнутри самой библиотеки.
-extern crate self as light;
+// Позволяет генерируемому коду обращаться к `::light_fw::…` из ядра — макрос
+// `#[template]` в крейтах вне воркспейса, где обёртка называется `light-fw`.
+extern crate self as light_fw;
 
 /// Флаг runtime-templates: доступен ли парсинг HTML-шаблонов во время выполнения.
 pub const FEATURE_RUNTIME_TEMPLATES: bool = cfg!(feature = "runtime-templates");
@@ -111,7 +112,7 @@ pub const RUNTIME_TEMPLATES_ENABLED: bool = true;
 #[cfg(not(feature = "runtime-templates"))]
 pub const RUNTIME_TEMPLATES_ENABLED: bool = false;
 
-// Публичные зависимости, доступные под именем `::light::…` в сгенерированном
+// Публичные зависимости, доступные под именем `::light_fw::…` в сгенерированном
 // коде (макрос `#[template]`). Не опциональны: `inspect_state`/`inject_state`
 // и генерируемые ими вызовы (`serde_json::to_value`, `serde::Serialize`)
 // присутствуют в любом наборе фич (0.15.1), поэтому реэкспорт без cfg.
@@ -193,8 +194,8 @@ pub fn run(component: impl Component + 'static) -> Result<()> {
 ///
 /// Пример:
 /// ```no_run
-/// # extern crate light_fw_core as light;
-/// let port = light::enable_devtools(9229).expect("devtools server started");
+/// # extern crate light_fw_core as light_fw;
+/// let port = light_fw::enable_devtools(9229).expect("devtools server started");
 /// eprintln!("DevTools listening on 127.0.0.1:{}", port);
 /// ```
 #[cfg(feature = "devtools")]

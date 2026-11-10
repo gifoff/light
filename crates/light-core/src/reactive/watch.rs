@@ -38,8 +38,8 @@ impl Drop for Watcher {
 /// запоминает прочитанные свойства и повторяет `f` при их изменении.
 ///
 /// ```no_run
-/// # extern crate light_fw_core as light;
-/// use light::prelude::*;
+/// # extern crate light_fw_core as light_fw;
+/// use light_fw::prelude::*;
 ///
 /// #[proxy]
 /// struct Counter {

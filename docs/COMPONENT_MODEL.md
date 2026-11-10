@@ -89,7 +89,7 @@ description = "Календарь для выбора даты"
 repository = "https://github.com/user/light-widget-datepicker"
 
 [dependencies]
-light = { version = "0.15", default-features = false, features = ["elements-basic", "elements-form"] }
+light-fw = { version = "0.16", default-features = false, features = ["elements-basic", "elements-form"] }
 light-fw-element-form = { version = "0.15" }
 
 [package.metadata.light]
@@ -115,4 +115,4 @@ official = false
 tags = ["form", "date", "input", "calendar"]
 ```
 
-**Важно**: Для использования DevTools и горячей перезагрузки в проекте пользователя должна быть включена фича `dev-mode` (она транслируется в `light/dev-mode`), а в `main.rs` должен использоваться `light::run_with_config("light.config.json", App::new())`.
+**Важно**: Для использования DevTools и горячей перезагрузки в проекте пользователя должна быть включена фича `dev-mode` (она транслируется в `light-fw/dev-mode`), а в `main.rs` должен использоваться `light_fw::run_with_config("light.config.json", App::new())`.

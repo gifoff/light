@@ -3,9 +3,9 @@
 
 #![cfg(feature = "devtools")]
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
-use light::prelude::*;
+use light_fw::prelude::*;
 
 /// Компонент из `tests/templates/counter.html`.
 #[template("tests/templates/counter.html")]
@@ -58,7 +58,7 @@ impl TransientApp {
 #[test]
 fn snapshot_has_expected_keys() {
     let app = CounterApp::new();
-    let snap = light::capture_snapshot(0, &app);
+    let snap = light_fw::capture_snapshot(0, &app);
     let v = serde_json::to_value(&snap).expect("snapshot serializes");
     assert!(v.get("window_token").is_some(), "window_token key present");
     assert!(v.get("vdom").is_some(), "vdom key present");
@@ -70,7 +70,7 @@ fn snapshot_has_expected_keys() {
 #[test]
 fn snapshot_default_window_token_is_zero() {
     let app = CounterApp::new();
-    let snap = light::capture_snapshot(0, &app);
+    let snap = light_fw::capture_snapshot(0, &app);
     assert_eq!(snap.window_token, 0);
 }
 
@@ -78,7 +78,7 @@ fn snapshot_default_window_token_is_zero() {
 #[test]
 fn snapshot_layout_is_none() {
     let app = CounterApp::new();
-    let snap = light::capture_snapshot(0, &app);
+    let snap = light_fw::capture_snapshot(0, &app);
     assert!(snap.layout.is_none());
 }
 
@@ -86,7 +86,7 @@ fn snapshot_layout_is_none() {
 #[test]
 fn snapshot_state_contains_reactive_properties() {
     let app = CounterApp::new();
-    let snap = light::capture_snapshot(0, &app);
+    let snap = light_fw::capture_snapshot(0, &app);
     let state = snap.state.as_object().expect("state is object");
     let expected_label = app.label();
     let expected_count = app.count();
@@ -106,9 +106,9 @@ fn snapshot_state_contains_reactive_properties() {
 #[test]
 fn snapshot_reflects_reactive_updates() {
     let app = CounterApp::new();
-    let before = light::capture_snapshot(0, &app).state;
+    let before = light_fw::capture_snapshot(0, &app).state;
     app.set_count(app.count() + 1);
-    let after = light::capture_snapshot(0, &app).state;
+    let after = light_fw::capture_snapshot(0, &app).state;
     let before_count = before
         .as_object()
         .and_then(|o| o.get("count"))
@@ -159,7 +159,7 @@ fn find_tag<'a>(node: &'a serde_json::Value, tag: &'a str) -> Option<&'a serde_j
 #[test]
 fn snapshot_vdom_contains_tags_from_template() {
     let app = CounterApp::new();
-    let snap = light::capture_snapshot(0, &app);
+    let snap = light_fw::capture_snapshot(0, &app);
     let tags = collect_tags(&snap.vdom);
     assert!(tags.contains(&"div"), "div found, got: {tags:?}");
     assert!(tags.contains(&"button"), "button found, got: {tags:?}");
@@ -170,7 +170,7 @@ fn snapshot_vdom_contains_tags_from_template() {
 #[test]
 fn snapshot_vdom_preserves_attrs() {
     let app = CounterApp::new();
-    let snap = light::capture_snapshot(0, &app);
+    let snap = light_fw::capture_snapshot(0, &app);
     // Ищем элемент `<text>` с атрибутом `placeholder="Подпись"`.
     let text_node = find_tag(&snap.vdom, "text").expect("text node exists");
     let attrs = text_node
@@ -203,7 +203,7 @@ fn non_proxy_component_state_is_null() {
         }
     }
     let plain = Plain;
-    let snap = light::capture_snapshot(0, &plain);
+    let snap = light_fw::capture_snapshot(0, &plain);
     assert!(snap.state.is_null(), "no reactive properties -> null");
 }
 
@@ -271,7 +271,7 @@ fn inject_state_empty_object_is_noop() {
 #[test]
 fn method_not_in_inspect_state() {
     let app = TransientApp::new();
-    let snap = light::capture_snapshot(0, &app);
+    let snap = light_fw::capture_snapshot(0, &app);
     let state = &snap.state;
     let obj = state
         .as_object()

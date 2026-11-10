@@ -13,7 +13,7 @@
 | `light` | Мета-крейт: реэкспортирует ядро, макросы и подключённые компоненты. |
 | `light-fw-element-form` | Компонент-элемент: `<checkbox>`, `<radio>`, `<select>`, `<option>`. |
 | `light-fw-behavior-validation` | Компонент-поведение: `required`, `:validator`, `@validate`. |
-| `light-fw-cli` | Бинарник `light`: команды `check`, `add`, `search`, `publish`, `dev`. |
+| `light` | Бинарник `light`: команды `build`, `dev`, `check`, `add`, `search`, `publish`. |
 | `light-fw-cli-core` | Логика CLI без привязки к терминалу: анализ, план, применение, lock, hot-reload supervisor. |
 | `light-demo` | Демонстрационное приложение и примеры. |
 
@@ -54,7 +54,7 @@ Component::render() → VElement (новое дерево)
 
 ## CLI и Hot Reload
 
-`light-fw-cli` — тонкий слой `clap` над `light-fw-cli-core`. 
+`light` (bin) — тонкий слой `clap` над `light-fw-cli-core`. 
 
 Команда `light dev` (Hot Reload) работает как supervisor:
 - **Auto-detect**: если запущена без аргументов, сканирует текущую директорию и находит пакет.

@@ -33,7 +33,7 @@ Rust-код, строящий виртуальный DOM. Окна создаю�
 Создать проект с готовыми компонентами и найти сторонние можно через CLI:
 
 ```bash
-cargo install light-fw-cli
+cargo install light
 light init my-app --with form --with validation
 light search datepicker
 ```
@@ -49,16 +49,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-light = { git = "https://github.com/gifoff/light" }
+light-fw = { git = "https://github.com/gifoff/light" }
 
 [features]
-dev-mode = ["light/dev-mode"]
+dev-mode = ["light-fw/dev-mode"]
 ```
 
 `src/main.rs`:
 
 ```rust
-use light::prelude::*;
+use light_fw::prelude::*;
 
 #[template("templates/app.html")]
 #[proxy]
@@ -214,7 +214,7 @@ light add light-fw-datepicker --features calendar,timezone
 | `light-fw-html` | Разбор HTML-шаблонов для макросов. |
 | `light-fw-element-form` | Компонент-элемент: `<checkbox>`, `<radio>`, `<select>`/`<option>`. |
 | `light-fw-behavior-validation` | Компонент-поведение: `required`, `:validator`, `@validate`. |
-| `light-fw-cli` | Утилита `light`: проверка проекта и управление компонентами. |
+| `light` | CLI: сборка, разработка, установка и обновление компонентов Light. |
 | `light-fw-cli-core` | Ядро CLI: анализ проекта, `light.lock`, управление компонентами. |
 
 ## Документация

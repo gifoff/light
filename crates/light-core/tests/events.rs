@@ -10,11 +10,11 @@
     feature = "elements-select"
 ))]
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
-use light::a11y::is_disabled;
-use light::layout::{Layout, Point, TextMetrics};
-use light::vdom::{ButtonType, NodeKind, SelectOption, VElement};
+use light_fw::a11y::is_disabled;
+use light_fw::layout::{Layout, Point, TextMetrics};
+use light_fw::vdom::{ButtonType, NodeKind, SelectOption, VElement};
 
 struct StubMetrics;
 
@@ -73,7 +73,7 @@ fn disabled_controls_are_reported_disabled() {
             placeholder: String::new(),
             disabled: true,
             multiline: false,
-            resize: light::vdom::Resize::None,
+            resize: light_fw::vdom::Resize::None,
             masked: false,
         },
     );
@@ -92,7 +92,7 @@ fn enabled_controls_are_not_disabled() {
             placeholder: String::new(),
             disabled: false,
             multiline: false,
-            resize: light::vdom::Resize::None,
+            resize: light_fw::vdom::Resize::None,
             masked: false,
         },
     );

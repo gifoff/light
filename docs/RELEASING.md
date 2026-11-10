@@ -74,7 +74,7 @@ git push origin vX.Y.Z
 
 ```bash
 cargo search light
-cargo install light-fw-cli --version X.Y.Z
+cargo install light --version X.Y.Z
 ```
 
 ## Важно

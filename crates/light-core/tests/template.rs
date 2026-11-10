@@ -15,10 +15,10 @@
     not(feature = "runtime-templates")
 ))]
 
-extern crate light_fw_core as light;
+extern crate light_fw_core as light_fw;
 
-use light::prelude::*;
-use light::vdom::{Event, NodeKind, Op, Size, VElement, diff};
+use light_fw::prelude::*;
+use light_fw::vdom::{Event, NodeKind, Op, Size, VElement, diff};
 
 /// Компонент из `templates/counter.html`.
 #[template("tests/templates/counter.html")]
@@ -399,7 +399,7 @@ fn style_attributes_are_compiled_into_vnode() {
     assert_eq!(div.style.width, Size::Percent(50.0), "width в процентах");
     assert_eq!(
         div.style.padding,
-        light::vdom::Edges {
+        light_fw::vdom::Edges {
             top: 10.0,
             right: 10.0,
             bottom: 10.0,
@@ -409,7 +409,7 @@ fn style_attributes_are_compiled_into_vnode() {
     );
     assert_eq!(
         div.style.margin,
-        light::vdom::Edges {
+        light_fw::vdom::Edges {
             top: 7.0,
             right: 4.0,
             bottom: 4.0,
@@ -422,22 +422,22 @@ fn style_attributes_are_compiled_into_vnode() {
     assert_eq!(div.style.border_color, Some(0x0000_00FF));
     assert_eq!(
         div.style.align_x,
-        light::vdom::Align::End,
+        light_fw::vdom::Align::End,
         "position-x=right"
     );
     assert_eq!(
         div.style.align_y,
-        light::vdom::Align::End,
+        light_fw::vdom::Align::End,
         "position-y=bottom"
     );
     assert_eq!(
         div.style.offset_x,
-        light::vdom::Offset::Percent(10.0),
+        light_fw::vdom::Offset::Percent(10.0),
         "position-offset-x в процентах"
     );
     assert_eq!(
         div.style.offset_y,
-        light::vdom::Offset::Px(-5.0),
+        light_fw::vdom::Offset::Px(-5.0),
         "position-offset-y отрицательный"
     );
     assert_eq!(div.style.z, 3, "статический z");
@@ -447,18 +447,18 @@ fn style_attributes_are_compiled_into_vnode() {
     assert_eq!(span.style.font_color, Some(0xFF00_00FF));
     assert_eq!(
         span.style.offset_x,
-        light::vdom::Offset::Px(3.0),
+        light_fw::vdom::Offset::Px(3.0),
         "position-offset-x"
     );
     assert_eq!(span.style.z, 5, "динамический :z=\"depth\"");
     assert_eq!(
         span.style.justify_content,
-        light::vdom::Align::End,
+        light_fw::vdom::Align::End,
         "justify-content=end"
     );
     assert_eq!(
         span.style.align_items,
-        light::vdom::Align::Center,
+        light_fw::vdom::Align::Center,
         "align-items=center"
     );
     assert!(
@@ -476,7 +476,7 @@ struct MaximizeApp {
 
 #[test]
 fn maximize_state_switches_button() {
-    light::control::set_maximized(false);
+    light_fw::control::set_maximized(false);
     let app = MaximizeApp::new();
     let before = app.render();
     before
@@ -484,14 +484,14 @@ fn maximize_state_switches_button() {
         .expect("кнопка развернуть");
     assert!(before.find_by_content("Восстановить").is_none());
 
-    light::control::set_maximized(true);
+    light_fw::control::set_maximized(true);
     let after = app.render();
     after
         .find_by_content("Восстановить")
         .expect("кнопка восстановить");
     assert!(after.find_by_content("Развернуть").is_none());
 
-    light::control::set_maximized(false);
+    light_fw::control::set_maximized(false);
 }
 
 /// Компонент из `templates/events.html`: обработчики событий мыши и клавиатуры.
@@ -1017,8 +1017,8 @@ fn dynamic_aria_binding_reflects_property() {
 #[cfg(feature = "a11y")]
 #[test]
 fn accessibility_tree_from_template() {
-    use light::a11y::tree::build_update;
-    use light::prelude::AriaRole;
+    use light_fw::a11y::tree::build_update;
+    use light_fw::prelude::AriaRole;
 
     let app = A11yApp::new();
     let tree = app.render();
@@ -1076,7 +1076,7 @@ struct DynamicApp {
 /// Динамические `:attr` переопределяют статические значения стиля.
 #[test]
 fn dynamic_style_attrs_bind_values() {
-    use light::vdom::{Align, Offset, Size};
+    use light_fw::vdom::{Align, Offset, Size};
     let app = DynamicApp::new();
     app.set_w(200);
     app.set_h("50%".to_owned());
@@ -1104,8 +1104,8 @@ fn dynamic_style_attrs_bind_values() {
     assert_eq!(style.offset_y, Offset::Percent(10.0));
     assert_eq!(style.justify_content, Align::End);
     assert_eq!(style.align_items, Align::Center);
-    assert_eq!(style.padding, light::vdom::Edges::all(7.0));
-    assert_eq!(style.margin, light::vdom::Edges::all(3.0));
+    assert_eq!(style.padding, light_fw::vdom::Edges::all(7.0));
+    assert_eq!(style.margin, light_fw::vdom::Edges::all(3.0));
     assert_eq!(style.border_size, 2.0);
     assert_eq!(style.font_size, Some(20.0));
     assert_eq!(style.background, Some(0x112233FF));
@@ -1133,7 +1133,7 @@ struct DynamicKindsApp {
 /// `textarea`, `resize`, `value`.
 #[test]
 fn dynamic_node_kind_attrs_bind_values() {
-    use light::vdom::{ButtonType, NodeKind, Resize};
+    use light_fw::vdom::{ButtonType, NodeKind, Resize};
     let app = DynamicKindsApp::new();
     app.set_kind("reset".to_owned());
     app.set_locked(true);

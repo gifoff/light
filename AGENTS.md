@@ -45,7 +45,7 @@ cargo test --all-features
 ```
 
 ### Особенности Windows (MSVC)
-На Windows из-за лимита длины командной строки (D8050) сборка крейта `ring` (через `reqwest` в `light-fw-cli`) может падать при параллельной сборке.
+На Windows из-за лимита длины командной строки (D8050) сборка крейта `ring` (через `reqwest` в CLI `light`) может падать при параллельной сборке.
 Обход:
 ```powershell
 $env:CARGO_BUILD_JOBS = "1"
@@ -60,7 +60,7 @@ cargo test --workspace --all-features -j 2
 3. **Реализация**: Пишите идиоматичный Rust-код, следуя принципам минимизации аллокаций.
 4. **Локальные гейты**:
    - `cargo fmt --all`
-   - `cargo build --workspace --exclude light-fw-cli --exclude light-fw-cli-core` (если `ring` блокирует сборку).
+   - `cargo build --workspace --exclude light --exclude light-fw-cli-core` (если `ring` блокирует сборку).
    - `cargo clippy`
    - `cargo test`
 5. **Smoke Test (для UI/CLI)**:
