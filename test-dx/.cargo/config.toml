@@ -1,3 +1,0 @@
-[alias]
-dev = "run --features light-fw/dev-mode"
-prod = "run --release"

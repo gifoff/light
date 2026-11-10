@@ -36,3 +36,6 @@ package-files.log
 
 # Локальные temp-каталоги для unit-тестов
 .light-dev-test-*/
+# Temp test projects and logs
+test-dx/
+*.log
