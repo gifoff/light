@@ -85,6 +85,28 @@ fn main() -> light::Result<()> {
 cargo run
 ```
 
+## Сборка и запуск
+
+Light не изобретает свою build-систему — приложение собирается обычным `cargo`:
+
+| Задача | Команда |
+|---|---|
+| Быстрый запуск (debug) | `cargo run` |
+| Запуск с DevTools | `cargo run --features dev-mode` |
+| Release-сборка | `cargo build --release` |
+| Запуск release | `cargo run --release` |
+| Hot-reload (HTML + `.rs`) | `light dev` |
+| Hot-reload + сессия агента | `light dev --agent` |
+
+**Разница между `cargo run` и `light dev`:**
+- `cargo run` — обычная сборка и запуск. Правки в HTML **не подхватываются** (шаблон встроен в бинарник на этапе компиляции).
+- `light dev` — запускает supervisor: собирает бинарник, следит за `templates/` и `src/`, при правках HTML шлёт `RELOAD_TEMPLATE` (мгновенно), при правках `.rs` — пересобирает и перезапускает с сохранением состояния.
+
+**Когда что использовать:**
+- Разработка: `light dev` (или `light dev --agent` для ИИ-агентов).
+- CI / production: `cargo build --release`.
+- Простой проект без hot-reload: `cargo run --features dev-mode` (DevTools работает, HTML — только через пересборку).
+
 ## Дальше
 
 - [Руководство пользователя](guide.md) — директивы, стили, события и окна.

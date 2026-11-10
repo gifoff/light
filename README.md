@@ -94,6 +94,16 @@ fn main() -> light::Result<()> {
 cargo run
 ```
 
+### Сборка и запуск
+
+Light не изобретает свою build-систему — приложение собирается обычным `cargo`
+(подробности: [docs/quickstart.md](docs/quickstart.md#сборка-и-запуск)):
+`cargo run` для быстрого debug-запуска, `cargo build --release` +
+`cargo run --release` для production, `light dev` (hot-reload HTML и `.rs`,
+`--agent` — сессия ИИ-агента) для разработки. Важно: правки в HTML не
+подхватываются при `cargo run` (шаблон встраивается в бинарник), поэтому
+в разработке используйте `light dev`.
+
 ### Создание проекта через CLI
 
 Скелет проекта генерируется одной командой:
