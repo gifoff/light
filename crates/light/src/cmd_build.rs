@@ -53,13 +53,13 @@ fn bin_name_from_metadata(cwd: &std::path::Path) -> anyhow::Result<String> {
     for pkg in json
         .get("packages")
         .and_then(|p| p.as_array())
-        .iter()
+        .into_iter()
         .flatten()
     {
         for target in pkg
             .get("targets")
             .and_then(|t| t.as_array())
-            .iter()
+            .into_iter()
             .flatten()
         {
             if target
