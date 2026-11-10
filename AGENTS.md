@@ -133,6 +133,53 @@ use crate::{config::Config, error::AppError};
 - Публичные элементы должны иметь doc-комментарии (`///`).
 - Примеры в doc-комментариях должны компилироваться (проверяются через `cargo test`).
 
+## Как обновить дефолтную иконку
+
+Иконка окна по умолчанию хранится в **сырых RGBA-байтах** (без PNG-кодека, чтобы
+`light-fw-core` оставался без зависимостей от image-библиотек для дефолтной иконки):
+
+- Файл: `crates/light-core/assets/default_icon.rgba`
+- Размер: 128×128 пикселей, 4 байта на пиксель → **65 536 байт** в файле.
+- Формат: `[R, G, B, A]` в порядке следования строк — ровно тот layout, который
+  принимает [`winit::window::Icon::from_rgba`](https://docs.rs/winit/latest/winit/window/struct.Icon.html#method.from_rgba).
+- Встраивается в бинарник через `include_bytes!` в `crates/light-core/src/window/icon.rs`.
+
+Чтобы заменить иконку новым изображением (PNG/WebP/JPG с альфа-каналом или
+сквозным фоном), сконвертируйте его в raw RGBA той же ширины/высоты:
+
+```python
+# Python + Pillow. Замените SOURCE.png на новый файл.
+from PIL import Image
+import os
+
+SOURCE = "logo.png"          # исходный файл (любой формат, понимаемый Pillow)
+DST    = "crates/light-core/assets/default_icon.rgba"
+SIZE   = 128                 # должно совпадать с DEFAULT_ICON_SIZE в icon.rs
+
+im = Image.open(SOURCE).convert("RGBA").resize((SIZE, SIZE), Image.LANCZOS)
+data = im.tobytes("raw", "RGBA")   # [R,G,B,A] * w*h, row-major
+assert len(data) == SIZE * SIZE * 4
+os.makedirs(os.path.dirname(DST), exist_ok=True)
+with open(DST, "wb") as f:
+    f.write(data)
+print(f"wrote {DST} ({len(data)} bytes = {SIZE}x{SIZE} RGBA)")
+```
+
+Если у исходника нет прозрачности (как в текущей иконке — сплошной синий квадрат),
+добавьте mask со скруглёнными углами, как это делалось при генерации текущего
+файла (см. git-history для скрипта с `rounded_alpha()`).
+
+После конвертации пересоберите крейт:
+
+```bash
+cargo build -p light-fw-core
+cargo test  -p light-fw-core --lib window::icon
+```
+
+Тесты в `icon.rs` проверяют: длину файла (128²·4), прозрачный угол (0,0),
+непрозрачный центр (64,64) и наличие обоих типов пикселей — они не дадут
+случайно закоммитить битый файл.
+
 ## Testing UI with DevTools (как агенту видеть и трогать UI)
 
 Light предоставляет headless-инструменты для автономного тестирования UI:

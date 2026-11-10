@@ -4,8 +4,13 @@ use winit::window::Icon;
 
 use crate::component::WindowConfig;
 
-/// Размер встроенной иконки по умолчанию.
-const DEFAULT_ICON_SIZE: u32 = 32;
+/// Встроенная иконка Light (128×128, сырые RGBA-байты: синий скруглённый
+/// квадрат с белым шевроном). Формат совпадает с тем, что принимает
+/// [`Icon::from_rgba`] — `R,G,B,A` по 4 байта на пиксель, строки подряд.
+static DEFAULT_ICON: &[u8] = include_bytes!("../../assets/default_icon.rgba");
+
+/// Размер встроенной иконки по умолчанию в пикселях.
+const DEFAULT_ICON_SIZE: u32 = 128;
 
 /// Возвращает иконку из `WindowConfig` или встроенную иконку по умолчанию.
 pub(crate) fn window_icon(config: &WindowConfig) -> Option<Icon> {
@@ -17,50 +22,12 @@ pub(crate) fn window_icon(config: &WindowConfig) -> Option<Icon> {
         return Some(icon);
     }
     let _ = config;
-    Icon::from_rgba(default_icon_rgba(), DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE).ok()
+    default_icon()
 }
 
-/// Рисует простую иконку: скруглённый синий квадрат с белой буквой «L».
-fn default_icon_rgba() -> Vec<u8> {
-    let size = DEFAULT_ICON_SIZE;
-    let mut pixels = vec![0_u8; (size * size * 4) as usize];
-    let radius = 7.0_f32;
-    for y in 0..size {
-        for x in 0..size {
-            let px = x as f32 + 0.5;
-            let py = y as f32 + 0.5;
-            let edge = rounded_edge(px, py, size as f32, radius);
-            if edge <= 0.0 {
-                continue;
-            }
-            let alpha = (edge.min(1.0) * 255.0) as u8;
-            let index = ((y * size + x) * 4) as usize;
-            let color = if is_letter_l(px, py, size as f32) {
-                [0xFF, 0xFF, 0xFF, alpha]
-            } else {
-                [0x3B, 0x82, 0xF6, alpha]
-            };
-            pixels[index..index + 4].copy_from_slice(&color);
-        }
-    }
-    pixels
-}
-
-fn rounded_edge(x: f32, y: f32, size: f32, radius: f32) -> f32 {
-    let nearest_x = x.clamp(radius, size - radius);
-    let nearest_y = y.clamp(radius, size - radius);
-    let dx = x - nearest_x;
-    let dy = y - nearest_y;
-    let distance = (dx * dx + dy * dy).sqrt();
-    (radius - distance).max(0.0)
-}
-
-fn is_letter_l(x: f32, y: f32, size: f32) -> bool {
-    let stem_x = size * 0.36..size * 0.45;
-    let stem_y = size * 0.28..size * 0.72;
-    let foot_x = size * 0.36..size * 0.68;
-    let foot_y = size * 0.63..size * 0.72;
-    (stem_x.contains(&x) && stem_y.contains(&y)) || (foot_x.contains(&x) && foot_y.contains(&y))
+/// Встроенная иконка Light: превращает сырые RGBA-байты в [`Icon`].
+fn default_icon() -> Option<Icon> {
+    Icon::from_rgba(DEFAULT_ICON.to_vec(), DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE).ok()
 }
 
 #[cfg(test)]
@@ -68,12 +35,50 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_icon_has_visible_pixels() {
-        let pixels = default_icon_rgba();
+    fn default_icon_bytes_are_128x128_rgba() {
+        // Сырые байты должны точно соответствовать 128*128*4 байта (RGBA).
         assert_eq!(
-            pixels.len(),
+            DEFAULT_ICON.len(),
             (DEFAULT_ICON_SIZE * DEFAULT_ICON_SIZE * 4) as usize
         );
-        assert!(pixels.as_chunks::<4>().0.iter().any(|pixel| pixel[3] > 0));
+    }
+
+    #[test]
+    fn default_icon_decodes_into_winit_icon() {
+        // Байты корректно интерпретируются как 128x128 RGBA → winit Icon.
+        let icon = default_icon().expect("embedded icon must decode into a winit Icon");
+        let _ = icon; // Icon не даёт доступа к байтам, но from_rgba вернул Some.
+    }
+
+    #[test]
+    fn default_icon_corner_is_transparent() {
+        // Пиксель в самом углу (0,0) — прозрачный (скруглённый угол).
+        assert_eq!(DEFAULT_ICON[3], 0);
+    }
+
+    #[test]
+    fn default_icon_center_is_opaque() {
+        // Центральный пиксель — непрозрачный (белая часть шеврона).
+        let center = ((64 * DEFAULT_ICON_SIZE + 64) * 4) as usize;
+        assert_eq!(DEFAULT_ICON[center + 3], 255);
+    }
+
+    #[test]
+    fn default_icon_has_visible_and_invisible_pixels() {
+        // Краткая проверка: среди 128*128 пикселей есть и прозрачные (углы),
+        // и непрозрачные (центр) — это значит, маска сработала корректно.
+        let mut has_opaque = false;
+        let mut has_transparent = false;
+        for i in (0..DEFAULT_ICON.len()).step_by(4) {
+            if DEFAULT_ICON[i + 3] > 0 {
+                has_opaque = true;
+            } else {
+                has_transparent = true;
+            }
+        }
+        assert!(
+            has_opaque && has_transparent,
+            "icon must have both opaque and transparent pixels"
+        );
     }
 }
