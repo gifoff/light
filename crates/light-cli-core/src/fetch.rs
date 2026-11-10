@@ -316,6 +316,41 @@ impl Catalog {
         }
     }
 
+    /// Последняя версия компонента на crates.io (через `remote`), без учёта
+    /// локальных workspace/vendor. Используется при несовместимости реестра с
+    /// ядром проекта: берём свежую версию, которая может уже поддерживать это
+    /// ядро. Без фичи `network` возвращает `None` (сеть недоступна).
+    pub fn resolve_remote_latest(&self, name: &str) -> Result<Option<ResolvedComponent>> {
+        if self.offline {
+            return Ok(None);
+        }
+        let info = self.registry.by_name(name);
+        match self.remote.latest_version(name)? {
+            Some(version) => {
+                let (core, light_features, provides) = match info {
+                    Some(i) => (
+                        i.core_requirement.clone(),
+                        i.light_features.clone(),
+                        i.provides.clone(),
+                    ),
+                    None => (semver::VersionReq::STAR, Vec::new(), Provides::default()),
+                };
+                Ok(Some(ResolvedComponent {
+                    name: name.to_string(),
+                    version,
+                    core,
+                    light_features,
+                    provides,
+                    requires: Vec::new(),
+                    conflicts: Vec::new(),
+                    source: SourceKind::CratesIo,
+                    path: None,
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+
     /// Описание зависимости, как её следует записать в `Cargo.toml` проекта.
     pub fn dependency_entry(&self, component: &ResolvedComponent) -> Result<DependencyEntry> {
         // Если workspace определяет зависимость — используем `workspace = true`.

@@ -174,26 +174,37 @@ pub fn plan_add_with_catalog(
     // Обёртка переименована: новый проект зависит от `light-fw`; старые
     // (опубликованные) проекты могут всё ещё использовать `light` — обе
     // версии дают версию ядра.
-    let core = resolve_dependency_version(project_root, "light-fw-core")?.or_else(|| {
-        resolve_dependency_version(project_root, "light-fw")
-            .ok()
-            .flatten()
-            .or_else(|| {
-                resolve_dependency_version(project_root, "light")
-                    .ok()
-                    .flatten()
-            })
-    });
-    if let Some(core) = core
-        && !component.core.matches(&core)
+    let core = crate::manifest::resolve_core_version(project_root)?;
+    if let Some(core) = &core
+        && !component.core.matches(core)
     {
-        return Err(Error::Incompatible {
-            component: name.to_string(),
-            reason: format!(
-                "требуется light-fw-core {}, в проекте {core}",
-                component.core
-            ),
-        });
+        // Ядро проекта несовместимо с версией из реестра (например, проект на
+        // 0.16, а реестр требует ^0.17). Не падаем сразу: пробуем найти свежую
+        // совместимую версию компонента — сначала в локальном workspace/vendor,
+        // затем на crates.io (через `remote`, без сети возвращает `None`).
+        // Если ничего нет — выдаём понятную ошибку с инструкцией.
+        let fresh = catalog
+            .resolve_local(name)?
+            .and_then(|c| c.core.matches(core).then_some(c))
+            .or_else(|| catalog.resolve_remote_latest(name).ok().flatten());
+        component = match fresh {
+            Some(fresh) => fresh,
+            None => {
+                let mv = opts
+                    .version
+                    .clone()
+                    .unwrap_or_else(|| component.version.to_string());
+                return Err(Error::Incompatible {
+                    component: name.to_string(),
+                    reason: format!(
+                        "Компонент {name} требует ядро {}, но в проекте {core}. \
+                         Обновите проект до версии ядра, совместимой с {}, \
+                         или установите компонент вручную: light add {name}@{mv}",
+                        component.core, component.core,
+                    ),
+                });
+            }
+        };
     }
 
     for conflict in &component.conflicts {
@@ -732,6 +743,70 @@ mod tests {
         assert_eq!(
             choose_feature("[features]\nnone = []\n", "light-fw-behavior-validation").unwrap(),
             "behavior-validation"
+        );
+    }
+
+    /// Мини-проект с ядром `0.16` (несовместим с реестром `^0.17`).
+    fn old_core_app(name: &str) -> PathBuf {
+        let dir = temp_dir(&format!("incompat-{name}"));
+        std::fs::write(
+            dir.join("Cargo.toml"),
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n\
+             [dependencies]\nlight-fw = \"0.16\"\n",
+        )
+        .expect("app manifest");
+        dir
+    }
+
+    #[test]
+    fn incompatible_core_without_network_yields_clear_error() {
+        // Реестр требует ядро ^0.17, в проекте 0.16. Бинарник собран без сети
+        // (remote -> None) и локальных копий нет — падаем с понятной ошибкой,
+        // а не паникой.
+        let app = old_core_app("no-net");
+        let err = plan_add(&app, "light-fw-element-form", &AddOptions::default())
+            .expect_err("incompatible");
+        let Error::Incompatible { component, reason } = &err else {
+            panic!("ожидался Incompatible, получено {err:?}");
+        };
+        assert_eq!(component, "light-fw-element-form");
+        // Указаны версии ядра и инструкция с ручным `light add`.
+        assert!(reason.contains("^0.17"), "{reason}");
+        assert!(reason.contains("0.16"), "{reason}");
+        assert!(
+            reason.contains("light add light-fw-element-form@"),
+            "{reason}"
+        );
+    }
+
+    #[test]
+    fn incompatible_core_with_remote_latest_is_used() {
+        // Если на crates.io есть свежая версия компонента, она выбирается вместо
+        // записи реестра. Здесь свежая версия поддерживает ядро проекта, поэтому
+        // план собирается без ошибки.
+        let app = old_core_app("with-net");
+        let catalog = Catalog::with_remote(
+            &app,
+            false,
+            Box::new(MockRemote {
+                name: "light-fw-element-form",
+                version: semver::Version::new(0, 17, 0),
+            }),
+        );
+        // Мокаем remote как «поддерживающий» ядро: компонент из каталога берёт
+        // `core` из реестра (^0.17) — он несовместим, но свежая версия с
+        // crates.io всё равно возвращается. План строится, зависимость — её
+        // версия.
+        let plan = plan_add_with_catalog(
+            &app,
+            "light-fw-element-form",
+            &AddOptions::default(),
+            &catalog,
+        )
+        .expect("plan with fresh version");
+        assert_eq!(
+            plan.dependency,
+            DependencyEntry::Version("0.17.0".to_string())
         );
     }
 }

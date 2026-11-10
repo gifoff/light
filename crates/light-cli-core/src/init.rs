@@ -298,7 +298,7 @@ pub fn cargo_toml(name: &str, components: &[InitComponent]) -> String {
     );
 
     if components.is_empty() {
-        text.push_str(&format!("light = \"{}\"\n", minor_version()));
+        text.push_str(&format!("light-fw = \"{}\"\n", minor_version()));
     } else {
         let features = components
             .iter()
@@ -307,7 +307,7 @@ pub fn cargo_toml(name: &str, components: &[InitComponent]) -> String {
             .join(", ");
         let v = minor_version();
         text.push_str(&format!(
-            "light = {{ version = \"{v}\", features = [{features}] }}\n"
+            "light-fw = {{ version = \"{v}\", features = [{features}] }}\n"
         ));
         for component in &components {
             text.push_str(&format!("{} = \"{v}\"\n", component.crate_name()));
@@ -609,7 +609,9 @@ mod tests {
         let text = cargo_toml("demo", &[]);
         assert!(text.contains("name = \"demo\""));
         let mv = minor_version();
-        assert!(text.contains(&format!("light = \"{mv}\"")));
+        // Обёртка переименована: новый проект зависит от `light-fw`, а не `light`.
+        assert!(text.contains(&format!("light-fw = \"{mv}\"")));
+        assert!(!text.contains(&format!("light = \"{mv}\"")), "{text}");
         // Фича `dev-mode` всегда присутствует (алиас `light-fw/dev-mode`).
         assert!(text.contains("[features]"), "{text}");
         assert!(
@@ -624,9 +626,10 @@ mod tests {
     fn cargo_toml_adds_form_dependency_and_feature() {
         let text = cargo_toml("demo", &[InitComponent::Form]);
         let mv = minor_version();
+        // Мета-крейт — `light-fw` (не `light`).
         assert!(
             text.contains(&format!(
-                "light = {{ version = \"{mv}\", features = [\"elements-form\"] }}"
+                "light-fw = {{ version = \"{mv}\", features = [\"elements-form\"] }}"
             )),
             "{text}"
         );
@@ -648,9 +651,10 @@ mod tests {
             ],
         );
         let mv = minor_version();
+        // Мета-крейт — `light-fw` (не `light`).
         assert!(
             text.contains(&format!(
-                "light = {{ version = \"{mv}\", features = [\"elements-form\", \"validation\"] }}"
+                "light-fw = {{ version = \"{mv}\", features = [\"elements-form\", \"validation\"] }}"
             )),
             "{text}"
         );
