@@ -1,0 +1,21 @@
+<window title="Light Counter" width="360" height="280" resizable="false">
+    <titlebar background="#111827" height="34" padding-left="12" padding-right="8" align-items="center">
+        <div direction="horizontal" align-items="center" font-color="#F9FAFB" font-size="16">Light Counter</div>
+        <div direction="horizontal" align-items="center" position-x="right">
+            <button @click="minimize()" type="button" width="30" height="24" font-size="14" background="#111827" border-color="#111827" font-color="#F9FAFB">−</button>
+            <button @click="close()" type="button" width="30" height="24" font-size="14" background="#111827" border-color="#111827" font-color="#F9FAFB">×</button>
+        </div>
+    </titlebar>
+    <div direction="vertical" padding="18" background="#F3F4F6">
+        <div font-size="13" font-color="#6B7280">
+            Простой счётчик на реактивных свойствах
+        </div>
+        <div direction="horizontal" padding="12">
+            <button @click="decrement" type="button" width="52" height="44">−</button>
+            <div width="120" font-size="42" font-color="#111827" padding-left="20">{{ count }}</div>
+            <button @click="increment" type="button" width="52" height="44">+</button>
+        </div>
+        <div role="status" aria-live="polite" font-color="#374151">{{ status }}</div>
+        <button @click="reset" :disabled="is_zero" type="button">Сбросить</button>
+    </div>
+</window>

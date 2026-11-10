@@ -51,13 +51,12 @@ pub const LIGHT_CONFIG: &str = r#"{
 }
 "#;
 
-const COUNTER_MAIN: &str = include_str!("../../../examples/counter/src/main.rs");
-const COUNTER_HTML: &str = include_str!("../../../examples/counter/templates/counter.html");
-const TODO_MAIN: &str = include_str!("../../../examples/todo/src/main.rs");
-const TODO_HTML: &str = include_str!("../../../examples/todo/templates/todo.html");
-const CALCULATOR_MAIN: &str = include_str!("../../../examples/calculator/src/main.rs");
-const CALCULATOR_HTML: &str =
-    include_str!("../../../examples/calculator/templates/calculator.html");
+const COUNTER_MAIN: &str = include_str!("../assets/counter/src/main.rs");
+const COUNTER_HTML: &str = include_str!("../assets/counter/templates/counter.html");
+const TODO_MAIN: &str = include_str!("../assets/todo/src/main.rs");
+const TODO_HTML: &str = include_str!("../assets/todo/templates/todo.html");
+const CALCULATOR_MAIN: &str = include_str!("../assets/calculator/src/main.rs");
+const CALCULATOR_HTML: &str = include_str!("../assets/calculator/templates/calculator.html");
 
 /// Готовый пример, который `light init --template` кладёт в новый проект.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
