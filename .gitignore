@@ -1,24 +1,38 @@
+# Rust build artifacts
 /target
 **/target/
 /book
 
+# IDE and editor files
 .idea/
+.vscode/
+*.swp
 
-# Артефакты light-fw-cli
+# Environment and secrets
+.env
+.env.local
+
+# Light-fw-cli artifacts
 .light/
 target/.light/
 vendor/
 vendor-test/
 vendor-*/
 bloat-*.txt
+light.lock
 
 # Временные каталоги интеграционных тестов
 test-app-*/
 tmp-*/
 light-fw-cli-*/
+tmp/
 
-# Local verification artifacts
+# Local verification and smoke-test artifacts
 verify/
+.agent-verify/
+shots/
+layout.log
+package-files.log
 
-# Локальные temp-каталоги для unit-тестов dev::tests
+# Локальные temp-каталоги для unit-тестов
 .light-dev-test-*/
