@@ -78,7 +78,7 @@ file-dialog = ["dep:rfd"]
 
 # --- Окно --------------------------------------------------------------
 # Базовое окно на winit с программной отрисовкой.
-window = ["dep:winit", "dep:ab_glyph"]
+window = ["dep:winit", "dep:ab_glyph", "light-fw-macros/template-window"]
 # Показ кадра через `softbuffer` (без wgpu/naga). По умолчанию включён.
 softbuffer-backend = ["window", "dep:softbuffer"]
 # Показ кадра через `pixels` (wgpu/naga). Альтернативный бэкенд.

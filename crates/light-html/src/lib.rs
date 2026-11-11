@@ -55,6 +55,11 @@ pub enum Node {
 ///
 /// Ошибки возвращаются в виде сообщения с номером строки.
 pub fn parse(source: &str) -> Result<Vec<Node>, String> {
+    // Файлы, сохранённые с BOM (UTF-8 BOM — байты EF BB BF), при чтении
+    // дают символ `\u{FEFF}` в начале строки. Без очистки он становится
+    // корневым текстовым узлом и ломает детекцию единственного корневого
+    // `<window>` (см. `separate_window` в `light-fw-macros`).
+    let source = source.trim_start_matches('\u{FEFF}');
     let mut parser = Parser {
         source,
         pos: 0,
@@ -423,6 +428,29 @@ fn flush_run(out: &mut String, run: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_source_with_bom() {
+        // Файлы, сохранённые с UTF-8 BOM, дают `\u{FEFF}` в начале. Без очистки
+        // он становится корневым текстовым узлом и ломает единственного
+        // корневого `<window>` (баг 0.17.3). Здесь проверяем, что BOM игнорируется
+        // и `<window>` остаётся единственным корнем.
+        let with_bom = "\u{FEFF}<window title=\"T\" width=\"480\" height=\"320\">\n    <div width=\"100%\"><h1>Hi</h1></div>\n</window>\n";
+        let nodes = parse(with_bom).expect("должен разобраться");
+        assert_eq!(
+            nodes.len(),
+            1,
+            "BOM не должен создавать отдельный корневой узел"
+        );
+        let Node::Element(root) = &nodes[0] else {
+            panic!("ожидался элемент <window>, а не текстовый узел BOM");
+        };
+        assert_eq!(root.name, "window");
+        // Сравним с версией без BOM — деревья должны совпадать.
+        let plain = parse("<window title=\"T\" width=\"480\" height=\"320\">\n    <div width=\"100%\"><h1>Hi</h1></div>\n</window>\n")
+            .expect("должен разобраться");
+        assert_eq!(nodes, plain);
+    }
 
     fn text_of(node: &Node) -> String {
         match node {
