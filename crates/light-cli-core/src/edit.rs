@@ -307,8 +307,11 @@ mod tests {
 
     #[test]
     fn adds_features_to_string_and_table_dependencies() {
+        // Фикстура после переименования обёртки: метакрейт теперь `light-fw`
+        // (старые проекты ещё могут использовать `light`). Тест проверяет, что
+        // фичи добавляются в оба существующих вида записи — строку и таблицу.
         let mut doc = parse(
-            "[dependencies]\nlight = \"0.6.1\"\nlight-fw-element-form = { version = \"0.6.1\", optional = true }\n",
+            "[dependencies]\nlight-fw = \"0.6.1\"\nlight-fw-element-form = { version = \"0.6.1\", optional = true }\n",
         )
         .unwrap();
         add_features_to_dependency(
@@ -319,11 +322,12 @@ mod tests {
         .unwrap();
         add_features_to_dependency(&mut doc, "light-fw-element-form", &["default".to_string()])
             .unwrap();
+        // Повторная установка той же фичи не дублирует её.
         add_features_to_dependency(&mut doc, "light-fw", &["validation".to_string()]).unwrap();
         let out = doc.to_string();
         assert!(
             out.contains(
-                "light = { version = \"0.6.1\", features = [\"elements-form\", \"validation\"] }"
+                "light-fw = { version = \"0.6.1\", features = [\"elements-form\", \"validation\"] }"
             ),
             "{out}"
         );
@@ -332,6 +336,49 @@ mod tests {
             "{out}"
         );
         assert_eq!(out.matches("\"validation\"").count(), 1, "{out}");
+    }
+
+    /// Регрессия: при добавлении фичи метакрейту `light add` **никогда** не
+    /// должен выключать дефолтные фичи (`default-features = false`). Иначе
+    /// `<window>` и прочие дефолтные элементы перестают работать. Поведение:
+    /// * строка `light-fw = "0.17"` → `{ version = "0.17", features = [...] }`
+    ///   **без** `default-features`;
+    /// * табличная запись, где пользователь сам прописал
+    ///   `default-features = false`, — сохранена как есть (только добавляются
+    ///   фичи), то есть мы не трогаем явный выбор пользователя.
+    #[test]
+    fn add_features_never_disables_default_features() {
+        // 1) Строковая зависимость без default-features → результат её не
+        //    содержит.
+        let mut doc = parse("[dependencies]\nlight-fw = \"0.17\"\n").unwrap();
+        add_features_to_dependency(&mut doc, "light-fw", &["elements-form".to_string()]).unwrap();
+        let out = doc.to_string();
+        assert!(
+            !out.contains("default-features"),
+            "string dep must not gain default-features: {out}"
+        );
+        assert!(
+            out.contains("light-fw = { version = \"0.17\", features = [\"elements-form\"] }"),
+            "{out}"
+        );
+
+        // 2) Табличная запись, где пользователь явно выключил дефолтные фичи —
+        //    это уважается; добавляется только фича.
+        let mut doc = parse(
+            "[dependencies]\nlight-fw = { version = \"0.17\", default-features = false, features = [\"a11y-winit\"] }\n",
+        )
+        .unwrap();
+        add_features_to_dependency(&mut doc, "light-fw", &["elements-form".to_string()]).unwrap();
+        let out = doc.to_string();
+        assert!(
+            out.contains("default-features = false"),
+            "user-written default-features = false must be preserved: {out}"
+        );
+        assert!(out.contains("\"elements-form\""), "feature appended: {out}");
+        assert!(
+            out.contains("\"a11y-winit\""),
+            "existing feature kept: {out}"
+        );
     }
 
     #[test]
@@ -397,7 +444,7 @@ mod tests {
     #[test]
     fn sets_dependency_version_string_and_table() {
         let mut doc = parse(
-            "[dependencies]\nlight-fw-element-form = \"0.0.1\"\nlight = { version = \"0.1\", features = [\"x\"] }\n",
+            "[dependencies]\nlight-fw-element-form = \"0.0.1\"\nlight-fw = { version = \"0.1\", features = [\"x\"] }\n",
         )
         .unwrap();
         set_dependency_version(&mut doc, "light-fw-element-form", "0.1.0").unwrap();

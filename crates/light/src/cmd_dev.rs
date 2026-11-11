@@ -38,6 +38,10 @@ pub struct DevArgs {
     /// логировать все DevTools-команды и генерировать summary.md при выходе.
     #[arg(long, default_value_t = false)]
     pub agent: bool,
+    /// Не устанавливать недостающие компоненты автоматически (только показать
+    /// список и инструкции `light add`).
+    #[arg(long, default_value_t = false)]
+    pub no_auto_install: bool,
     /// Дополнительные флаги cargo (включая `--`, если нужно передать аргументы
     /// самому приложению). Пример: `--release`.
     #[arg(trailing_var_arg = true)]
@@ -59,7 +63,8 @@ pub fn run(args: DevArgs) -> anyhow::Result<i32> {
             )?;
             Ok(())
         };
-        let ready = ensure_components_present(project_root, &install_fn)?;
+        let auto_install = !args.no_auto_install;
+        let ready = ensure_components_present(project_root, &install_fn, auto_install)?;
         if !ready {
             return Ok(1);
         }

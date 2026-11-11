@@ -808,4 +808,38 @@ mod tests {
         assert!(apply(&StubRunner { found: false }, &options).is_err());
         assert!(!dir.exists(), "каталог не должен создаваться");
     }
+
+    /// Регрессия 0.17.1, задача 1: `light init` **никогда** не записывает
+    /// `default-features = false` в `Cargo.toml` нового проекта. Зависимость
+    /// `light-fw` должна остаться с дефолтными фичами (строка или inline-таблица
+    /// с `version`/`features`, но без `default-features = false`).
+    #[test]
+    fn cargo_toml_never_disables_default_features() {
+        // Без компонентов: `light-fw = "0.17"`.
+        let bare = cargo_toml("bare-app", &[]);
+        assert!(
+            !bare.contains("default-features"),
+            "bare project must not mention default-features:\n{bare}"
+        );
+
+        // С компонентами: `light-fw = { version, features = [...] }` — тоже без
+        // `default-features = false`.
+        let with_components = cargo_toml(
+            "form-app",
+            &[InitComponent::Form, InitComponent::Validation],
+        );
+        assert!(
+            !with_components.contains("default-features"),
+            "project with --with components must not disable default features:\n{with_components}"
+        );
+        // Фичи компонентов при этом на месте.
+        assert!(
+            with_components.contains("\"elements-form\""),
+            "missing elements-form feature"
+        );
+        assert!(
+            with_components.contains("\"validation\""),
+            "missing validation feature"
+        );
+    }
 }

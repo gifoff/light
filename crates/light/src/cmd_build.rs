@@ -29,6 +29,10 @@ pub struct BuildArgs {
     /// Не включать дефолтные фичи.
     #[arg(long)]
     pub no_default_features: bool,
+    /// Не устанавливать недостающие компоненты автоматически (только показать
+    /// список и инструкции `light add`).
+    #[arg(long, default_value_t = false)]
+    pub no_auto_install: bool,
     /// Дополнительные аргументы cargo (передаются как есть).
     #[arg(trailing_var_arg = true)]
     pub extra: Vec<String>,
@@ -90,7 +94,8 @@ pub fn run(args: BuildArgs) -> anyhow::Result<i32> {
         let _ = light_fw_cli_core::add::apply_add(&cwd, &SystemRunner, &plan, &Default::default())?;
         Ok(())
     };
-    let ready = ensure_components_present(&cwd, &install_fn)?;
+    let auto_install = !args.no_auto_install;
+    let ready = ensure_components_present(&cwd, &install_fn, auto_install)?;
     if !ready {
         return Ok(1);
     }
