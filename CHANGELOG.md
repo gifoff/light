@@ -2,6 +2,25 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.17.4] - 2026-11-11
+
+### Fixed
+
+- **fw-macros**: Удалены `#[cfg(feature = ...)]` гейты из генерируемого кода
+  `dispatch_vmodel` (макрос `#[proxy]`). Варианты `NodeKind::Checkbox`, `Radio`,
+  `Select` всегда присутствуют в enum независимо от фич вызывающего крейта;
+  cfg-гейт оценивался относительно фич *вызывающего* крейта, и при их отсутствии
+  ветка `match` компилировалась вне — live-клик по `<checkbox>` всегда возвращал
+  `false`. Добавлен интеграционный тест `runtime_checkbox.rs`.
+
+### Added
+
+- **cli-core / cli**: Индикаторы прогресса в `light build` и `light dev`:
+  `⏳ Сборка (cargo build --release) (Nс)` обновляется каждые 2 с во время
+  блокирующего cargo-вызова; автоустановка компонентов показывает
+  `⏳ Установка <crate>…` → `→ cargo check…` → `✅ Компонент установлен.`
+  Новый метод `CommandRunner::run_with_progress` со спиннером-потоком.
+
 ## [0.17.3] - 2026-11-11
 
 ### Fixed

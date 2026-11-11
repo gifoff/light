@@ -84,8 +84,10 @@ pub fn ensure_components_present(
 
     // Устанавливаем каждый недостающий компонент.
     for name in &report.missing {
-        eprintln!("light: auto-installing {}", name.name);
+        eprintln!("⏳ Установка {}…", name.name);
+        eprintln!("  → cargo check…");
         install_fn(&name.name)?;
+        eprintln!("  ✅ Компонент установлен.");
     }
     Ok(true)
 }

@@ -1220,6 +1220,14 @@ impl VElement {
             .find_map(|child| child.get_mut(key))
     }
 
+    /// Находит узел по ключу (read-only, обход в глубину).
+    pub fn find_by_key(&self, key: &str) -> Option<&VElement> {
+        if self.key == key {
+            return Some(self);
+        }
+        self.children.iter().find_map(|child| child.find_by_key(key))
+    }
+
     /// Текстовое содержимое узла для поиска (только у текстовых узлов).
     pub fn content(&self) -> Option<&str> {
         match &self.kind {

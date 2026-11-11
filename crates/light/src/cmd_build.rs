@@ -114,7 +114,7 @@ pub fn run(args: BuildArgs) -> anyhow::Result<i32> {
     };
 
     eprintln!(
-        "light build: запускаю `cargo build{}`",
+        "⏳ Сборка (cargo build{})…",
         if release { " --release" } else { "" }
     );
 

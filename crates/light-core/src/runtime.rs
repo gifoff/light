@@ -291,10 +291,22 @@ fn build_element<C: Component + ?Sized>(
     let style = build_style(&element.name, &element.attrs, default_font, component)?;
     let (raw_tag, raw_attrs) = collect_meta(&element.attrs, &element.name);
     let tag = intern_key(&raw_tag);
-    let attrs = raw_attrs
+    let mut attrs: Vec<(&'static str, String)> = raw_attrs
         .into_iter()
         .map(|(name, value)| (intern_key(&name), value))
         .collect();
+    // Для элементов с v-model сохраняем имя поля как data-атрибут, чтобы
+    // макрос-генерируемый dispatch_vmodel мог написать новое значение
+    // по ключу узла (runtime-дерево использует позиционные ключи).
+    if let Some(model) = attr_value(&element.attrs, "v-model") {
+        attrs.push(("data-v-model", model.to_owned()));
+    }
+    // Для radio дополнительно сохраняем data-value (значение этого варианта).
+    if element.name == "radio" {
+        if let Some(val) = attr_value(&element.attrs, "value") {
+            attrs.push(("data-value", val.to_owned()));
+        }
+    }
     let mut elem = leaf.with_style(style).with_tag(tag).with_attrs(attrs);
     if let Some(cfg) = window_config {
         elem = elem.with_window(cfg);
@@ -486,14 +498,16 @@ fn build_checkbox<C: Component + ?Sized>(
     let model = attr_value(&element.attrs, "v-model")?;
     let checked = eval_bool(component, model)?;
     let disabled = resolve_disabled(&element.attrs, component)?;
-    Some(VElement::leaf(
+    let leaf = VElement::leaf(
         intern_key(key),
         NodeKind::Checkbox {
             label,
             checked,
             disabled,
         },
-    ))
+    );
+    // data-v-model добавляется в build_element через attrs (см. там).
+    Some(leaf)
 }
 
 #[cfg(not(feature = "elements-checkbox"))]
@@ -519,7 +533,7 @@ fn build_radio<C: Component + ?Sized>(
     let current = eval_simple(component, model)?;
     let selected = current == value;
     let disabled = resolve_disabled(&element.attrs, component)?;
-    Some(VElement::leaf(
+    let leaf = VElement::leaf(
         intern_key(key),
         NodeKind::Radio {
             label,
@@ -527,7 +541,9 @@ fn build_radio<C: Component + ?Sized>(
             selected,
             disabled,
         },
-    ))
+    );
+    // data-v-model и data-value добавляются в build_element через attrs.
+    Some(leaf)
 }
 
 #[cfg(not(feature = "elements-radio"))]
@@ -549,14 +565,16 @@ fn build_select<C: Component + ?Sized>(
     let value = eval_simple(component, model)?;
     let options = collect_options(&element.children)?;
     let disabled = resolve_disabled(&element.attrs, component)?;
-    Some(VElement::leaf(
+    let leaf = VElement::leaf(
         intern_key(key),
         NodeKind::Select {
             value,
             options,
             disabled,
         },
-    ))
+    );
+    // data-v-model добавляется в build_element через attrs.
+    Some(leaf)
 }
 
 #[cfg(not(feature = "elements-select"))]

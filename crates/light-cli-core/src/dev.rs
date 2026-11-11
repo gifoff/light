@@ -1257,10 +1257,7 @@ fn run_inner(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
     {
         // ТЗ 0.16.1, задача 4: статус на stdout до и после сборки, чтобы
         // агент не думал, что «зависло» (раньше выходил только stderr).
-        println!(
-            "light dev: building (cargo build) — target {:?}…",
-            build_target
-        );
+        println!("⏳ Сборка (cargo build) — target {:?}…", build_target);
         let mut cmd = Command::new("cargo");
         cmd.arg("build");
         cmd.args(["-p", &pkg_name, "--features", "light-fw/dev-mode"]);
@@ -1269,9 +1266,47 @@ fn run_inner(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         cmd.stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
-        let status = cmd.status();
+
+        // ТЗ 0.17.4: спиннер — каждые 2 с обновляем elapsed-время в stderr,
+        // чтобы пользователь видел прогресс длительной сборки.
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let spinner = {
+            use std::io::Write as _;
+            use std::sync::atomic::Ordering;
+            let stop2 = stop.clone();
+            thread::spawn(move || {
+                let start = Instant::now();
+                loop {
+                    thread::sleep(Duration::from_secs(2));
+                    if stop2.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let elapsed = start.elapsed().as_secs();
+                    let mut err = std::io::stderr().lock();
+                    let _ = write!(err, "\r⏳ Сборка (cargo build) ({}с)", elapsed);
+                    let _ = err.flush();
+                }
+                let mut err = std::io::stderr().lock();
+                let _ = write!(err, "\r\x1b[2K");
+                let _ = err.flush();
+            })
+        };
+
+        let status = match cmd.spawn() {
+            Ok(mut child) => {
+                let s = child.wait();
+                stop.store(true, std::sync::atomic::Ordering::Relaxed);
+                let _ = spinner.join();
+                s
+            }
+            Err(e) => {
+                stop.store(true, std::sync::atomic::Ordering::Relaxed);
+                let _ = spinner.join();
+                Err(e)
+            }
+        };
         match status {
-            Ok(s) if s.success() => println!("light dev: build done, launching app…"),
+            Ok(s) if s.success() => println!("✅ Сборка завершена, запускаю приложение…"),
             Ok(s) => {
                 eprintln!(
                     "light dev: warm-up build FAILED (exit {:?}) — exit 1",

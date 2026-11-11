@@ -253,6 +253,7 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         field_validators,
         form_validators,
         click_handlers,
+        vmodel_bindings,
         ..
     } = generator;
 
@@ -340,6 +341,97 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
+    // Runtime-writeback для v-model: obходит текущий render-дерево (возвращённый
+    // из `render()`), находит узел с данным ключом, читает атрибут `data-v-model`
+    // и применяет writeback. Нужен только при runtime-templates (иначе статические
+    // ветки `dispatch` уже обрабатывают v-model по ключу). Без привязок — пустой.
+    //
+    // Алгоритм:
+    // 1. `self.render()` — получаем актуальное дерево (runtime-ключи).
+    // 2. `find_by_key(__key)` — находим узел по ключу (позиционному).
+    // 3. Читаем `data-v-model` атрибут — имя поля.
+    // 4. Match по имени поля: применяем writeback через сеттер `set_<field>`.
+    //    - Checkbox: toggle (`!current`)
+    //    - Radio: set value (из NodeKind::Radio.value)
+    //    - Select: set value (из NodeKind::Select.value, из TextChange)
+    let dispatch_vmodel_method = if vmodel_bindings.is_empty() {
+        quote! {}
+    } else {
+        // Уникальные имена полей (dedup): одно поле может быть у нескольких
+        // radio (группа) или checkbox+checkbox.
+        // Уникальные имена полей (dedup): одно поле может быть у нескольких
+        // radio (группа). Тип берём из первого вхождения.
+        let mut seen: std::collections::HashMap<&str, (&str, &Option<String>)> =
+            std::collections::HashMap::new();
+        for (field, ty, radio_val) in vmodel_bindings.iter() {
+            seen.entry(field.as_str()).or_insert((ty.as_str(), radio_val));
+        }
+        let mut arms = Vec::new();
+        for (field, &(field_ty, _)) in &seen {
+            let field_str = LitStr::new(field, Span::call_site());
+            let setter = Ident::new(&format!("set_{field}"), Span::call_site());
+            match field_ty {
+                "bool" => arms.push(quote! {
+                    #field_str => {
+                        // NodeKind::Checkbox всегда существует (вариант enum не
+                        // зависит от фичи); если чекбокс не построен, матч
+                        // просто не сработает и мы вернём false.
+                        if let ::light_fw::vdom::NodeKind::Checkbox { checked, .. } = &__node.kind {
+                            self.#setter(!*checked);
+                            return true;
+                        }
+                        false
+                    }
+                }),
+                "string" => arms.push(quote! {
+                    #field_str => {
+                        // Варианты NodeKind (Radio, Select) всегда существуют;
+                        // если элемент не построен, матч не сработает.
+                        if let ::light_fw::vdom::NodeKind::Radio { value, .. } = &__node.kind {
+                            self.#setter(value.clone());
+                            return true;
+                        }
+                        if let ::light_fw::vdom::NodeKind::Select { value, .. } = &__node.kind {
+                            if let ::light_fw::vdom::Event::TextChange(__val) = __event {
+                                self.#setter(__val.clone());
+                            } else {
+                                self.#setter(value.clone());
+                            }
+                            return true;
+                        }
+                        false
+                    }
+                }),
+                _ => {}
+            }
+        }
+        quote! {
+            fn dispatch_vmodel(&self, __key: &str, __event: &::light_fw::vdom::Event) -> bool {
+                use ::light_fw::vdom::VNode as _;
+                // Только Click (checkbox/radio) и TextChange (select/text).
+                if !matches!(
+                    __event,
+                    ::light_fw::vdom::Event::Click | ::light_fw::vdom::Event::TextChange(_)
+                ) {
+                    return false;
+                }
+                let __tree = self.render();
+                let __node = match __tree.find_by_key(__key) {
+                    Some(node) => node,
+                    None => return false,
+                };
+                let __model_name = match __node.attr("data-v-model") {
+                    Some(name) => name,
+                    None => return false,
+                };
+                match __model_name {
+                    #(#arms)*
+                    _ => false,
+                }
+            }
+        }
+    };
+
     // Runtime-оценка `{{ … }}`: ветки `eval_field` для ВСЕХ идентификаторов,
     // встречающихся в шаблоне как простые пути (без точек). ТЗ 0.14.3-fix6:
     //   * если имя — поле структуры → та же логика: примитивные сериализуются,
@@ -365,26 +457,39 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         .filter(|raw| !raw.contains('.') && !raw.is_empty())
         .filter(|raw| !v_for_vars.contains(raw))
         .collect();
-    let eval_arms = used_idents
-        .iter()
-        .filter_map(|raw| {
-            let ident = to_ident(raw).ok()?;
-            let name_str = raw.clone();
-            if !field_idents.contains(&ident) {
-                // Не поле — метод (или опечатка: компилятор укажет).
-                return Some(quote! { #name_str => Some(self.#ident().to_string()), });
+    let eval_arms: Vec<proc_macro2::TokenStream> = {
+        let mut arms: Vec<proc_macro2::TokenStream> = used_idents
+            .iter()
+            .filter_map(|raw| {
+                let ident = to_ident(raw).ok()?;
+                let name_str = raw.clone();
+                if !field_idents.contains(&ident) {
+                    // Не поле — метод (или опечатка: компилятор укажет).
+                    return Some(quote! { #name_str => Some(self.#ident().to_string()), });
+                }
+                // Поле: только примитивные типы (как раньше) дают ветку.
+                let ty = field_fields
+                    .iter()
+                    .find(|(n, _)| n == &ident)
+                    .map(|(_, t)| t)?;
+                if !is_primitive_serde(ty) {
+                    return None;
+                }
+                Some(quote! { #name_str => Some(self.#ident().to_string()), })
+            })
+            .collect::<Vec<_>>();
+        // v-model поля тоже должны быть доступны через eval_field (runtime-рендер
+        // читает их для checked/selected/value), даже если они не встречаются
+        // в интерполяциях {{ … }}.
+        let mut seen: std::collections::HashSet<&str> = used_idents.iter().map(|s| s.as_str()).collect();
+        for (field, _, _) in &vmodel_bindings {
+            if seen.insert(field.as_str()) {
+                let ident = syn::Ident::new(field, Span::call_site());
+                arms.push(quote! { #field => Some(self.#ident().to_string()), });
             }
-            // Поле: только примитивные типы (как раньше) дают ветку.
-            let ty = field_fields
-                .iter()
-                .find(|(n, _)| n == &ident)
-                .map(|(_, t)| t)?;
-            if !is_primitive_serde(ty) {
-                return None;
-            }
-            Some(quote! { #name_str => Some(self.#ident().to_string()), })
-        })
-        .collect::<Vec<_>>();
+        }
+        arms
+    };
     let eval_field_method = quote! {
         fn eval_field(&self, __name: &str) -> ::std::option::Option<String> {
             match __name {
@@ -531,10 +636,16 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 use ::light_fw::vdom::{VNode as _, VWindow as _};
                 let mut __handled = false;
                 #(#arms)*
+                if !__handled && ::light_fw::FEATURE_RUNTIME_TEMPLATES {
+                    // 1. @click handlers по имени (runtime-дерево дотягивается
+                    //    до обработчика по имени).
+                    // 2. v-model writeback: runtime-дерево использует
+                    //    позиционные ключи, отличные от статических — ищем
+                    //    узел по ключу, читаем data-v-model, применяем сеттер.
+                    __handled = self.dispatch_by_name(__key, __event.clone())
+                        || self.dispatch_vmodel(__key, &__event);
+                }
                 __handled
-                    || (
-                        ::light_fw::FEATURE_RUNTIME_TEMPLATES && self.dispatch_by_name(__key, __event)
-                    )
             }
 
             #modal_method
@@ -546,6 +657,7 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             #inject_state_method
             #eval_field_method
             #invoke_handler_method
+            #dispatch_vmodel_method
         }
     })
 }
@@ -692,6 +804,11 @@ struct Generator {
     /// дерева, (вызов метода, имя обработчика без скобок)). Имя используется в
     /// `invoke_handler`, где runtime-дерево дотягивается до обработчика по имени.
     click_handlers: Vec<(TokenStream, (TokenStream, String))>,
+    /// Привязки v-model для runtime-writeback: (имя поля, тип поля, значение radio).
+    /// Checkbox → (field, "bool", None); Radio → (field, "string", Some(value));
+    /// Select → (field, "string", None). Используется в `dispatch_vmodel`,
+    /// который обходит runtime-дерево по ключу и записывает новое значение.
+    vmodel_bindings: Vec<(String, String, Option<String>)>,
 }
 
 /// Ключ узла: известный на этапе компиляции либо вычисляемый во время работы
@@ -1702,6 +1819,12 @@ impl Generator {
             if __key == #key { #(#branches)* }
         });
 
+        // Регистрация v-model для runtime-writeback (dispatch_vmodel).
+        // Записываем имя поля без вложенных путей (только простые идентификаторы),
+        // потому что runtime-дерево поддерживает только `{{ поле }}` без точек.
+        let model_root = model.split('.').next().unwrap_or(model).to_string();
+        self.vmodel_bindings.push((model_root, "bool".to_string(), None));
+
         let style = style_token(self, element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;
         Ok(quote! {
@@ -1769,6 +1892,13 @@ impl Generator {
         self.arms.push(quote! {
             if __key == #key { #(#branches)* }
         });
+
+        // Регистрация v-model для runtime-writeback (dispatch_vmodel).
+        let model_root = model.split('.').next().unwrap_or(model).to_string();
+        let radio_value = attr_value(&element.attrs, "value")
+            .filter(|v| !v.starts_with(':'))
+            .map(str::to_string);
+        self.vmodel_bindings.push((model_root, "string".to_string(), radio_value));
 
         let style = style_token(self, element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;
@@ -1855,6 +1985,10 @@ impl Generator {
         self.arms.push(quote! {
             if __key == #key { #(#branches)* }
         });
+
+        // Регистрация v-model для runtime-writeback (dispatch_vmodel).
+        let model_root = model.split('.').next().unwrap_or(model).to_string();
+        self.vmodel_bindings.push((model_root, "string".to_string(), None));
 
         let style = style_token(self, element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;

@@ -55,7 +55,8 @@ pub fn run_build(
     cwd: &Path,
     opts: &BuildOptions,
 ) -> Result<crate::process::CommandOutput> {
-    let output = runner.run("cargo", &build_args(opts), Some(cwd))?;
+    let label = if opts.release { "Сборка (cargo build --release)" } else { "Сборка (cargo build)" };
+    let output = runner.run_with_progress("cargo", &build_args(opts), Some(cwd), label)?;
     if !output.success() {
         return Err(Error::CommandFailed {
             program: "cargo build".to_string(),

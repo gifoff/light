@@ -3,9 +3,19 @@
 //! Реальная работа с `cargo`/`rustc`/`rustup` идёт через трейт [`CommandRunner`],
 //! что позволяет тестировать логику CLI без запуска настоящих процессов
 //! (в тестах подставляется мок-раннер).
+//!
+//! ТЗ 0.17.4: [`SystemRunner`] поддерживает индикатор прогресса — во время
+//! блокирующего вызова (`output()`, `wait()`) фоновый поток выводит в stderr
+//! `\r⏳ <label> (<n>с)` каждые 2 секунды, чтобы пользователь видел, что
+//! процесс ещё жив. При завершении строка очищается.
 
+use std::io::Write as _;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::error::{Error, Result};
 
@@ -31,6 +41,23 @@ impl CommandOutput {
 pub trait CommandRunner: Send + Sync {
     /// Запускает `program` с аргументами `args` в каталоге `cwd`.
     fn run(&self, program: &str, args: &[String], cwd: Option<&Path>) -> Result<CommandOutput>;
+
+    /// Запускает команду с индикатором прогресса в stderr.
+    ///
+    /// Во время выполнения процесса фоновый поток выводит в stderr строку
+    /// `\r⏳ <label> (<n>с)` каждые 2 секунды (обновляя время), и очищает её
+    /// при завершении. По умолчанию делегирует в [`Self::run`] (без спиннера)
+    /// — достаточно для мок-раннеров в тестах.
+    fn run_with_progress(
+        &self,
+        program: &str,
+        args: &[String],
+        cwd: Option<&Path>,
+        label: &str,
+    ) -> Result<CommandOutput> {
+        let _ = label;
+        self.run(program, args, cwd)
+    }
 }
 
 /// Раннер, запускающий реальные процессы через [`std::process::Command`].
@@ -56,6 +83,88 @@ impl CommandRunner for SystemRunner {
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
         })
+    }
+
+    fn run_with_progress(
+        &self,
+        program: &str,
+        args: &[String],
+        cwd: Option<&Path>,
+        label: &str,
+    ) -> Result<CommandOutput> {
+        let mut command = Command::new(program);
+        command.args(args);
+        if let Some(dir) = cwd {
+            command.current_dir(dir);
+        }
+
+        // Спинар: фоновый поток пишет `\r⏳ label (Nс)` в stderr каждые 2 с.
+        let stop = Arc::new(AtomicBool::new(false));
+        let spinner = start_spinner(label.to_string(), stop.clone());
+
+        // Запускаем процесс; при ошибке запуска — останавливаем спиннер сразу.
+        let child = match command.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                stop.store(true, Ordering::Relaxed);
+                let _ = spinner.join();
+                return if e.kind() == std::io::ErrorKind::NotFound {
+                    Err(Error::CommandNotFound(program.to_string()))
+                } else {
+                    Err(Error::Io(e))
+                };
+            }
+        };
+
+        // Ожидаем завершение; stdout/stderr захвачены (pipelines).
+        let output = wait_with_output(child);
+
+        // Останавливаем спиннер и ожидаем его завершения.
+        stop.store(true, Ordering::Relaxed);
+        let _ = spinner.join();
+
+        Ok(output)
+    }
+}
+
+/// Запускает спиннер-поток, который каждые 2 секунды печатает в stderr
+/// `\r⏳ <label> (<n>с)`. Поток останавливается при `stop == true`.
+fn start_spinner(label: String, stop: Arc<AtomicBool>) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let start = Instant::now();
+        loop {
+            thread::sleep(Duration::from_secs(2));
+            if stop.load(Ordering::Relaxed) {
+                break;
+            }
+            let elapsed = start.elapsed().as_secs();
+            let line = format!("\r⏳ {} ({}с)", label, elapsed);
+            // `\r` + строка перезаписывает текущий статус без переноса строки.
+            // Финальный `\x1b[2K` очистит строку при завершении.
+            let mut err = std::io::stderr().lock();
+            let _ = write!(err, "{}", line);
+            let _ = err.flush();
+        }
+        // Очищаем строку при завершении.
+        let mut err = std::io::stderr().lock();
+        let _ = write!(err, "\r\x1b[2K");
+        let _ = err.flush();
+    })
+}
+
+/// Ждёт завершения дочернего процесса и собирает его stdout/stderr.
+fn wait_with_output(child: Child) -> CommandOutput {
+    match child.wait_with_output() {
+        Ok(output) => CommandOutput {
+            status: output.status.code().unwrap_or(-1),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        },
+        Err(_) => CommandOutput {
+            status: -1,
+            stdout: String::new(),
+            stderr: "не удалось дождаться завершения процесса".to_string(),
+        },
     }
 }
 
@@ -85,5 +194,19 @@ mod tests {
     fn version_parse_rejects_garbage() {
         assert!(parse_program_version("no version here").is_none());
         assert!(parse_program_version("").is_none());
+    }
+
+    #[test]
+    fn run_with_progress_delegates_to_run_for_mock() {
+        struct Mock;
+        impl CommandRunner for Mock {
+            fn run(&self, program: &str, args: &[String], _cwd: Option<&Path>) -> Result<CommandOutput> {
+                assert_eq!(program, "echo");
+                let out = args.first().cloned().unwrap_or_default();
+                Ok(CommandOutput { status: 0, stdout: out, stderr: String::new() })
+            }
+        }
+        let r = Mock.run_with_progress("echo", &["hi".into()], None, "Тест");
+        assert!(r.unwrap().success());
     }
 }

@@ -99,7 +99,7 @@ pub fn run(args: DevArgs) -> anyhow::Result<i32> {
     // тесты могли покрывать именно её).
     let parsed = parse_dev_command(&raw);
     eprintln!(
-        "light dev: запускаю `cargo run{} --features dev-mode {}`",
+        "⏳ Запуск (cargo run{} --features dev-mode {})",
         parsed
             .package
             .as_ref()

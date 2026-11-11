@@ -178,7 +178,22 @@ pub trait Component: Any {
         false
     }
 
-    /// Снимок реактивных свойств компонента для инструментов разработки.
+    /// Записывает значение в reactive-поле по ключу узла (runtime-дерево).
+    ///
+    /// По умолчанию — `false`: компонент без v-model-привязок ничего не
+    /// записывает. Реализация генерируется макросом `#[template]`
+    /// (фича `runtime-templates`): обходит текущий render-дерево, находит
+    /// узел с данным ключом, читает атрибут `data-v-model` и применяет
+    /// writeback (toggle для checkbox, set value для radio/select).
+    /// Вызывается из [`dispatch_by_name`](Self::dispatch_by_name) после
+    /// промаха `invoke_handler`, когда статические ветки `dispatch` не
+    /// совпали (runtime-дерево использует позиционные ключи, отличные от
+    /// статических).
+    fn dispatch_vmodel(&self, _key: &str, _event: &Event) -> bool {
+        false
+    }
+
+    /// Снимок реакatives properties of the component for development tools.
     ///
     /// По умолчанию — `null`: компонент без реактивных свойств ничего не
     /// сообщает. Реализацию генерирует макрос `#[template]`: каждое поле

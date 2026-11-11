@@ -39,3 +39,5 @@ package-files.log
 # Temp test projects and logs
 test-dx/
 *.log
+
+.report-evidence/
