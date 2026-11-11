@@ -16,7 +16,7 @@ use crate::process::CommandRunner;
 use crate::{backup, cargo as cargo_cmd, edit, lockfile::Lockfile};
 
 /// Опции команды `light add`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AddOptions {
     /// Явная версия (`--version`).
     pub version: Option<String>,
@@ -32,6 +32,32 @@ pub struct AddOptions {
     pub features: Vec<String>,
     /// Не запускать `cargo check` (`--no-verify`).
     pub no_verify: bool,
+    /// Уважать дефолтные фичи мета-крейта `light-fw` при добавлении компонентов.
+    ///
+    /// Всегда `true`: автоподгрузка (`light build`/`light dev`) и ручной `light add`
+    /// никогда не отключают `default-features` у `light-fw`. Поле существует, чтобы
+    /// опция передавалась явно (и её нельзя было случайно выключить через
+    /// `Default::default()`), — см. ТЗ 0.17.2. Значение `false` допустимо, но
+    /// ничего не меняет: `edit.rs` никогда не выносит `default-features = false`.
+    pub default_features: bool,
+}
+
+// Ручная реализация `Default`: все флаги — `false`, кроме `default_features`,
+// который обязан быть `true`, чтобы ни один вызов через `Default::default()`
+// не мог случайно отключить дефолтные фичи `light-fw` (ТЗ 0.17.2).
+impl Default for AddOptions {
+    fn default() -> Self {
+        Self {
+            version: None,
+            yes: false,
+            dry_run: false,
+            offline: false,
+            feature: None,
+            features: Vec::new(),
+            no_verify: false,
+            default_features: true,
+        }
+    }
 }
 
 /// Компонент, который нужно установить дополнительно (из `requires`).

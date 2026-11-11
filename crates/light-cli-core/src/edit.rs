@@ -381,6 +381,55 @@ mod tests {
         );
     }
 
+    /// ТЗ 0.17.2, задача 2: полный цикл мутаций автоподгрузки (`light build`/
+    /// `light dev` при `<checkbox>`) должен дать ровно
+    /// `light-fw = { version = "0.17", features = ["elements-form"] }` **без**
+    /// `default-features = false`, а также опциональную зависимость и фичу
+    /// `element-form`. Результат остаётся валидным (дефолтные элементы `<window>`
+    /// не сломаны). Проверяются те же функции, что вызывает `do_add`.
+    #[test]
+    fn auto_install_full_cycle_preserves_default_features() {
+        // Стартовое состояние: проект из `light init test-auto` — строковая
+        // зависимость `light-fw = "0.17"` без default-features.
+        let mut doc = parse(
+            "[dependencies]\nlight-fw = \"0.17\"\n\n[features]\ndev-mode = [\"light-fw/dev-mode\"]\n",
+        )
+        .unwrap();
+
+        // То, что делает `do_add`: ставит опциональную зависимость компонента,
+        // добавляет фичи в метакреjt `light-fw` и создаёт фичу `element-form`.
+        set_version_optional(&mut doc, "light-fw-element-form", "0.17").unwrap();
+        add_features_to_dependency(&mut doc, "light-fw", &["elements-form".to_string()]).unwrap();
+        add_dep_to_feature(&mut doc, "element-form", "light-fw-element-form").unwrap();
+
+        let out = doc.to_string();
+
+        // Критерий приёмки 2.4: ровно такая строка `light-fw` и ни одного
+        // `default-features = false`.
+        assert!(
+            out.contains("light-fw = { version = \"0.17\", features = [\"elements-form\"] }"),
+            "expected clean light-fw dep line: {out}"
+        );
+        assert!(
+            !out.contains("default-features = false"),
+            "auto-install must not disable default-features: {out}"
+        );
+        // Зависимость и фича на месте.
+        assert!(
+            out.contains("light-fw-element-form = { version = \"0.17\", optional = true }"),
+            "{out}"
+        );
+        assert!(
+            out.contains("element-form = [\"dep:light-fw-element-form\"]"),
+            "{out}"
+        );
+        // Итог по-прежнему парсится (т.е. Cargo.toml валиден).
+        assert!(
+            parse(&out).is_ok(),
+            "resulting Cargo.toml must stay valid: {out}"
+        );
+    }
+
     #[test]
     fn adds_dep_to_existing_and_new_feature() {
         let mut doc = parse("[features]\ndefault = [\"full\"]\nfull = [\"light/x\"]\n").unwrap();

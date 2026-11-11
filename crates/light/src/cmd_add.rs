@@ -53,6 +53,9 @@ pub fn run(args: AddArgs) -> anyhow::Result<i32> {
         feature: args.feature,
         features: args.features,
         no_verify: args.no_verify,
+        // ТЗ 0.17.2: ручной `light add` никогда не отключает дефолтные фичи
+        // `light-fw`; прописываем явно, чтобы опция была видимой в месте вызова.
+        default_features: true,
     };
 
     let plan = plan_add(&args.path, &args.component, &opts)?;

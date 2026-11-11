@@ -54,12 +54,18 @@ pub fn run(args: DevArgs) -> anyhow::Result<i32> {
     let project_root = Path::new(".");
     if project_root.join("Cargo.toml").exists() {
         let install_fn = |name: &str| -> light_fw_cli_core::Result<()> {
-            let plan = light_fw_cli_core::add::plan_add(project_root, name, &Default::default())?;
+            // ТЗ 0.17.2: автоподгрузка явно уважает дефолтные фичи `light-fw`
+            // (не отключает их); опция прописана в обоих вызовах.
+            let opts = light_fw_cli_core::add::AddOptions {
+                default_features: true,
+                ..Default::default()
+            };
+            let plan = light_fw_cli_core::add::plan_add(project_root, name, &opts)?;
             let _ = light_fw_cli_core::add::apply_add(
                 project_root,
                 &light_fw_cli_core::process::SystemRunner,
                 &plan,
-                &Default::default(),
+                &opts,
             )?;
             Ok(())
         };

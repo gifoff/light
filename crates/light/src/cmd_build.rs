@@ -90,8 +90,14 @@ pub fn run(args: BuildArgs) -> anyhow::Result<i32> {
 
     // Автоматическая проверка компонентов перед сборкой.
     let install_fn = |name: &str| -> light_fw_cli_core::Result<()> {
-        let plan = light_fw_cli_core::add::plan_add(&cwd, name, &Default::default())?;
-        let _ = light_fw_cli_core::add::apply_add(&cwd, &SystemRunner, &plan, &Default::default())?;
+        // ТЗ 0.17.2: автоподгрузка явно уважает дефолтные фичи `light-fw`
+        // (не отключает их); опция прописана в обоих вызовах.
+        let opts = light_fw_cli_core::add::AddOptions {
+            default_features: true,
+            ..Default::default()
+        };
+        let plan = light_fw_cli_core::add::plan_add(&cwd, name, &opts)?;
+        let _ = light_fw_cli_core::add::apply_add(&cwd, &SystemRunner, &plan, &opts)?;
         Ok(())
     };
     let auto_install = !args.no_auto_install;
