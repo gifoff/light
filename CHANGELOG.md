@@ -2,6 +2,22 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.17.2] - 2026-11-11
+
+### Fixed
+
+- **cli**: Автоподгрузка компонентов (`light build` / `light dev`) теперь явно
+  уважает дефолтные фичи метакрейта `light-fw`: опция `default_features: true`
+  прописана в обоих вызовах (`plan_add` и `apply_add`), так что при автоматической
+  установке компонента (например `<checkbox>` → `light-fw-element-form`) строка
+  `light-fw = "0.17"` превращается в
+  `{ version = "0.17", features = ["elements-form"] }` **без**
+  `default-features = false`. Добавлено поле `AddOptions::default_features`
+  (значение по умолчанию `true`) и регрессионный тест полного цикла мутаций
+  автоподгрузки (`edit.rs`). Повторно подтверждено поведение, исправленное в
+  0.17.1: дефолтные элементы (`<window>` и др.) не сломаны при добавлении
+  компонентов.
+
 ## [0.17.1] - 2026-11-11
 
 ### Fixed
