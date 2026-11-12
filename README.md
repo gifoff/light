@@ -1,4 +1,4 @@
-﻿# Light
+# Light
 
 [![CI](https://github.com/gifoff/light/actions/workflows/ci.yml/badge.svg)](https://github.com/gifoff/light/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-gifoff.github.io%2Flight-blue)](https://gifoff.github.io/light/)
