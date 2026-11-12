@@ -2672,7 +2672,14 @@ impl App {
                     let _ = response_tx.send(false);
                     return;
                 };
-                let handled = window.component.dispatch(&key, DomEvent::Click);
+                // 1. Статическая/макросная диспетчеризация: ветки `dispatch`
+                //    (явные `key="..."` и позиционные ключи из compile-time).
+                // 2. Fallback: прямое дерево по `vnode.key == key` — работает
+                //    для авто-позиционных ключей (`.0.1`) при runtime-шаблоне,
+                //    где позиции могли сдвинуться после hot-reload.
+                let event = DomEvent::Click;
+                let handled = window.component.dispatch(&key, event.clone())
+                    || window.component.dispatch_vmodel(&key, &event);
                 if handled {
                     window.invalidate();
                 }

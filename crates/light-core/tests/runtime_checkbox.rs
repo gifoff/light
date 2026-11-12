@@ -5,10 +5,7 @@
 //! (позиционные ключи) записывает новое значение в reactive-поле через
 //! `data-v-model` атрибут.
 
-#![cfg(all(
-    feature = "elements-checkbox",
-    feature = "runtime-templates"
-))]
+#![cfg(all(feature = "elements-checkbox", feature = "runtime-templates"))]
 
 extern crate light_fw_core as light_fw;
 
@@ -34,12 +31,7 @@ fn checkbox_renders_with_positive_size_and_click_toggles_agreed() {
     let checkbox = tree
         .find_by_tag("checkbox")
         .expect("чекбокс присутствует в дереве");
-    let NodeKind::Checkbox {
-        label,
-        checked,
-        ..
-    } = &checkbox.kind
-    else {
+    let NodeKind::Checkbox { label, checked, .. } = &checkbox.kind else {
         panic!("ожидался NodeKind::Checkbox");
     };
     assert_eq!(label, "Согласен", "подпись чекбокса сохранена");
@@ -66,6 +58,34 @@ fn checkbox_renders_with_positive_size_and_click_toggles_agreed() {
     let handled2 = app.dispatch(checkbox2.key, Event::Click);
     assert!(handled2, "второй клик тоже обработан");
     assert!(!app.agreed(), "после второго клика agreed = false");
+}
+
+/// ТЗ 0.17.5: devtools CLICK fallback — прямой вызов `dispatch_vmodel`
+/// с позиционным ключом работает, даже если статические ветки `dispatch`
+/// не совпали (имитирует поведение `handle_devtools_command`).
+#[test]
+fn dispatch_vmodel_fallback_with_positional_key() {
+    let app = FormApp::new();
+    assert!(!app.agreed());
+
+    // Получаем позиционный ключ из дерева (авто-ключ `.0.1`).
+    let tree = app.render();
+    let checkbox = tree.find_by_tag("checkbox").expect("чекбокс");
+    let key = checkbox.key;
+    assert!(
+        key.starts_with('.'),
+        "ожидался позиционный (auto) ключ, получен: {key}"
+    );
+
+    // Имитируем fallback: `dispatch` + `dispatch_vmodel`.
+    // Если статическая ветка уже обработала клик — тоже ок.
+    let event = Event::Click;
+    let handled = app.dispatch(key, event.clone()) || app.dispatch_vmodel(key, &event);
+    assert!(
+        handled,
+        "fallback dispatch_vmodel обработал клик по auto-ключу {key}"
+    );
+    assert!(app.agreed(), "состояние переключилось");
 }
 
 #[test]

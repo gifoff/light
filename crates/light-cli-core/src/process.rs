@@ -2,18 +2,23 @@
 //!
 //! Реальная работа с `cargo`/`rustc`/`rustup` идёт через трейт [`CommandRunner`],
 //! что позволяет тестировать логику CLI без запуска настоящих процессов
-//! (в тестах подставляется мок-раннер).
+//! (в тестах подставлятся мок-раннер).
 //!
 //! ТЗ 0.17.4: [`SystemRunner`] поддерживает индикатор прогресса — во время
 //! блокирующего вызова (`output()`, `wait()`) фоновый поток выводит в stderr
 //! `\r⏳ <label> (<n>с)` каждые 2 секунды, чтобы пользователь видел, что
 //! процесс ещё жив. При завершении строка очищается.
+//!
+//! ТЗ 0.17.5: при `run_with_progress` stdout/stderr дочернего процесса
+//! перехватываются (`Stdio::piped()`) и накапливаются в фоне — на экране
+//! виден ТОЛЬКО спиннер. При ненулевом коде выхода накопленный вывод
+//! выводится в stderr, чтобы пользователь увидел причину ошибки.
 
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 use std::path::Path;
-use std::process::{Child, Command};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -98,12 +103,17 @@ impl CommandRunner for SystemRunner {
             command.current_dir(dir);
         }
 
+        // Перехватываем stdout/stderr дочернего процесса: на экране виден
+        // только спиннер; вывод накапливается в фоне и выводится при ошибке.
+        command.stdout(Stdio::piped());
+        command.stderr(Stdio::piped());
+
         // Спинар: фоновый поток пишет `\r⏳ label (Nс)` в stderr каждые 2 с.
         let stop = Arc::new(AtomicBool::new(false));
         let spinner = start_spinner(label.to_string(), stop.clone());
 
         // Запускаем процесс; при ошибке запуска — останавливаем спиннер сразу.
-        let child = match command.spawn() {
+        let mut child = match command.spawn() {
             Ok(c) => c,
             Err(e) => {
                 stop.store(true, Ordering::Relaxed);
@@ -116,14 +126,82 @@ impl CommandRunner for SystemRunner {
             }
         };
 
-        // Ожидаем завершение; stdout/stderr захвачены (pipelines).
-        let output = wait_with_output(child);
+        // Фоновые потоки читают stdout и stderr в буферы (экран чистый).
+        let stdout_pipe = child.stdout.take();
+        let stderr_pipe = child.stderr.take();
+        let stdout_buf: Arc<std::sync::Mutex<Vec<u8>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+        let stderr_buf: Arc<std::sync::Mutex<Vec<u8>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
 
-        // Останавливаем спиннер и ожидаем его завершения.
+        let out_handle = if let Some(pipe) = stdout_pipe {
+            let buf = Arc::clone(&stdout_buf);
+            Some(thread::spawn(move || {
+                let mut reader = std::io::BufReader::new(pipe);
+                let mut locked = buf.lock().unwrap();
+                let _ = reader.read_to_end(&mut locked);
+            }))
+        } else {
+            None
+        };
+        let err_handle = if let Some(pipe) = stderr_pipe {
+            let buf = Arc::clone(&stderr_buf);
+            Some(thread::spawn(move || {
+                let mut reader = std::io::BufReader::new(pipe);
+                let mut locked = buf.lock().unwrap();
+                let _ = reader.read_to_end(&mut locked);
+            }))
+        } else {
+            None
+        };
+
+        // Ждём завершения процесса.
+        let wait_result = child.wait();
+
+        // Останавливаем спиннер.
         stop.store(true, Ordering::Relaxed);
         let _ = spinner.join();
 
-        Ok(output)
+        // Дожидаемся потоков-читальщиков.
+        if let Some(h) = out_handle {
+            let _ = h.join();
+        }
+        if let Some(h) = err_handle {
+            let _ = h.join();
+        }
+
+        let stdout_str = String::from_utf8_lossy(&stdout_buf.lock().unwrap()).into_owned();
+        let stderr_str = String::from_utf8_lossy(&stderr_buf.lock().unwrap()).into_owned();
+
+        let status = match wait_result {
+            Ok(s) => s,
+            Err(e) => {
+                // При ошибке wait выведим накопленный вывод (если есть).
+                if !stdout_str.is_empty() {
+                    eprintln!("{stdout_str}");
+                }
+                if !stderr_str.is_empty() {
+                    eprintln!("{stderr_str}");
+                }
+                return Err(Error::Io(e));
+            }
+        };
+
+        // При ненулевом коде вывода печатаем накопленный вывод в stderr,
+        // чтобы пользователь увидел причину ошибки.
+        let code = status.code().unwrap_or(-1);
+        if code != 0 && !stdout_str.is_empty() {
+            eprintln!("{stdout_str}");
+        }
+        if code != 0 && !stderr_str.is_empty() {
+            eprintln!("{stderr_str}");
+        }
+
+        Ok(CommandOutput {
+            status: code,
+            stdout: stdout_str,
+            stderr: stderr_str,
+        })
     }
 }
 
@@ -150,22 +228,6 @@ fn start_spinner(label: String, stop: Arc<AtomicBool>) -> thread::JoinHandle<()>
         let _ = write!(err, "\r\x1b[2K");
         let _ = err.flush();
     })
-}
-
-/// Ждёт завершения дочернего процесса и собирает его stdout/stderr.
-fn wait_with_output(child: Child) -> CommandOutput {
-    match child.wait_with_output() {
-        Ok(output) => CommandOutput {
-            status: output.status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        },
-        Err(_) => CommandOutput {
-            status: -1,
-            stdout: String::new(),
-            stderr: "не удалось дождаться завершения процесса".to_string(),
-        },
-    }
 }
 
 /// Извлекает semver-версию из первой строки вывода `* --version`.
@@ -200,10 +262,19 @@ mod tests {
     fn run_with_progress_delegates_to_run_for_mock() {
         struct Mock;
         impl CommandRunner for Mock {
-            fn run(&self, program: &str, args: &[String], _cwd: Option<&Path>) -> Result<CommandOutput> {
+            fn run(
+                &self,
+                program: &str,
+                args: &[String],
+                _cwd: Option<&Path>,
+            ) -> Result<CommandOutput> {
                 assert_eq!(program, "echo");
                 let out = args.first().cloned().unwrap_or_default();
-                Ok(CommandOutput { status: 0, stdout: out, stderr: String::new() })
+                Ok(CommandOutput {
+                    status: 0,
+                    stdout: out,
+                    stderr: String::new(),
+                })
             }
         }
         let r = Mock.run_with_progress("echo", &["hi".into()], None, "Тест");

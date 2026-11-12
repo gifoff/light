@@ -272,7 +272,9 @@ fn build_request(cmd: &DevtoolsCmd) -> anyhow::Result<(u16, bool, DevtoolsReques
             c.json,
             DevtoolsRequest {
                 cmd: "click".into(),
-                body: Some(format!("click {}", c.key)),
+                // Протокол: `CLICK <key>` — тело содержит только ключ узла
+                // (авто-позиционный `.0.1` или явный `key="..."`).
+                body: Some(c.key.clone()),
                 save_path: None,
                 json: c.json,
             },
@@ -284,7 +286,7 @@ fn build_request(cmd: &DevtoolsCmd) -> anyhow::Result<(u16, bool, DevtoolsReques
                 t.json,
                 DevtoolsRequest {
                     cmd: "type".into(),
-                    body: Some(format!("type {} {text}", t.key)),
+                    body: Some(format!("{} {text}", t.key)),
                     save_path: None,
                     json: t.json,
                 },
@@ -301,7 +303,7 @@ fn build_request(cmd: &DevtoolsCmd) -> anyhow::Result<(u16, bool, DevtoolsReques
                 k.json,
                 DevtoolsRequest {
                     cmd: "key".into(),
-                    body: Some(format!("key {} {name}", k.key)),
+                    body: Some(format!("{} {name}", k.key)),
                     save_path: None,
                     json: k.json,
                 },

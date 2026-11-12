@@ -364,7 +364,8 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         let mut seen: std::collections::HashMap<&str, (&str, &Option<String>)> =
             std::collections::HashMap::new();
         for (field, ty, radio_val) in vmodel_bindings.iter() {
-            seen.entry(field.as_str()).or_insert((ty.as_str(), radio_val));
+            seen.entry(field.as_str())
+                .or_insert((ty.as_str(), radio_val));
         }
         let mut arms = Vec::new();
         for (field, &(field_ty, _)) in &seen {
@@ -481,7 +482,8 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         // v-model поля тоже должны быть доступны через eval_field (runtime-рендер
         // читает их для checked/selected/value), даже если они не встречаются
         // в интерполяциях {{ … }}.
-        let mut seen: std::collections::HashSet<&str> = used_idents.iter().map(|s| s.as_str()).collect();
+        let mut seen: std::collections::HashSet<&str> =
+            used_idents.iter().map(|s| s.as_str()).collect();
         for (field, _, _) in &vmodel_bindings {
             if seen.insert(field.as_str()) {
                 let ident = syn::Ident::new(field, Span::call_site());
@@ -1823,7 +1825,8 @@ impl Generator {
         // Записываем имя поля без вложенных путей (только простые идентификаторы),
         // потому что runtime-дерево поддерживает только `{{ поле }}` без точек.
         let model_root = model.split('.').next().unwrap_or(model).to_string();
-        self.vmodel_bindings.push((model_root, "bool".to_string(), None));
+        self.vmodel_bindings
+            .push((model_root, "bool".to_string(), None));
 
         let style = style_token(self, element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;
@@ -1898,7 +1901,8 @@ impl Generator {
         let radio_value = attr_value(&element.attrs, "value")
             .filter(|v| !v.starts_with(':'))
             .map(str::to_string);
-        self.vmodel_bindings.push((model_root, "string".to_string(), radio_value));
+        self.vmodel_bindings
+            .push((model_root, "string".to_string(), radio_value));
 
         let style = style_token(self, element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;
@@ -1988,7 +1992,8 @@ impl Generator {
 
         // Регистрация v-model для runtime-writeback (dispatch_vmodel).
         let model_root = model.split('.').next().unwrap_or(model).to_string();
-        self.vmodel_bindings.push((model_root, "string".to_string(), None));
+        self.vmodel_bindings
+            .push((model_root, "string".to_string(), None));
 
         let style = style_token(self, element, None, self.visible_token(element)?)?;
         let meta = self.node_meta(element)?;

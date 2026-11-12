@@ -1225,7 +1225,9 @@ impl VElement {
         if self.key == key {
             return Some(self);
         }
-        self.children.iter().find_map(|child| child.find_by_key(key))
+        self.children
+            .iter()
+            .find_map(|child| child.find_by_key(key))
     }
 
     /// Текстовое содержимое узла для поиска (только у текстовых узлов).

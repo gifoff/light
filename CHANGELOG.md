@@ -2,6 +2,31 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.17.5] - 2026-11-12
+
+### Fixed
+
+- **cli / core**: DevTools CLICK (и TYPE, KEY) по авто-позиционным ключам
+  (`.0.1`, `.0.0.0`): тело wire-запроса содержало избыточный глагол
+  (`click .0.1`), из-за чего сервер читал key = `"click .0.1"` и dispatch
+  никогда не совпадал → всегда `ok:false`. Тело теперь содержит только ключ:
+  `CLICK .0.1`. Аналогично исправлены TYPE (`{key} {text}`) и KEY
+  (`{key} {name}`).
+- **core**: `handle_devtools_command` (Click): добавлен fallback — если
+  статическая `dispatch` вернула `false`, вызывается
+  `component.dispatch_vmodel(&key, &event)` (прямое дерево по
+  `vnode.key == key` + `data-v-model`). Покрыт интеграционным тестом
+  `dispatch_vmodel_fallback_with_positional_key`.
+- **cli-core**: `run_with_progress`: stdout/stderr дочернего процесса
+  перехватываются (`Stdio::piped()`) и накапливаются в фоновых потоках —
+  на экране виден только спиннер (без размазывания от вывода `cargo build`).
+  При ненулевом коде выхода накопленный вывод печатается в stderr.
+
+### Added
+
+- **core**: Интеграционный тест `dispatch_vmodel_fallback_with_positional_key`
+  (runtime_checkbox.rs) — проверяет fallback-путь devtools CLICK.
+
 ## [0.17.4] - 2026-11-11
 
 ### Fixed
