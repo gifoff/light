@@ -119,18 +119,30 @@ fn main() -> light::Result<()> {
 
 ### Сборка и запуск
 
-Light не изобретает свою build-систему — приложение собирается обычным `cargo`:
+Основной способ разработки и сборки — CLI Light: `light dev` (hot-reload) и
+`light build` (release + путь к бинарнику). Ручной `cargo` — как альтернатива.
 
 | Задача | Команда |
 |---|---|
-| Быстрый запуск (debug) | `cargo run` |
-| Запуск с DevTools | `cargo run --features dev-mode` |
-| Release-сборка | `cargo build --release` |
-| Запуск release | `cargo run --release` |
-| Hot-reload (HTML + `.rs`) | `light dev` |
-| Hot-reload + сессия агента | `light dev --agent` |
+| Разработка (hot-reload HTML + `.rs`, DevTools) | `light dev` |
+| Разработка + сессия ИИ-агента | `light dev --agent` |
+| Сборка release + путь и размер бинарника | `light build` |
+| Быстрый запуск (debug, ручной) | `cargo run` |
+| Запуск с DevTools (ручной) | `cargo run --features dev-mode` |
+| Release-сборка (ручной) | `cargo build --release` |
 
-Ключевая разница: при `cargo run` правки в HTML **не подхватываются** (шаблон встраивается в бинарник на этапе компиляции через `include_str!`), а `light dev` — это supervisor, который следит за `templates/` и `src/`: правки HTML применяются мгновенно (`RELOAD_TEMPLATE`, без пересборки), правки `.rs` — через инкрементальную пересборку и перезапуск с сохранением состояния окна. Для разработки используйте `light dev` (или `light dev --agent` для ИИ-агентов), для CI/production — `cargo build --release`. Детали hot-reload — в разделе [Горячая перезагрузка](#горячая-перезагрузка-hot-reload).
+Ключевая разница: при `cargo run` правки в HTML **не подхватываются** (шаблон
+встраивается в бинарник на этапе компиляции через `include_str!`), а `light dev`
+— это supervisor, который следит за `templates/` и `src/`: правки HTML применяются
+мгновенно (`RELOAD_TEMPLATE`, без пересборки), правки `.rs` — через инкрементальную
+пересборку и перезапуск с сохранением состояния окна. Для разработки используйте
+`light dev` (или `light dev --agent` для ИИ-агентов), для CI/production —
+`light build`. Детали hot-reload — в разделе [Горячая перезагрузка](#горячая-перезагрузка-hot-reload).
+
+Два типовичных вопроса про релиз на Windows — **как скрыть консольное окно**
+и **как добавить иконку файлу .exe** — разобраны в
+[Быстрый старт → Сборка и запуск](quickstart.md#сборка-и-запуск) (включая рецепт
+`#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]` и `winres`/`build.rs`).
 
 ## Установка и Cargo-фичи
 

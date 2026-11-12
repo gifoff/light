@@ -17,6 +17,8 @@
 //! cargo run -p example-multi-window
 //! ```
 
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;

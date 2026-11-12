@@ -2,6 +2,33 @@
 
 Все заметные изменения проекта. Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.17.6] - 2026-11-12
+
+### Changed
+
+- **core / cli-core**: В release-сборке ядро Light больше не пишет отладочные
+  строки в консоль (`light: cold start — …`, `light: loaded fallback font …`) —
+  они видимы только в debug. Закрыты `cfg!(debug_assertions)` гейтами
+  (font.rs, window/mod.rs).
+- **cli-core / examples**: В шаблоны `light init` и все `examples/*/src/main.rs`
+  добавлена первая строка
+  `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]` — в
+  release-сборке Windows-приложение больше не открывает консольное окно,
+  а в debug консоль остаётся для логов.
+- **docs**: Все разделы «Сборка и запуск» (README.md, docs/quickstart.md,
+  docs/guide.md, docs/cli.md) теперь CLI-first: основной путь — `light dev`
+  и `light build`, ручной `cargo run` — как альтернатива. В quickstart.md
+  добавлены два новых раздела: «Как скрыть консольное окно в релизе?»
+  (с рецептом `windows_subsystem`) и «Как добавить иконку файлу .exe
+  (в Проводнике)?» (рецепт `winres` + `build.rs`).
+- **docs/cli.md**: Удалены фантомные команды `light edit` и `light backup`
+  (их нет в коде). Исправлено: `--template dashboard` → только `counter`,
+  `todo`, `calculator`; дополнены флагом `light dev` (`--clean`,
+  `--preserve-state`, `--no-auto-install`, `EXTRA...`); флагом `light build`
+  (`--no-release`, `--no-auto-install`, `--no-default-features`); `light vendor`
+  (`--dry-run`, `--offline`); `light publish` (`--no-verify`, `--yes`,
+  `--skip-gates`); подкоманды `light devtools layout` и `session start`.
+
 ## [0.17.5] - 2026-11-12
 
 ### Fixed

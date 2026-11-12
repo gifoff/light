@@ -2175,7 +2175,10 @@ impl App {
                 .cloned()
                 .or_else(WindowGeometry::load);
             if !is_swap {
-                eprintln!("light: cold start — geometry not restored");
+                // Отладочный лог — только в debug-сборке (ТЗ 0.17.6).
+                if cfg!(debug_assertions) {
+                    eprintln!("light: cold start — geometry not restored");
+                }
             } else if let Some(geom) = &loaded_geom
                 && !geom.is_garbage()
             {
@@ -3084,7 +3087,10 @@ impl ApplicationHandler<UserEvent> for App {
                     }
                 }
             } else {
-                eprintln!("light: cold start — state.json not applied");
+                // Отладочный лог — только в debug-сборке (ТЗ 0.17.6).
+                if cfg!(debug_assertions) {
+                    eprintln!("light: cold start — state.json not applied");
+                }
             }
             c
         };

@@ -91,18 +91,21 @@ fn main() -> light::Result<()> {
 ```
 
 ```bash
-cargo run
+light dev            # hot-reload HTML + .rs, DevTools на 127.0.0.1:9229
+# light build        # release-сборка + путь к .exe
+# cargo run          # альтернатива без CLI (правки HTML не подхватываются)
 ```
 
 ### Сборка и запуск
 
-Light не изобретает свою build-систему — приложение собирается обычным `cargo`
-(подробности: [docs/quickstart.md](docs/quickstart.md#сборка-и-запуск)):
-`cargo run` для быстрого debug-запуска, `cargo build --release` +
-`cargo run --release` для production, `light dev` (hot-reload HTML и `.rs`,
-`--agent` — сессия ИИ-агента) для разработки. Важно: правки в HTML не
-подхватываются при `cargo run` (шаблон встраивается в бинарник), поэтому
-в разработке используйте `light dev`.
+Основной способ разработки и сборки — CLI Light: `light dev` (hot-reload
+HTML и `.rs`, `--agent` — сессия ИИ-агента) для разработки и `light build`
+(release-сборка с выводом пути к бинарнику) для production. Ручной `cargo`
+(`cargo run` / `cargo build --release`) работает как альтернатива. Важно:
+правки в HTML не подхватываются при `cargo run` (шаблон встраивается в
+бинарник), поэтому в разработке используйте `light dev`. Подробности — в
+[docs/quickstart.md](docs/quickstart.md#сборка-и-запуск), включая
+«как скрыть консольное окно» и «как добавить иконку файлу .exe».
 
 ### Создание проекта через CLI
 
@@ -130,8 +133,10 @@ light init my-app --template todo
 light init my-app --template calculator
 ```
 
-Шаблоны и их HTML встроены в бинарник через `include_str!`. Исходники примеров
-лежат в `examples/`.
+Три showcase-шаблона и их HTML встроены в бинарник через `include_str!`.
+Более крупные примеры (`dashboard`, `devtools-demo`, `multi-window`,
+`async-counter`) лежат в [`examples/`](examples) — запускаются через
+`light dev` или `cargo run -p example-…`.
 
 ## Showcase
 

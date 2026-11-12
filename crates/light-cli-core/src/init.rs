@@ -355,7 +355,9 @@ const FORM_EXAMPLE: &str = r#"
 /// Содержимое `src/main.rs` — минимальное приложение с HTML-шаблоном
 /// (`templates/app.html`) и пустой прокси-структурой.
 pub fn main_rs(components: &[InitComponent]) -> String {
-    let mut text = r#"use light_fw::prelude::*;
+    let mut text = r#"#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+use light_fw::prelude::*;
 
 #[template("templates/app.html")]
 #[proxy]

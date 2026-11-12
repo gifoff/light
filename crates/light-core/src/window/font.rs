@@ -112,13 +112,16 @@ pub fn load_fallback_fonts() -> Vec<FontVec> {
             if path.exists() {
                 if let Ok(data) = std::fs::read(&path) {
                     if let Ok(font) = FontVec::try_from_vec(data) {
-                        eprintln!(
-                            "light: loaded fallback font {:?} ({})",
-                            path.display(),
-                            name
-                        );
+                        // Отладочный лог — только в debug-сборке (ТЗ 0.17.6).
+                        if cfg!(debug_assertions) {
+                            eprintln!(
+                                "light: loaded fallback font {:?} ({})",
+                                path.display(),
+                                name
+                            );
+                        }
                         result.push(font);
-                    } else {
+                    } else if cfg!(debug_assertions) {
                         eprintln!(
                             "light: failed to parse fallback font {:?}: invalid font data",
                             path.display()
@@ -134,11 +137,13 @@ pub fn load_fallback_fonts() -> Vec<FontVec> {
                 if let Ok(data) = std::fs::read(&path)
                     && let Ok(font) = FontVec::try_from_vec(data)
                 {
-                    eprintln!(
-                        "light: loaded fallback font {:?} ({})",
-                        path.display(),
-                        name
-                    );
+                    if cfg!(debug_assertions) {
+                        eprintln!(
+                            "light: loaded fallback font {:?} ({})",
+                            path.display(),
+                            name
+                        );
+                    }
                     result.push(font);
                 }
                 break;

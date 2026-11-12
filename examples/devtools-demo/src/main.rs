@@ -7,6 +7,8 @@
 //! # echo -n "SNAPSHOT\n" | nc 127.0.0.1 9229
 //! ```
 
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use light_fw::prelude::*;
 
 #[template("templates/app.html")]
