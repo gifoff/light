@@ -63,4 +63,4 @@ Component::render() → VElement (новое дерево)
 - **Template Reload**: при изменении `.html` отправляет сигнал `RELOAD_TEMPLATE` по DevTools, без пересборки.
 - **Binary Swap**: при изменении `.rs` пересобирает, отправляет `SAVE_ALL`, убивает старый процесс и запускает новый с `LIGHT_RESUME_FROM_SWAP=1`.
 
-Конфигурация проекта (включая запуск DevTools) читается из `light.config.json` через `light::run_with_config()`.
+Конфигурация проекта (включая запуск DevTools) читается из `light.config.json` через `light_fw::run_with_config()`.

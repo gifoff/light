@@ -89,15 +89,15 @@ description = "Календарь для выбора даты"
 repository = "https://github.com/user/light-widget-datepicker"
 
 [dependencies]
-light-fw = { version = "0.16", default-features = false, features = ["elements-basic", "elements-form"] }
-light-fw-element-form = { version = "0.15" }
+light-fw = { version = "0.17", default-features = false, features = ["elements-basic", "elements-form"] }
+light-fw-element-form = { version = "0.17" }
 
 [package.metadata.light]
 # Тип компонента: element | behavior | widget | integration | subsystem | dev
 kind = "widget"
 display-name = "Date Picker"
 # Совместимость с ядром — semver-range
-core = "^0.15"
+core = "^0.17"
 
 [package.metadata.light.provides]
 elements = ["datepicker"]              # новые теги
@@ -107,7 +107,7 @@ directives = []                        # новые директивы (v-*)
 [package.metadata.light.requires]
 # Компоненты, которые обязательны
 components = [
-    "light-fw-element-form ^0.15",
+    "light-fw-element-form ^0.17",
 ]
 
 [package.metadata.light.registry]

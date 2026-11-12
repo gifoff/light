@@ -44,7 +44,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-light-fw = { git = "https://github.com/gifoff/light" }
+light-fw = "0.17"
 
 [features]
 dev-mode = ["light-fw/dev-mode"]
@@ -68,10 +68,10 @@ impl App {
     }
 }
 
-fn main() -> light::Result<()> {
+fn main() -> light_fw::Result<()> {
     // Использование run_with_config включает поддержку light.config.json
     // и автоматический запуск DevTools (если фича включена).
-    light::run_with_config("light.config.json", App::new())
+    light_fw::run_with_config("light.config.json", App::new())
 }
 ```
 

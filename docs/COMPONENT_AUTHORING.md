@@ -52,18 +52,18 @@ description = "Виджет выбора даты для Light"
 repository = "https://github.com/<user>/light-widget-datepicker"
 
 [dependencies]
-# Крейт `light` реэкспортирует ядро и макросы `#[template]`/`#[proxy]`.
-light-fw = { version = "0.16", default-features = false, features = [
+# Крейт `light-fw` реэкспортирует ядро и макросы `#[template]`/`#[proxy]`.
+light-fw = { version = "0.17", default-features = false, features = [
     "elements-basic",
     "elements-form",
 ] }
-light-fw-element-form = { version = "0.15" }
+light-fw-element-form = { version = "0.17" }
 
 [package.metadata.light]
 kind = "widget"
 display-name = "Date Picker"
 # Актуальная мажорная версия ядра
-core = "^0.15"
+core = "^0.17"
 
 [package.metadata.light.provides]
 elements = ["datepicker"]
@@ -72,12 +72,12 @@ directives = []
 
 [package.metadata.light.requires]
 components = [
-    "light-fw-element-form ^0.15",
+    "light-fw-element-form ^0.17",
 ]
 ```
 
 ### Требования к зависимостям и макросам
-Макросы `#[template]` и `#[proxy]` разворачиваются в пути `::light::…`, поэтому **зависимость обязана называться `light`**.
+Макросы `#[template]` и `#[proxy]` разворачиваются в пути `::light_fw::…`, поэтому **зависимость обязана называться `light-fw`** (имя библиотеки — `light_fw`).
 
 ## 5. Шаг 3: Реализация компонента
 
@@ -116,9 +116,9 @@ impl DatePicker {
 Если ваш компонент является самостоятельным приложением, используйте в `main.rs`:
 
 ```rust
-fn main() -> light::Result<()> {
+fn main() -> light_fw::Result<()> {
     // Обязательно для поддержки DevTools и light.config.json
-    light::run_with_config("light.config.json", DatePicker::new())
+    light_fw::run_with_config("light.config.json", DatePicker::new())
 }
 ```
 

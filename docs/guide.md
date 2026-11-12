@@ -50,7 +50,7 @@ Light строится на нескольких принципах:
 
 ```toml
 [dependencies]
-light-fw = { path = "crates/light-fw" }
+light-fw = "0.17"
 
 [features]
 # Включает поддержку hot-reload и DevTools
@@ -89,10 +89,10 @@ impl App {
     }
 }
 
-fn main() -> light::Result<()> {
+fn main() -> light_fw::Result<()> {
     // run_with_config включает чтение light.config.json 
     // и автоматический запуск DevTools (если включена фича dev-mode).
-    light::run_with_config("light.config.json", App::new())
+    light_fw::run_with_config("light.config.json", App::new())
 }
 ```
 
@@ -115,7 +115,7 @@ fn main() -> light::Result<()> {
 </window>
 ```
 
-`#[proxy]` для каждого поля генерирует геттер (`count()`) и сеттер (`set_count(...)`); изменение свойства запускает перерисовку только тех узлов, которые реально зависят от него. `App::new()` создаёт компонент со значениями по умолчанию, `light::run_with_config(...)` поднимает окно и запускает цикл событий.
+`#[proxy]` для каждого поля генерирует геттер (`count()`) и сеттер (`set_count(...)`); изменение свойства запускает перерисовку только тех узлов, которые реально зависят от него. `App::new()` создаёт компонент со значениями по умолчанию, `light_fw::run_with_config(...)` поднимает окно и запускает цикл событий.
 
 ### Сборка и запуск
 
@@ -152,7 +152,7 @@ Light собран по принципу «платите только за то
 интеграция доступности:
 
 ```toml
-light-fw = { path = "crates/light-fw" } # default = ["elements-basic", "window", "softbuffer-backend", "a11y-winit"]
+light-fw = "0.17" # default = ["elements-basic", "window", "softbuffer-backend", "a11y-winit"]
 ```
 
 Для показа через `wgpu` включите `wgpu-backend`. Если включены обе фичи,
@@ -165,13 +165,13 @@ light-fw = { path = "crates/light-fw" } # default = ["elements-basic", "window",
 | Крейт                       | Роль                                                                 | Как подключается |
 | --------------------------- | -------------------------------------------------------------------- | ---------------- |
 | `light-fw-core`                | Ядро: vdom, реактивность, раскладка, paint, окно, доступность        | фичи крейта      |
-| `light`                     | Тонкая мета-обёртка: реэкспортирует ядро, макросы и компоненты        | обычная зависимость |
+| `light-fw`                    | Мета-крейт: реэкспортирует ядро, макросы и подключённые компоненты  | обычная зависимость |
 | `light-fw-element-form`        | Компонент-элемент: `<checkbox>`, `<radio>`, `<select>`/`<option>`    | фича `elements-form` или прямая зависимость |
 | `light-fw-behavior-validation` | Компонент-поведение: `required`, `:validator`, `@validate`           | фича `validation` или прямая зависимость |
 
-Крейт `light` транслирует свои фичи в фичи `light-fw-core` (например,
-`light/elements-form` → `light-fw-core/elements-form` и `light-fw-element-form`),
-поэтому прикладной код продолжает писать `use light_fw::prelude::*;`. Базовые
+Крейт `light-fw` транслирует свои фичи в фичи `light-fw-core` (например,
+`light-fw/elements-form` → `light-fw-core/elements-form` и `light-fw-element-form`),
+поэтому прикладной код пишет `use light_fw::prelude::*;`. Базовые
 элементы и текстовые поля (`<text>`, `<password>`, `<textarea>`) входят в
 ядро и компонентов не требуют. Подробнее — в
 [docs/COMPONENT_MODEL.md](COMPONENT_MODEL.md).
@@ -200,7 +200,7 @@ light-fw = { path = "crates/light-fw" } # default = ["elements-basic", "window",
 | `required-fields` | `required` / `required-indicator` и стандартная проверка  |
 | `validation`      | пользовательская валидация (`:validator` / `@validate`)   |
 | `min-max-size`    | `min-width` / `max-width` / `min-height` / `max-height`   |
-| `file-dialog`     | нативный выбор PNG (`light::file_dialog::pick_image_file`) |
+| `file-dialog`     | нативный выбор PNG (`light_fw::file_dialog::pick_image_file`) |
 
 ### Изображения
 
@@ -243,7 +243,7 @@ light-fw = { path = "crates/light-fw" } # default = ["elements-basic", "window",
 Минимальная сборка — только базовые элементы без окна:
 
 ```toml
-light-fw = { path = "crates/light-fw", default-features = false, features = ["elements-basic"] }
+light-fw = { version = "0.17", default-features = false, features = ["elements-basic"] }
 ```
 
 Если шаблон использует элемент, для которого фича не включена, компилятор сообщит об ошибке и подскажет, какую фичу добавить. Пользовательскую валидацию включает `validation`; ограничения размера — `min-max-size`.
@@ -325,7 +325,7 @@ light suggest # что стоит добавить
   light-fw-element-form
 
 Рекомендации:
-  добавить light-fw-element-form ^0.15
+  добавить light-fw-element-form ^0.17
 ```
 
 ### `light suggest [путь]`
@@ -399,7 +399,7 @@ Light doctor
   ⚠ light.lock отсутствует (воспроизводимость не гарантирована)
 
 Компоненты (1):
-  ✓ light-fw-element-form 0.15.5 (совместим)
+  ✓ light-fw-element-form 0.17.0 (совместим)
 ```
 
 ### `light search <запрос>`
@@ -553,7 +553,7 @@ $ light add light-fw-datepicker --features calendar,timezone --yes
 Для `<image>` включите фичу `image-support`:
 
 ```toml
-light-fw = { version = "0.16", features = ["image-support"] }
+light-fw = { version = "0.17", features = ["image-support"] }
 ```
 
 ```html
@@ -576,7 +576,7 @@ light-fw = { version = "0.16", features = ["image-support"] }
 use std::path::Path;
 use light_fw::ImageData;
 
-fn load_avatar(path: &Path) -> light::Result<ImageData> {
+fn load_avatar(path: &Path) -> light_fw::Result<ImageData> {
     let bytes = std::fs::read(path)?;
     ImageData::from_png_limited(bytes, 2 * 1024 * 1024, 1024)
 }
@@ -587,11 +587,11 @@ fn load_avatar(path: &Path) -> light::Result<ImageData> {
 диалог доступен с фичей `file-dialog`:
 
 ```toml
-light-fw = { version = "0.16", features = ["image-support", "file-dialog"] }
+light-fw = { version = "0.17", features = ["image-support", "file-dialog"] }
 ```
 
 ```rust
-if let Some(path) = light::file_dialog::pick_image_file() {
+if let Some(path) = light_fw::file_dialog::pick_image_file() {
     // прочитать файл и вызвать ImageData::from_png_limited
 }
 ```
@@ -1243,7 +1243,7 @@ struct App { /* ... */ }
 
 Пример: окно `A` открывает модальный диалог `B`, а тот — свой диалог `C`. Закрытие `A` закроет и `B`, и `C`. Закрытие только `C` завершится ошибкой модальности, пока `B` открыт; закрытие `B` вернёт управление `A`.
 
-Текущее (активное) окно можно получить из обработчика через `light::control::active_window()` — например, чтобы связать его с записью в глобальном [виртуальном DOM](#доступ-к-виртуальному-dom).
+Текущее (активное) окно можно получить из обработчика через `light_fw::control::active_window()` — например, чтобы связать его с записью в глобальном [виртуальном DOM](#доступ-к-виртуальному-dom).
 
 ## Компоновка через `<include>`
 
@@ -1282,7 +1282,7 @@ items.each(|item| println!("{item}"));
 
 ## Доступ к виртуальному DOM
 
-`light::Dom` даёт глобальный доступ к виртуальному дереву активного окна (внутренний аналог `document` в браузере):
+`light_fw::Dom` даёт глобальный доступ к виртуальному дереву активного окна (внутренний аналог `document` в браузере):
 
 ```rust
 use light_fw::prelude::*;
@@ -1327,7 +1327,7 @@ let many = Dom::find_all(|n| n.tag == "button");   // Collection<VNode> всех
 
 ## Асинхронные обновления интерфейса
 
-Приложение может выполнять долгую работу в фоне и применять её результат к интерфейсу, не блокируя события. Задача запускается через `light::spawn`, а применение результата — через `light::post_update`:
+Приложение может выполнять долгую работу в фоне и применять её результат к интерфейсу, не блокируя события. Задача запускается через `light_fw::spawn`, а применение результата — через `light_fw::post_update`:
 
 ```rust
 use std::time::Duration;
@@ -1339,9 +1339,9 @@ fn start_async(&self) {
     self.set_loading(true);
 
     let next = self.count() + 1;
-    let _ = light::spawn(move |_ctx: TaskContext| {
+    let _ = light_fw::spawn(move |_ctx: TaskContext| {
         std::thread::sleep(Duration::from_secs(2));
-        let _ = light::post_update::<App>(move |app: &mut App| {
+        let _ = light_fw::post_update::<App>(move |app: &mut App| {
             app.set_count(next);
             app.set_loading(false);
         });
@@ -1349,11 +1349,11 @@ fn start_async(&self) {
 }
 ```
 
-`light::spawn` запускает замыкание в отдельном `std::thread` (а не в async-рантайме): поток живёт независимо и блокируется обычным `std::thread::sleep`. Возвращённый `TaskHandle` можно отбросить — задача продолжит выполнение.
+`light_fw::spawn` запускает замыкание в отдельном `std::thread` (а не в async-рантайме): поток живёт независимо и блокируется обычным `std::thread::sleep`. Возвращённый `TaskHandle` можно отбросить — задача продолжит выполнение.
 
 ### Асинхронные фьючи (async/await)
 
-Для сложных задач с асинхронным кодом доступна фича `async-await` и функция `light::spawn_async(|ctx| async move { … })`. Она работает без привязки к конкретному рантайму (блокирует поток через `futures::executor::block_on`), но позволяет использовать `await` внутри. Замыкание принимает [`TaskContext`] — так, как и в `spawn`, — и возвращает фьючу, поэтому отмена проверяется через `ctx.is_cancelled()`:
+Для сложных задач с асинхронным кодом доступна фича `async-await` и функция `light_fw::spawn_async(|ctx| async move { … })`. Она работает без привязки к конкретному рантайму (блокирует поток через `futures::executor::block_on`), но позволяет использовать `await` внутри. Замыкание принимает [`TaskContext`] — так, как и в `spawn`, — и возвращает фьючу, поэтому отмена проверяется через `ctx.is_cancelled()`:
 
 ```rust
 use std::time::Duration;
@@ -1362,13 +1362,13 @@ use light_fw::prelude::*;
 
 fn start_async(&self) {
     self.set_loading(true);
-    let _ = light::spawn_async(move |ctx| async move {
+    let _ = light_fw::spawn_async(move |ctx| async move {
         // асинхронная задержка 2 с (20 тиков по 100 мс)
         for _ in 0..20 {
             Delay::new(Duration::from_millis(100)).await;
             if ctx.is_cancelled() { return; }
         }
-        let _ = light::post_update::<App>(move |app: &mut App| {
+        let _ = light_fw::post_update::<App>(move |app: &mut App| {
             app.set_count(app.count() + 1);
             app.set_loading(false);
         });
@@ -1378,11 +1378,11 @@ fn start_async(&self) {
 
 Важно: `futures::executor::block_on` не поддерживает принудительную отмену извне — если фьюча висит на I/O, `TaskHandle::abort()` её не прервёт. Отмена кооперативная: задача сама проверяет `ctx.is_cancelled()` между шагами.
 
-`post_update` принимает только замыкание и типизируется дженериком `<C: Component>`: `light::post_update::<App>(|app: &mut App| { … })`. Прокси передавать не нужно. В UI-цикле компонент, которому адресовано действие, находится по `TypeId`, замыкание применяется к нему, и на всех открытых окнах запрашивается перерисовка.
+`post_update` принимает только замыкание и типизируется дженериком `<C: Component>`: `light_fw::post_update::<App>(|app: &mut App| { … })`. Прокси передавать не нужно. В UI-цикле компонент, которому адресовано действие, находится по `TypeId`, замыкание применяется к нему, и на всех открытых окнах запрашивается перерисовка.
 
 ### Адресация к конкретному окну
 
-Если открыто несколько окон одного типа, `post_update` применяет действие к **первому совпадению**. Чтобы воздействовать на конкретное окно, используйте `light::post_update_to(token, f)`:
+Если открыто несколько окон одного типа, `post_update` применяет действие к **первому совпадению**. Чтобы воздействовать на конкретное окно, используйте `light_fw::post_update_to(token, f)`:
 
 ```rust
 // Внутри обработчика компонента:
@@ -1391,12 +1391,12 @@ fn start_async(&self) {
     self.set_loading(true);
 
     // Токен текущего окна — из UI-потока
-    let token = light::current_window_token().expect("нет активного окна");
+    let token = light_fw::current_window_token().expect("нет активного окна");
     let next = self.count() + 1;
 
-    let _ = light::spawn(move |_ctx: TaskContext| {
+    let _ = light_fw::spawn(move |_ctx: TaskContext| {
         std::thread::sleep(Duration::from_secs(2));
-        let _ = light::post_update_to::<App>(token, move |app: &mut App| {
+        let _ = light_fw::post_update_to::<App>(token, move |app: &mut App| {
             app.set_count(next);
             app.set_loading(false);
         });
@@ -1413,7 +1413,7 @@ fn start_async(&self) {
 Задача получает `TaskContext` с кооперативным флагом отмены. Внутри closure достаточно периодически проверять `ctx.is_cancelled()` и выйти досрочно, если задача уже не нужна:
 
 ```rust
-let _ = light::spawn(move |ctx: TaskContext| {
+let _ = light_fw::spawn(move |ctx: TaskContext| {
     for _ in 0..200 {
         if ctx.is_cancelled() {
             // Задача отменена — результат не применяем.
@@ -1422,7 +1422,7 @@ let _ = light::spawn(move |ctx: TaskContext| {
         // ... шаг фоновой работы
         std::thread::sleep(Duration::from_millis(5));
     }
-    let _ = light::post_update::<App>(move |app: &mut App| { /* ... */ });
+    let _ = light_fw::post_update::<App>(move |app: &mut App| { /* ... */ });
 });
 ```
 
@@ -1434,7 +1434,7 @@ let _ = light::spawn(move |ctx: TaskContext| {
 
 ```rust
 fn start_async(&self) {
-    let handle = light::spawn(move |ctx: TaskContext| { /* ... */ });
+    let handle = light_fw::spawn(move |ctx: TaskContext| { /* ... */ });
     self.cancel_flag.set(Some(CancelFlag::new(handle.cancel_flag())));
 }
 
@@ -1483,8 +1483,8 @@ impl App {
 #[proxy]
 struct Dialog {}
 
-fn main() -> light::Result<()> {
-    light::run_with_config("light.config.json", App::new())
+fn main() -> light_fw::Result<()> {
+    light_fw::run_with_config("light.config.json", App::new())
 }
 ```
 
@@ -1571,7 +1571,7 @@ let key = focused_key(); // текущий узел в фокусе (None, ес�
 
 ### Включение и выключение
 
-Поддержка включена по умолчанию (фича `a11y-winit`). Её можно выключить во время исполнения переменной окружения `LIGHT_A11Y=0` или программно — `light::a11y::set_enabled(false)`. При сборке без фичи `a11y` атрибуты разметки просто игнорируются, а функции-аксессоры возвращают `None`.
+Поддержка включена по умолчанию (фича `a11y-winit`). Её можно выключить во время исполнения переменной окружения `LIGHT_A11Y=0` или программно — `light_fw::a11y::set_enabled(false)`. При сборке без фичи `a11y` атрибуты разметки просто игнорируются, а функции-аксессоры возвращают `None`.
 
 ### Управление фокусом и объявлениями
 
@@ -1597,7 +1597,7 @@ if let Some(window) = a11y::active_window() {
    dev-mode = ["light-fw/dev-mode"]
    ```
 
-2. Используйте `light::run_with_config("light.config.json", App::new())` в `main.rs`.
+2. Используйте `light_fw::run_with_config("light.config.json", App::new())` в `main.rs`.
 
 3. Запустите проект с помощью CLI:
    ```bash
@@ -1699,7 +1699,7 @@ Hot-reload сохраняет артефакты сборки в `target/hot-bui
    [features]
    dev-mode = ["light-fw/dev-mode"]
    ```
-2. В `main()` вызовите `light::run_with_config("light.config.json", App::new())`.
+2. В `main()` вызовите `light_fw::run_with_config("light.config.json", App::new())`.
 3. Запустите приложение через `light dev` или `cargo run --features dev-mode`. 
    Сервер автоматически запустится на порту `9229`.
 

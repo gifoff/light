@@ -15,7 +15,7 @@ cd light-fw-datepicker
 
 ## 2. Зависимость от Light
 
-Добавьте мета-крейт `light` в `Cargo.toml`:
+Добавьте мета-крейт `light-fw` в `Cargo.toml`:
 
 ```toml
 [package]
@@ -28,19 +28,19 @@ description = "Date picker component for Light"
 repository = "https://github.com/<user>/light-fw-datepicker"
 
 [dependencies]
-light-fw = "0.16"
+light-fw = "0.17"
 
 # Для поддержки локальной разработки с Hot Reload
 [features]
 dev-mode = ["light-fw/dev-mode"]
 ```
 
-Если компонент использует элементы формы, подключите `light-fw-element-form` и фичу `light/elements-form`:
+Если компонент использует элементы формы, подключите `light-fw-element-form` и фичу `light-fw/elements-form`:
 
 ```toml
 [dependencies]
-light-fw = { version = "0.16", features = ["elements-form"] }
-light-fw-element-form = "0.15"
+light-fw = { version = "0.17", features = ["elements-form"] }
+light-fw-element-form = "0.17"
 ```
 
 ## 3. Минимальный компонент
@@ -79,8 +79,8 @@ impl DatePicker {
 Если вы запускаете компонент как самостоятельное приложение, используйте `run_with_config` для инициализации DevTools:
 
 ```rust
-fn main() -> light::Result<()> {
-    light::run_with_config("light.config.json", DatePicker::new())
+fn main() -> light_fw::Result<()> {
+    light_fw::run_with_config("light.config.json", DatePicker::new())
 }
 ```
 
@@ -92,7 +92,7 @@ fn main() -> light::Result<()> {
 [package.metadata.light]
 kind = "widget"
 display-name = "Date Picker"
-core = "^0.15"
+core = "^0.17"
 
 [package.metadata.light.registry]
 official = false
