@@ -70,10 +70,9 @@ fn bin_name_from_metadata(cwd: &std::path::Path) -> anyhow::Result<String> {
                 .get("kind")
                 .and_then(|k| k.as_array())
                 .is_some_and(|kinds| kinds.contains(&serde_json::json!("bin")))
+                && let Some(name) = target.get("name").and_then(|n| n.as_str())
             {
-                if let Some(name) = target.get("name").and_then(|n| n.as_str()) {
-                    return Ok(name.to_string());
-                }
+                return Ok(name.to_string());
             }
         }
     }

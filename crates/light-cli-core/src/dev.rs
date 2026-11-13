@@ -81,6 +81,11 @@ pub struct DevArgs {
     /// session recorder, логировать все DevTools-команды и генерировать
     /// summary.md при завершении процесса.
     pub agent: bool,
+    /// ТЗ 0.18.0: не запускать web UI DevTools (по умолчанию включён).
+    pub no_web: bool,
+    /// ТЗ 0.18.0: порт web UI DevTools (по умолчанию 9228; при указании
+    /// web-сервер включается даже если в конфиге `enabled: false`).
+    pub web_port: Option<u16>,
 }
 
 /// Чистый разбор сырых аргументов командной строки в [`DevArgs`].
@@ -128,6 +133,14 @@ pub fn parse_dev_command(raw: &[String]) -> DevArgs {
         } else if arg == "--agent" {
             // ТЗ 0.16.0: режим агента (session recorder + summary.md).
             out.agent = true;
+        } else if arg == "--no-web" {
+            // ТЗ 0.18.0: не запускать web UI DevTools.
+            out.no_web = true;
+        } else if let Some(port_str) = arg.strip_prefix("--web-port=") {
+            // ТЗ 0.18.0: порт web UI DevTools.
+            if let Ok(p) = port_str.parse::<u16>() {
+                out.web_port = Some(p);
+            }
         } else if i == 0 && !arg.starts_with('-') {
             out.package = Some(arg.clone());
         } else {
@@ -1733,6 +1746,11 @@ fn run_inner(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
         }
     });
 
+    // ТЗ 0.18.0: web UI DevTools — запуск делегируется бинарному слою, так
+    // как `light-fw-cli-core` не может зависеть от `light-fw-devtools-web`
+    // (цикл: devtools-web → cli-core). Бинарный слой (`light`) сам вызывает
+    // `light_fw_devtools_web::server::serve()` перед `run_dev()`.
+
     loop {
         // Дедлайн защиты от вечной блокировки: если порт 9229 так и не
         // открылся за STARTUP_IGNORE (сборка зависла), watcher сам закроет
@@ -1801,6 +1819,8 @@ fn run_inner(args: &DevArgs) -> std::result::Result<i32, std::io::Error> {
             Ev::Exited(status) => {
                 done_flag.store(true, Ordering::Relaxed);
                 let _ = watcher.join();
+                // Web UI DevTools останавливается бинарным слоем (light),
+                // который владеет WebServer-инстансом.
                 // Если rebuild ещё идёт — тоже убиваем (Ctrl+C-сценарий).
                 if let Ok(mut g) = rebuild_arc.lock()
                     && let Some(mut r) = g.take()

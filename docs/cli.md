@@ -27,7 +27,7 @@ light init my-app --with form --with validation
 `dashboard`, `devtools-demo`, `multi-window`, `async-counter` лежат в `examples/`
 (запуск — через `light dev` или `cargo run -p example-…`).
 
-### `light dev [ПАКЕТ] [--agent] [--verbose] [--clean] [--preserve-state] [--no-auto-install] [EXTRA...]`
+### `light dev [ПАКЕТ] [--agent] [--verbose] [--clean] [--preserve-state] [--no-auto-install] [--no-web] [--web-port <ПОРТ>] [EXTRA...]`
 
 Запускает приложение с горячей перезагрузкой (HTML + `.rs`) и сохранением
 состояния через DevTools. Перед запуском автоматически проверяет наличие
@@ -38,12 +38,18 @@ light init my-app --with form --with validation
 - `--clean` — полный сброс кэша dev-сборки перед стартом;
 - `--preserve-state` — сохранять `state.json` между всеми запусками;
 - `--no-auto-install` — не устанавливать недостающие компоненты автоматически;
+- `--no-web` — отключить Web UI DevTools (не запускать HTTP-сервер);
+- `--web-port <ПОРТ>` — порт Web UI DevTools (по умолчанию 9228); включает Web UI,
+  даже если `dev.devtools.web.enabled=false`; при занятости порта пробует следующие
+  (до +10) и печатает фактический адрес;
 - дополнительные аргументы (включая `--release`, `--`) передаются в `cargo run` как есть.
 
 ```bash
 light dev              # hot-reload
 light dev --agent      # + сессия агента
 light dev --release    # debug-запуск в release-режиме
+light dev --no-web     # без Web UI (только TCP DevTools на 9229)
+light dev --web-port 8080  # Web UI на кастомном порту
 ```
 
 ### `light build [ПУТЬ] [-r|--release] [--no-release] [-f FEATURES] [--no-default-features] [--no-auto-install] [EXTRA...]`

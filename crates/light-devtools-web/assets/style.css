@@ -1,0 +1,212 @@
+/* Light DevTools · Web UI (ТЗ 0.18.0) — минималистичная тёмная тема. */
+
+* { box-sizing: border-box; }
+
+:root {
+  --bg: #0e1116;
+  --bg-2: #151a22;
+  --bg-3: #1c2330;
+  --fg: #d7dde8;
+  --fg-muted: #7a8496;
+  --accent: #4f8cff;
+  --accent-2: #7ec0ff;
+  --ok: #2ecc71;
+  --err: #ff6b6b;
+  --warn: #ffb84d;
+  --border: #232c3a;
+  --mono: ui-monospace, "SF Mono", Consolas, "JetBrains Mono", monospace;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.brand .dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.status { flex: 1; display: flex; justify-content: flex-end; }
+
+.badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.badge.waiting { background: rgba(255, 184, 77, .15); color: var(--warn); }
+.badge.on      { background: rgba(46, 204, 113, .15); color: var(--ok); }
+.badge.off     { background: rgba(255, 107, 107, .15); color: var(--err); }
+
+.actions { display: flex; gap: 8px; }
+
+button {
+  background: var(--bg-3);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background .12s ease, border-color .12s ease;
+}
+button:hover:not(:disabled) {
+  background: #232c3a;
+  border-color: var(--accent);
+}
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+button.mini {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 12px 16px;
+  height: calc(100vh - 120px);
+}
+
+.panel {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-3);
+}
+.panel-head h2 {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+}
+
+.small { font-size: 11px; }
+.muted { color: var(--fg-muted); }
+
+.tree-scroll {
+  overflow: auto;
+  padding: 8px 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+  flex: 1;
+}
+
+.state-json {
+  margin: 0;
+  padding: 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow: auto;
+  flex: 1;
+  white-space: pre;
+}
+
+.log {
+  overflow: auto;
+  padding: 8px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  max-height: 180px;
+  border-top: 1px solid var(--border);
+}
+.log .line { padding: 1px 0; }
+.log .line .t { color: var(--fg-muted); margin-right: 8px; }
+.log .line.ok  { color: var(--ok); }
+.log .line.err { color: var(--err); }
+.log .line.info { color: var(--fg); }
+
+.foot {
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+/* Дерево VDOM */
+.tree { list-style: none; margin: 0; padding-left: 18px; }
+.tree ul { list-style: none; margin: 0; padding-left: 16px; }
+.node-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+.node-row:hover { background: var(--bg-3); }
+.node-row.selected {
+  background: rgba(79, 140, 255, 0.18);
+  outline: 1px solid var(--accent);
+}
+.tag {
+  color: var(--accent-2);
+  font-weight: 600;
+}
+.key {
+  color: #f0c674;
+  background: rgba(240, 198, 116, 0.08);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.attrs {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.toggle {
+  width: 14px;
+  color: var(--fg-muted);
+  font-family: var(--mono);
+}
+.placeholder {
+  color: var(--fg-muted);
+  padding: 12px;
+  font-style: italic;
+}
+
+/* Выделение выбранного ключа в панели state (когда есть selected key). */
+.state-json .hl {
+  background: rgba(79, 140, 255, 0.2);
+  border-radius: 2px;
+}

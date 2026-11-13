@@ -31,6 +31,7 @@ Light — декларативный реактивный GUI-фреймворк
 - [DevTools](#devtools)
   - [CLI-обёртка `light devtools`](#cli-обёртка-light-devtools)
   - [Автоматизированное тестирование с ИИ (Session Recorder)](#автоматизированное-тестирование-с-ии-session-recorder)
+  - [Web UI DevTools](#web-ui-devtools)
 
 ## Философия и обзор
 
@@ -1825,6 +1826,92 @@ light dev --agent                      # сессия создаётся пер�
 счётчиками `Actions:` / `Screenshots:` и нумерованной хроникой всех команд —
 то, что агент может напрямую приложить к своему отчёту вместе со
 скриншотами из `screenshots/`.
+
+### Web UI DevTools (0.18+)
+
+Наряду с CLI `light devtools` (TCP, порт 9229), `light dev` поднимает лёгкий
+HTTP-сервер (tiny_http, **без tokio/axum/tungstenite**) на `127.0.0.1:9228`,
+который отдаёт браузерный интерфейс для инспекции VDOM/State и отправки
+команд клику/вводу/скриншоту.
+
+**Запуск:**
+
+```bash
+light dev                 # по умолчанию: Web UI на http://127.0.0.1:9228
+light dev --no-web        # отключить Web UI
+light dev --web-port 8080 # кастомный порт
+```
+
+При старте CLI печатает `Web DevTools: http://127.0.0.1:9228` — просто откройте
+этот адрес в браузере. Если приложение ещё не запущено (TCP 9229 недоступен),
+интерфейс показывает бейдж «Ожидание приложения…» и автоматически подключается
+при появлении сервера.
+
+**Возможности интерфейса:**
+
+- Левая колонка — дерево VDOM (ключи, теги, текст, дети) с выделением
+  выбранного узла;
+- Правая колонка — JSON-снимок состояния (`SNAPSHOT`) + журнал событий;
+- Кнопки: **Refresh** (обновить), **Click selected** (кликнуть по выделенному
+  узлу), **Screenshot** (скачать PNG base64);
+- SSE (`/api/events`) — автоматическое обновление каждые 500 мс без
+  перезагрузки страницы.
+
+**Конфигурация:**
+
+Порт и включение Web UI можно задать в `light.config.json`:
+
+```json
+{
+  "dev": {
+    "devtools": {
+      "enabled": true,
+      "port": 9229,
+      "web": {
+        "enabled": true,
+        "port": 9228
+      }
+    }
+  }
+}
+```
+
+Приоритет: `--no-web` > `--web-port` > `dev.devtools.web.{enabled,port}` из конфига
+> дефолт (enabled=true, port=9228). Явное `--web-port` принудительно включает
+Web UI, даже если `dev.devtools.web.enabled: false`.
+
+Если запрошенный порт занят, CLI попытается занять следующий (до +10) и
+напечатает фактический адрес в консоли.
+
+**HTTP API (локальный, только 127.0.0.1):**
+
+| Метод | Путь | Успех | Ошибка |
+|---|---|---|---|
+| GET | `/` | index.html (HTML) | — |
+| GET | `/assets/app.js` | JS-фронтенд | — |
+| GET | `/assets/style.css` | стили | — |
+| GET | `/api/tree` | `{"ok": true, "result": <TreeObject>}` | `{"ok": false, "error": "<msg>"}` |
+| GET | `/api/state` | `{"ok": true, "result": <StateObject>}` | `{"ok": false, "error": "<msg>"}` |
+| POST | `/api/command` | `{"ok": true, "result": <Object \| null>}` | `{"ok": false, "error": "<msg>"}` |
+| GET | `/api/events` | SSE-поток (см. ниже) | — |
+
+> **Важно:** поле `result` в HTTP-ответах **всегда JSON-объект** (массив/число/null допустимо),
+> никогда — JSON-строка. Поле `data` в SSE-кадрах — тоже JSON-объект; браузерский
+> `EventSource` передаёт его как строку, фронтенд делает `JSON.parse` на своей стороне.
+
+**SSE-кадры** (`/api/events`, каждые 500 мс):
+
+```
+data: {"kind":"hello"}                                   // при подключении
+data: {"kind":"tree",  "data": <TreeObject>}             // дерево VDOM
+data: {"kind":"state", "data": <StateObject>}            // снимок состояния
+data: {"kind":"error", "data": {"message": "..."}}       // если TCP недоступен
+```
+
+Если TCP-сервер (порт 9229) недоступен, `/api/*` возвращает
+`{"ok": false, "error": "devtools not running"}` (HTTP 200).
+
+![Web UI DevTools](assets/webdevtools.png)
 
 ### Пример сеанса
 

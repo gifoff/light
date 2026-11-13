@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Light DevTools · Web UI</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <strong>Light DevTools</strong>
+      <span class="muted">· Web UI (v1)</span>
+    </div>
+    <div class="status" id="status" title="Статус подключения к TCP DevTools (127.0.0.1:9229)">
+      <span class="badge waiting" id="status-badge">Ожидание приложения…</span>
+    </div>
+    <div class="actions">
+      <button id="btn-refresh" type="button" title="Принудительно перечитать tree+state">Refresh</button>
+      <button id="btn-click" type="button" disabled title="Отправить клик в выбранный узел (key)">Click selected</button>
+      <button id="btn-shot" type="button" title="Снять скриншот окна (PNG base64) и скачать">Screenshot</button>
+    </div>
+  </header>
+
+  <main class="cols">
+    <section class="panel tree-panel">
+      <div class="panel-head">
+        <h2>VDOM Tree</h2>
+        <span class="muted small" id="tree-meta">—</span>
+      </div>
+      <div class="tree-scroll" id="tree">
+        <div class="placeholder" id="tree-placeholder">Выберите узел в дереве, затем нажмите «Click selected».</div>
+      </div>
+    </section>
+
+    <section class="panel state-panel">
+      <div class="panel-head">
+        <h2>State (SNAPSHOT)</h2>
+        <span class="muted small" id="state-meta">—</span>
+      </div>
+      <pre class="state-json" id="state">{"note":"state ещё не получен"}</pre>
+
+      <div class="panel-head">
+        <h2>Event log</h2>
+        <button class="mini" id="btn-clear-log" type="button">Clear</button>
+      </div>
+      <div class="log" id="log"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span class="muted">Web UI DevTools · ТЗ 0.18.0 · tiny_http + SSE · без tokio/axum</span>
+  </footer>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

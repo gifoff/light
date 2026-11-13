@@ -323,7 +323,7 @@ mod tests {
         path.push("light-avatar-too-large.png");
         fs::write(&path, vec![0u8; MAX_AVATAR_BYTES as usize + 1]).expect("temp file");
         let error = load_avatar(&path).expect_err("слишком большой файл");
-        assert!(error.contains("слишком большой"), "{error}");
+        assert!(error.contains("100 КБ"), "{error}");
         let _ = fs::remove_file(&path);
     }
 

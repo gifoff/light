@@ -1,0 +1,16 @@
+[package]
+name = "light-fw-devtools-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+readme = "../../README.md"
+description = "Web UI DevTools: браузерный инспектор VDOM/State поверх TCP-DevTools (127.0.0.1:9229)"
+
+[dependencies]
+tiny_http = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+light-fw-cli-core = { workspace = true }

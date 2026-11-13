@@ -94,16 +94,19 @@ DevTools TCP-порт (`127.0.0.1`, по умолчанию 9229; все при�
 
 ---
 
-## Версия 0.17.0 (next+1) — Web UI DevTools
+## Версия 0.18.0 (выполнено) — Web UI DevTools
 
-- **Web UI DevTools**: браузерный интерфейс для инспекции VDOM, State и логов.
-- `light-devtools serve` (Axum + WS-прокси к 9229).
-- Визуализация дерева компонентов и состояний в реальном времени.
-- Возможность подключаться к сессии агента и просматривать Action Log в браузере.
+- **Web UI DevTools**: браузерный интерфейс для инспекции VDOM, State и логов ✓.
+- Крейт `light-fw-devtools-web` (tiny_http, без tokio/axum/tungstenite), HTTP 127.0.0.1:9228 + SSE (500 мс) ✓.
+- Флаги `light dev --no-web` и `--web-port <ПОРТ>` ✓.
+- Конфиг `dev.devtools.web.{enabled, port}` в `light.config.json`, приоритет флагов > конфиг > дефолт, fallback порта +1..+10 ✓.
+- Визуализация дерева VDOM (ключи, теги, текст, дети) + панель State (SNAPSHOT) + Event Log ✓.
+- Команды из браузера: Click selected, Screenshot (base64), Refresh ✓.
+- JSON-контракт: HTTP → `{ok, result}`, SSE → `{kind, data}` ✓.
 
 ---
 
-## Версия 0.18.0+ — Ядро и расширяемость
+## Версия 0.19.0+ — Ядро и расширяемость
 
 - **Fix Layout**: Полная поддержка flexbox-модели для текстовых узлов и вложенных контейнеров (баг с `<div>` внутри `align-items="center"`).
 - **Plugin API**: Возможность создавать новые теги (`NodeKind`) из сторонних крейтов без форка ядра.

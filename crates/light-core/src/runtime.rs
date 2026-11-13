@@ -302,10 +302,10 @@ fn build_element<C: Component + ?Sized>(
         attrs.push(("data-v-model", model.to_owned()));
     }
     // Для radio дополнительно сохраняем data-value (значение этого варианта).
-    if element.name == "radio" {
-        if let Some(val) = attr_value(&element.attrs, "value") {
-            attrs.push(("data-value", val.to_owned()));
-        }
+    if element.name == "radio"
+        && let Some(val) = attr_value(&element.attrs, "value")
+    {
+        attrs.push(("data-value", val.to_owned()));
     }
     let mut elem = leaf.with_style(style).with_tag(tag).with_attrs(attrs);
     if let Some(cfg) = window_config {

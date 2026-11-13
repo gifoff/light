@@ -1,4 +1,37 @@
-﻿## [0.17.7] - 2026-11-12
+## [0.18.0] - 2026-11-13
+
+### Added
+
+- **cli / devtools-web**: Новый крейт `light-fw-devtools-web` (publish=false, CLI-only):
+  лёгкий HTTP-сервер на `tiny_http` (без tokio/axum/tungstenite) с браузерным
+  интерфейсом для инспекции VDOM/State и отправки команд (click/type/key/screenshot).
+  Поднимается `light dev` на `127.0.0.1:9228` (порт: `--web-port` >
+  `dev.devtools.web.port` > дефолт 9228; `--no-web` отключает). При
+  недоступности TCP DevTools (9229) API возвращает `{"error":"devtools not running"}`,
+  фронтенд показывает «Ожидание приложения…» и авто-реконнектится через SSE.
+- **cli**: Флаги `light dev --no-web` и `light dev --web-port <ПОРТ>`.
+- **cli**: Приоритет флагов: `--no-web` > `--web-port` > `dev.devtools.web.{enabled,port}` > дефолт (true/9228). При занятости порта — fallback +1..+10.
+- **api**: HTTP API: `GET /api/tree`, `GET /api/state`, `POST /api/command`,
+  `GET /api/events` (SSE, 500 мс).
+
+### Changed
+
+- **docs**: docs/cli.md (флаги `--no-web`/`--web-port`), docs/guide.md
+  (раздел «Web UI DevTools»), README.md (упоминание + скриншот), AGENTS.md
+  (буллет про браузерный UI).
+
+### Fixed
+
+- **devtools-web**: исправлен JSON-контракт Web UI. Раньше `app.js` читал
+  `.data`, а сервер отдавал `.result` → панели VDOM/State показывали «undefined».
+  Теперь HTTP → `{ok, result}`, SSE → `{kind, data}`. `POST /api/command`
+  возвращает `result` как объект (не как JSON-строку).
+- **docs**: исправлена ссылка на скриншот в `docs/guide.md`
+  (`docs/assets/webdevtools.png` → `assets/webdevtools.png`).
+- **devtools-web**: `docs/assets/webdevtools.png` заменён на живой
+  скриншот с VDOM-деревом (previously placeholder).
+
+## [0.17.7] - 2026-11-12
 
 ### Fixed
 
