@@ -15,6 +15,7 @@
 | `light-fw-behavior-validation` | Компонент-поведение: `required`, `:validator`, `@validate`. |
 | `light` | Бинарник `light`: команды `build`, `dev`, `check`, `add`, `search`, `publish`. |
 | `light-fw-cli-core` | Логика CLI без привязки к терминалу: анализ, план, применение, lock, hot-reload supervisor. |
+| `light-fw-devtools-web` | Internal: HTTP-сервер Web UI DevTools. Публикуется как зависимость `light`, не позиционируется как пользовательский компонент. |
 | `light-demo` | Демонстрационное приложение и примеры. |
 
 Зависимости направлены внутрь: компоненты и CLI зависят от ядра, ядро не знает
