@@ -745,6 +745,7 @@ pub fn bin_name(package: &str) -> String {
 /// [`run_exe_path`] (`target/hot-run/`). Поэтому следующая сборка может
 /// перезаписывать свежий бинарник без os error 5.
 pub fn fresh_bin_path(build_target: &Path, package: &str) -> PathBuf {
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut p = build_target.join("debug").join(bin_name(package));
     #[cfg(windows)]
     {
@@ -761,6 +762,7 @@ pub fn run_exe_path(run_dir: &Path, bin: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut p = run_dir.join(format!("{bin}-{ts}"));
     #[cfg(windows)]
     {
@@ -2719,6 +2721,7 @@ mod tests {
 
         // Создаём фейковый fresh-бинарник в <build_target>/<bin>[.exe].
         let bin = "test-app";
+        #[cfg_attr(not(windows), allow(unused_mut))]
         let mut fresh = build_target.join(bin);
         #[cfg(windows)]
         {
@@ -2738,6 +2741,7 @@ mod tests {
 
         // Чистим: добавляем «старый» .exe и проверяем, что он удалён, а
         // текущий остался.
+        #[cfg_attr(not(windows), allow(unused_mut))]
         let mut stale = run_dir.join("test-app-oldstale");
         #[cfg(windows)]
         {

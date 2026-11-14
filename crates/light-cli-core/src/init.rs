@@ -781,7 +781,8 @@ mod tests {
         assert!(dir.join(LOCKFILE_NAME).is_file());
 
         let lock = Lockfile::read(&dir).expect("read lock");
-        assert_eq!(lock.core, minor_version());
+        // Ядро в lockfile — полная версия бинарника (major.minor.patch).
+        assert_eq!(lock.core, LIGHT_DEPENDENCY_VERSION);
     }
 
     #[test]
