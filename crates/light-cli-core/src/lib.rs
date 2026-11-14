@@ -24,12 +24,16 @@ pub mod init;
 pub mod lockfile;
 /// Метаданные компонентов и разбор `Cargo.toml`.
 pub mod manifest;
+/// Метаданные и валидация скачанного `.crate`.
+pub mod metadata;
 pub mod process;
 /// Анализ проекта: зависимости, шаблоны и рекомендации.
 pub mod project;
 pub mod publish;
 /// Встроенный реестр компонентов Light.
 pub mod registry;
+/// Конфигурация реестра (`registry` в `light.config.json`).
+pub mod registry_config;
 pub mod remove;
 /// Формирование отчёта о состоянии проекта.
 pub mod report;

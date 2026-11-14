@@ -13,6 +13,8 @@ use crate::manifest::{
     read_package_name_from_text, read_package_version, read_workspace_dependencies,
 };
 use crate::registry::ComponentRegistry;
+#[cfg(feature = "network")]
+use crate::registry_config::RegistryConfig;
 
 /// Источник, из которого разрешён компонент.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,8 +77,8 @@ impl ResolvedComponent {
     }
 }
 
-/// Результат поиска крейта на crates.io.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Результат поиска крейта в реестре.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CrateSearchResult {
     /// Имя крейта.
     pub name: String,
@@ -86,6 +88,10 @@ pub struct CrateSearchResult {
     pub description: Option<String>,
     /// Ссылка на страницу крейта.
     pub url: String,
+    /// Количество загрузок крейта (из API; 0 если недоступно).
+    pub downloads: u64,
+    /// Владельцы крейта (logins из API).
+    pub owners: Vec<String>,
 }
 
 /// Источник данных crates.io: версии и поиск.
@@ -103,6 +109,24 @@ pub trait RemoteRegistry: Send + Sync {
         let _ = (query, per_page);
         Ok(Vec::new())
     }
+
+    /// Возвращает список login'ов владельцев крейта.
+    ///
+    /// При ошибке сети/404 возвращает пустой вектор — вызывающий
+    /// интерпретирует это как «неизвестно», и компонент не считается
+    /// официальным.
+    fn owners(&self, name: &str) -> Result<Vec<String>> {
+        let _ = name;
+        Ok(Vec::new())
+    }
+
+    /// Скачивает `.crate`-архив (tar.gz) крейта в память.
+    fn download_crate(&self, name: &str, version: &str) -> Result<Vec<u8>> {
+        let _ = (name, version);
+        Err(Error::Offline(
+            "скачивание крейта недоступно без фичи `network`".to_string(),
+        ))
+    }
 }
 
 /// Реальный клиент crates.io API (работает только с фичей `network`).
@@ -113,7 +137,7 @@ impl RemoteRegistry for CratesIoRegistry {
     fn latest_version(&self, name: &str) -> Result<Option<semver::Version>> {
         #[cfg(feature = "network")]
         {
-            fetch_crates_io(name)
+            fetch_crates_io(name, &RegistryConfig::default_registry())
         }
         #[cfg(not(feature = "network"))]
         {
@@ -125,12 +149,93 @@ impl RemoteRegistry for CratesIoRegistry {
     fn search(&self, query: &str, per_page: usize) -> Result<Vec<CrateSearchResult>> {
         #[cfg(feature = "network")]
         {
-            fetch_crates_io_search(query, per_page)
+            fetch_crates_io_search(query, per_page, &RegistryConfig::default_registry())
         }
         #[cfg(not(feature = "network"))]
         {
             let _ = (query, per_page);
             Ok(Vec::new())
+        }
+    }
+}
+
+/// Реестровый клиент с настраиваемым базовым URL.
+///
+/// Обёртка вокруг [`crate::registry_config::RegistryConfig`] для
+/// `light search`: использует URLs из конфига вместо хардкода
+/// `https://crates.io`. Позволяет подменять сервер в wiremock-тестах.
+#[derive(Debug, Clone)]
+pub struct RegistryClient {
+    config: crate::registry_config::RegistryConfig,
+}
+
+impl RegistryClient {
+    /// Создаёт клиент из [`RegistryConfig`](crate::registry_config::RegistryConfig).
+    pub fn new(config: crate::registry_config::RegistryConfig) -> Self {
+        Self { config }
+    }
+
+    /// Доступ к конфигурации реестра (URLs, source).
+    pub fn config(&self) -> &crate::registry_config::RegistryConfig {
+        &self.config
+    }
+
+    /// Загружает конфиг из проекта (файл `light.config.json`),
+    /// при отсутствии — дефолтный crates.io с предупреждением.
+    pub fn from_project(project_root: &Path) -> (Self, Option<String>) {
+        let (config, warning) = crate::registry_config::RegistryConfig::load(project_root);
+        (Self::new(config), warning)
+    }
+}
+
+impl RemoteRegistry for RegistryClient {
+    fn latest_version(&self, name: &str) -> Result<Option<semver::Version>> {
+        #[cfg(feature = "network")]
+        {
+            fetch_crates_io(name, &self.config)
+        }
+        #[cfg(not(feature = "network"))]
+        {
+            let _ = name;
+            Ok(None)
+        }
+    }
+
+    fn search(&self, query: &str, per_page: usize) -> Result<Vec<CrateSearchResult>> {
+        #[cfg(feature = "network")]
+        {
+            fetch_crates_io_search(query, per_page, &self.config)
+        }
+        #[cfg(not(feature = "network"))]
+        {
+            let _ = (query, per_page);
+            Ok(Vec::new())
+        }
+    }
+
+    fn owners(&self, name: &str) -> Result<Vec<String>> {
+        #[cfg(feature = "network")]
+        {
+            fetch_owners(name, &self.config)
+        }
+        #[cfg(not(feature = "network"))]
+        {
+            let _ = name;
+            Ok(Vec::new())
+        }
+    }
+
+    fn download_crate(&self, name: &str, version: &str) -> Result<Vec<u8>> {
+        #[cfg(feature = "network")]
+        {
+            fetch_crate_archive(name, version, &self.config)
+        }
+        #[cfg(not(feature = "network"))]
+        {
+            let _ = (name, version);
+            Err(Error::Offline(
+                "скачивание крейта недоступно без фичи `network`".to_string(),
+            ))
         }
     }
 }
@@ -451,7 +556,10 @@ pub fn ping_crates_io() -> bool {
 
 /// Разбирает ответ `GET /api/v1/crates?q=...`.
 #[cfg(feature = "network")]
-fn parse_search_response(body: &str) -> Result<Vec<CrateSearchResult>> {
+fn parse_search_response(
+    body: &str,
+    config: &crate::registry_config::RegistryConfig,
+) -> Result<Vec<CrateSearchResult>> {
     #[derive(serde::Deserialize)]
     struct Response {
         #[serde(default)]
@@ -466,6 +574,8 @@ fn parse_search_response(body: &str) -> Result<Vec<CrateSearchResult>> {
         max_version: Option<String>,
         #[serde(default)]
         description: Option<String>,
+        #[serde(default)]
+        downloads: u64,
     }
 
     let response: Response = serde_json::from_str(body)?;
@@ -477,37 +587,51 @@ fn parse_search_response(body: &str) -> Result<Vec<CrateSearchResult>> {
                 .max_stable_version
                 .or(entry.max_version)
                 .unwrap_or_default(),
-            url: format!("https://crates.io/crates/{}", entry.name),
+            url: format!("{}/crates/{}", config.url.trim_end_matches('/'), entry.name),
             name: entry.name,
             description: entry.description,
+            downloads: entry.downloads,
+            owners: Vec::new(),
         })
         .collect())
 }
 
 /// Ищет крейты на crates.io через API.
 #[cfg(feature = "network")]
-pub fn fetch_crates_io_search(query: &str, per_page: usize) -> Result<Vec<CrateSearchResult>> {
+pub fn fetch_crates_io_search(
+    query: &str,
+    per_page: usize,
+    config: &crate::registry_config::RegistryConfig,
+) -> Result<Vec<CrateSearchResult>> {
     use std::time::Duration;
 
     let per_page = per_page.to_string();
+    let base = config.url.trim_end_matches('/');
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(15))
         .build()?;
     let response = client
-        .get("https://crates.io/api/v1/crates")
-        .query(&[("q", query), ("per_page", per_page.as_str())])
+        .get(format!("{base}/api/v1/crates"))
+        .query(&[
+            ("q", query),
+            ("per_page", per_page.as_str()),
+            ("sort", "relevance"),
+        ])
         .header("User-Agent", "light-fw-cli (component search)")
         .send()?
         .error_for_status()?;
     let body = response.text()?;
-    parse_search_response(&body)
+    parse_search_response(&body, config)
 }
 
 /// Запрашивает последнюю версию крейта на crates.io.
 ///
 /// Возвращает `Ok(None)`, если крейт не найден (HTTP 404).
 #[cfg(feature = "network")]
-pub fn fetch_crates_io(name: &str) -> Result<Option<semver::Version>> {
+pub fn fetch_crates_io(
+    name: &str,
+    config: &crate::registry_config::RegistryConfig,
+) -> Result<Option<semver::Version>> {
     use std::time::Duration;
 
     #[derive(serde::Deserialize)]
@@ -521,7 +645,8 @@ pub fn fetch_crates_io(name: &str) -> Result<Option<semver::Version>> {
         max_version: String,
     }
 
-    let url = format!("https://crates.io/api/v1/crates/{name}");
+    let base = config.url.trim_end_matches('/');
+    let url = format!("{base}/api/v1/crates/{name}");
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(15))
         .build()?;
@@ -540,6 +665,70 @@ pub fn fetch_crates_io(name: &str) -> Result<Option<semver::Version>> {
         .unwrap_or(parsed.krate.max_version);
     let version = semver::Version::parse(&raw)?;
     Ok(Some(version))
+}
+
+/// Запрашивает владельцев крейта: `GET /api/v1/crates/<name>/owners`.
+///
+/// Таймаут 2 с. При любой ошибке (сеть, 404, rate-limit) возвращает
+/// пустой вектор — вызывающий интерпретирует как «неизвестно» и не
+/// ставит бейдж official.
+#[cfg(feature = "network")]
+fn fetch_owners(
+    name: &str,
+    config: &crate::registry_config::RegistryConfig,
+) -> Result<Vec<String>> {
+    use std::time::Duration;
+
+    #[derive(serde::Deserialize)]
+    struct OwnersResponse {
+        #[serde(default)]
+        users: Vec<OwnerEntry>,
+    }
+    #[derive(serde::Deserialize)]
+    struct OwnerEntry {
+        login: String,
+    }
+
+    let base = config.url.trim_end_matches('/');
+    let url = format!("{base}/api/v1/crates/{name}/owners");
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()?;
+    match client
+        .get(&url)
+        .header("User-Agent", "light-fw-cli (owners check)")
+        .send()?
+    {
+        response if response.status() == reqwest::StatusCode::NOT_FOUND => Ok(Vec::new()),
+        response => {
+            let response = response.error_for_status()?;
+            let body = response.text()?;
+            let parsed: OwnersResponse = serde_json::from_str(&body)?;
+            Ok(parsed.users.into_iter().map(|u| u.login).collect())
+        }
+    }
+}
+
+/// Скачивает `.crate`-архив: `GET <download_url>/<name>/<version>/download`.
+#[cfg(feature = "network")]
+fn fetch_crate_archive(
+    name: &str,
+    version: &str,
+    config: &crate::registry_config::RegistryConfig,
+) -> Result<Vec<u8>> {
+    use std::time::Duration;
+
+    let base = config.download_url.trim_end_matches('/');
+    let url = format!("{base}/{name}/{version}/download");
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()?;
+    let response = client
+        .get(&url)
+        .header("User-Agent", "light-fw-cli (crate download)")
+        .send()?
+        .error_for_status()?;
+    Ok(response.bytes()?.to_vec())
 }
 
 #[cfg(test)]
@@ -693,7 +882,11 @@ mod tests {
                 }
             ]
         }"#;
-        let results = parse_search_response(json).expect("parse");
+        let results = parse_search_response(
+            json,
+            &crate::registry_config::RegistryConfig::default_registry(),
+        )
+        .expect("parse");
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].name, "light-fw-datepicker");
         assert_eq!(results[0].version, "0.3.0");

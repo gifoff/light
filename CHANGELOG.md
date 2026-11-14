@@ -1,3 +1,22 @@
+## [Unreleased]
+
+### Added
+
+- **cli / cli-core**: Настраиваемый реестр (`registry` в `light.config.json`:
+  `url`, `download_url`, `docs_url`; дефолты — crates.io). Новые файлы
+  `registry_config.rs`, `metadata.rs`; расширен trait `RemoteRegistry`
+  (методы `owners`, `download_crate`).
+- **cli**: `light search` расширен флагами `--yes` (авто-выбор + скачивание
+  `.crate` + валидация `[package.metadata.light]`, exit 0/1), `--json`
+  (машино-читаемый вывод), `--limit`, `--path`. Ранжирование: официальный →
+  совпадение имени с запросом → загрузки. Официальность определяется по owners
+  (аккаунт `gifoff`); `already_installed` — по `[dependencies]` в `Cargo.toml`.
+- **cli-core**: модуль `metadata` — извлечение и валидация метаданных из
+  скачанного `.crate` (NoMetadata/IncompatibleCore — фатальные; EmptyProvides/
+  Conflict — предупреждение с подтверждением).
+- **docs**: docs/cli.md (флаги `light search`), docs/guide.md (раздел
+  «Настраиваемый реестр»), README.md (примеры `light search --yes`/`--json`).
+
 ## [0.18.0] - 2026-11-13
 
 ### Added

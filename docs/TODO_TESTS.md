@@ -22,3 +22,16 @@
 из `env!("CARGO_PKG_VERSION")`).
 
 Приоритет: низкий (не блокер). Взять в 0.19.x.
+
+## crates.io S3: 404 на .crate-архивы (2026-11-14)
+
+`https://static.crates.io/light-fw-html/0.18.0/download` возвращает
+404 (NoSuchKey) для всех крейтов аккаунта gifoff. Не блокирует
+`light search`, но не позволяет проверить happy-path `--yes`
+(валидация + успешная установка).
+
+Проверено: light-fw-html/0.18.0, light-fw-macros/0.18.0,
+light-fw-core/0.17.7 — все 404.
+
+Приоритет: средний. Как только S3 починится — прогнать e2e
+`light search datepicker --yes` → должен быть exit 0.

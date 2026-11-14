@@ -32,8 +32,9 @@ pub const GITIGNORE: &str = "target/\n";
 pub const CARGO_CONFIG: &str =
     "[alias]\ndev = \"run --features light-fw/dev-mode\"\nprod = \"run --release\"\n";
 
-/// Конфигурация `light.config.json`: профили `dev` (DevTools на 9229, debug)
-/// и `prod` (DevTools выключен, error).
+/// Конфигурация `light.config.json`: профили `dev` (DevTools на 9229, debug),
+/// `prod` (DevTools выключен, error) и `registry` (базовые URL реестра для
+/// `light search`; по умолчанию crates.io, см. `docs_url`/`download_url`).
 pub const LIGHT_CONFIG: &str = r#"{
     "dev": {
         "devtools": {
@@ -47,6 +48,11 @@ pub const LIGHT_CONFIG: &str = r#"{
             "enabled": false
         },
         "log_level": "error"
+    },
+    "registry": {
+        "url": "https://crates.io",
+        "download_url": "https://static.crates.io",
+        "docs_url": "https://docs.rs"
     }
 }
 "#;

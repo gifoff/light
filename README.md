@@ -148,9 +148,15 @@ light devtools shot --path shots  # Сделать скриншот (PNG)
 Light поддерживает модульные компоненты (например, элементы форм или валидацию).
 
 ```bash
-light add light-fw-element-form    # Добавить компонент в проект
-light search datepicker            # Поиск компонентов на crates.io
+light add light-fw-element-form          # Добавить компонент в проект
+light search datepicker                  # Поиск Light-компонентов (интерактивный выбор)
+light search datepicker --yes            # Авто-выбор + валидация (exit 0/1, для CI)
+light search light-fw --json             # JSON-вывод для скриптов
 ```
+
+Поиск ведётся в **настраиваемом реестре** (по умолчанию crates.io; переопределяется
+секцией `registry` в `light.config.json`). Результаты ранжируются: официальный
+(owner `gifoff`) → совпадение имени с запросом → количество загрузок.
 
 Если вы используете компонент в шаблоне, но забыли его установить, `light dev` или `light build` автоматически обнаружат это и предложат установить (в неинтерактивном режиме — установят сами).
 

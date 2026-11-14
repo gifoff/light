@@ -29,9 +29,18 @@ reqwest = { version = "0.12", default-features = false, features = [
 ], optional = true }
 # для декодирования PNG из SHOT
 base64 = "0.22"
+# Этап 0: распаковка .crate (tar.gz) и валидация [package.metadata.light]
+tar = "0.4"
+flate2 = "1"
+tempfile = "3"
 
 [features]
 default = []
-# Сетевой доступ к crates.io (обёртка над `reqwest`). Выключен по умолчанию,
+# Сетевой доступ к реестру (обёртка над `reqwest`). Выключен по умолчанию,
 # чтобы `check`/`suggest`/`doctor` и тесты собирались без тяжёлых зависимостей.
 network = ["dep:reqwest"]
+
+[dev-dependencies]
+wiremock = "0.6"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+flate2 = "1"

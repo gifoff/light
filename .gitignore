@@ -41,3 +41,6 @@ test-dx/
 *.log
 
 .report-evidence/
+
+# E2E staging directory
+.e2e/

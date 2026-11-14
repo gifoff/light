@@ -117,9 +117,24 @@ light publish --yes --skip-gates    # без вопросов, без pre-flight
 light publish --no-verify           # не запускать cargo verify (по умолчанию)
 ```
 
-### `light search ПОДАЧА`
+### `light search ПОДАЧА [--limit N] [--yes] [--json] [--path PATH]`
 
-Поиск компонентов на crates.io по ключевым словам.
+Поиск Light-компонентов в настраиваемом реестре (по умолчанию crates.io).
+Результаты ранжируются: официальный → совпадение имени с запросом → загрузки.
+
+- `--limit N` — максимум результатов (по умолчанию 30);
+- `--yes` — неинтерактивный режим: автоматически выбрать первый официальный
+  компонент, скачать `.crate`, валидировать `[package.metadata.light]`.
+  Выход 0 — `✅ прошёл валидацию`; выход 1 — `❌ отклонён` (фатальная ошибка)
+  или «требуется интерактивное подтверждение»;
+- `--json` — машино-читаемый вывод (`query`, `registry`, `results[]`);
+- `--path PATH` — каталог проекта для проверки `already_installed`.
+
+```bash
+light search datepicker            # интерактивный выбор из таблицы
+light search datepicker --yes      # авто-выбор + валидация (exit 0/1)
+light search light-fw --json       # JSON для скриптов
+```
 
 ### `light vendor [ПУТЬ] [--dry-run] [--offline]`
 

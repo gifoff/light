@@ -32,6 +32,7 @@ Light — декларативный реактивный GUI-фреймворк
   - [CLI-обёртка `light devtools`](#cli-обёртка-light-devtools)
   - [Автоматизированное тестирование с ИИ (Session Recorder)](#автоматизированное-тестирование-с-ии-session-recorder)
   - [Web UI DevTools](#web-ui-devtools)
+- [Настраиваемый реестр (Configurable Registry)](#настраиваемый-реестр-configurable-registry)
 
 ## Философия и обзор
 
@@ -1938,6 +1939,41 @@ QUIT
 ```
 
 Пример приложения: `examples/devtools-demo` (`cargo run --package example-devtools-demo`).
+
+## Настраиваемый реестр (Configurable Registry)
+
+CLI-команды для работы с компонентами (`light search`, и в будущем — установка
+и обновление) используют **настраиваемый реестр**. По умолчанию это crates.io,
+но URL можно переопределить в секции `registry` файла `light.config.json`
+в корне проекта:
+
+```json
+{
+  "registry": {
+    "url": "https://crates.io",
+    "download_url": "https://static.crates.io",
+    "docs_url": "https://docs.rs"
+  }
+}
+```
+
+| Поле | Назначение | Дефолт |
+|---|---|---|
+| `url` | API поиска и owners | `https://crates.io` |
+| `download_url` | Загрузка `.crate`-артефактов | `https://static.crates.io` |
+| `docs_url` | Страницы документации | `https://docs.rs` |
+
+Если файл отсутствует или содержит некорректный JSON, CLI печатает предупреждение
+`⚠️ …` и использует дефолты (crates.io) — команда продолжает работу.
+
+**Как это используется:**
+
+- `light search` — строит URL запроса из `url`: `{url}/api/v1/crates?q=…&per_page=…`;
+- `--yes` (валидация) — скачивает `{download_url}/{name}/{version}/download`;
+- ссылки в выводе — страницы `{url}/crates/{name}` и `{docs_url}/{name}/{version}`.
+
+> Раздел добавлен в рамках Этапа 0 Plugin API (2026-11). Установка компонентов
+> через реестр (`light add` с remote-источником) планируется в Этапе 2.
 
 ---
 
