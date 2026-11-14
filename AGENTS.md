@@ -160,6 +160,13 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features -j 2
 ```
 
+**`cargo build -p light` (debug) с фичей `network`** — `reqwest` → `ring`
+превышает лимит командной строки MSVC (D8050). Обход:
+- `cargo build --release -p light` (release работает);
+- `cargo clippy -p light-fw-cli-core --no-default-features -- -D warnings`
+  (без network — для проверки логики);
+- полный clippy с network — только в CI (Linux).
+
 ## Development Workflow (Правильная последовательность)
 
 1. **Изучение контекста**: Прочитайте `docs/ARCHITECTURE.md` и релевантные разделы `docs/guide.md` перед планированием.

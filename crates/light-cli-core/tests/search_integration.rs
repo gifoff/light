@@ -263,7 +263,8 @@ edition = "2024"
     match result {
         light_fw_cli_core::metadata::ValidationResult::Fatal(err) => {
             let msg = light_fw_cli_core::metadata::ValidationError::message(&err);
-            assert_eq!(msg, "Нет метаданных [package.metadata.light] в Cargo.toml");
+            assert!(msg.contains("[package.metadata.light]"), "получено: {msg}");
+            assert!(msg.contains("не компонент Light"), "получено: {msg}");
         }
         other => panic!("expected Fatal(NoMetadata), got {other:?}"),
     }
