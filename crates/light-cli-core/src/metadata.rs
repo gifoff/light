@@ -6,9 +6,11 @@
 //! (`cargo add`) отложена до Этапа 2, поэтому здесь только **валидация**.
 
 use std::io::Read as _;
+use std::path::Path;
 
 use crate::error::{Error, Result};
 use crate::manifest::{Provides, parse_manifest_from_text};
+use crate::process::{CommandRunner, SystemRunner};
 
 /// Текущая версия CLI-крэйта `light` (ядро Light). Используется для проверки
 /// совместимости `core`-требования компонента.
@@ -154,6 +156,68 @@ pub fn validate_metadata(toml_text: &str, crate_name: &str) -> ValidationResult 
     ValidationResult::Ok(metadata)
 }
 
+/// Собирает метаданные ВСЕХ установленных Light-компонентов в проекте
+/// (published, path, git) через `cargo metadata --no-deps`.
+///
+/// Для каждого пакета, чей `Cargo.toml` содержит секцию
+/// `[package.metadata.light]`, возвращает [`ComponentMetadata`] (имя, версия и
+/// `provides` из манифеста). Пакеты без секции пропускаются. Если `cargo
+/// metadata` завершился ошибкой — возвращается [`Error`] (не паника).
+pub fn load_installed(project_root: &Path) -> Result<Vec<ComponentMetadata>> {
+    let runner = SystemRunner;
+    let out = runner.run(
+        "cargo",
+        &[
+            "metadata".into(),
+            "--format-version".into(),
+            "1".into(),
+            "--no-deps".into(),
+        ],
+        Some(project_root),
+    )?;
+    load_installed_from_json(&out.stdout)
+}
+
+/// Разбирает вывод `cargo metadata` (JSON, format-version 1) и извлекает
+/// метаданные компонентов. Вынесено отдельно от запуска процесса, чтобы логику
+/// можно было проверить на фикстуре без реального `cargo`.
+/// Разбирает JSON-ответ `cargo metadata --format-version 1` и извлекает
+/// `[package.metadata.light]` из каждого пакета. Пакеты без метаданных
+/// пропускаются (не ошибаются). Публичный для интеграционных тестов,
+/// которые не хотят запускать реальный `cargo metadata`.
+pub fn load_installed_from_json(json: &str) -> Result<Vec<ComponentMetadata>> {
+    #[derive(serde::Deserialize)]
+    struct Metadata {
+        packages: Vec<Pkg>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Pkg {
+        name: String,
+        version: String,
+        manifest_path: String,
+    }
+
+    let meta: Metadata = serde_json::from_str(json)?;
+    let mut installed = Vec::new();
+    for pkg in meta.packages {
+        let text = std::fs::read_to_string(&pkg.manifest_path)?;
+        if let Some(manifest) = parse_manifest_from_text(&text)? {
+            installed.push(ComponentMetadata {
+                crate_name: pkg.name,
+                version: pkg.version,
+                kind: Some(manifest_kind_str(manifest.kind)),
+                core_version_req: Some(manifest.core.clone()),
+                provides_elements: manifest.provides.elements,
+                provides_attributes: manifest.provides.attributes,
+                provides_directives: manifest.provides.directives,
+                requires_components: manifest.requires.components,
+            });
+        }
+    }
+    Ok(installed)
+}
+
 /// Проверяет `core`-требование против текущей версии ядра.
 ///
 /// Возвращает [`Some(ValidationError::IncompatibleCore)`], если requirement
@@ -292,6 +356,66 @@ core = "^0.18"
 [package.metadata.light.provides]
 elements = ["datepicker"]
 "#;
+
+    const PLAIN_MANIFEST: &str = r#"
+[package]
+name = "my-app"
+version = "0.1.0"
+edition = "2021"
+"#;
+
+    /// Фикстура `cargo metadata --no-deps`: path-зависимость (path-dependency),
+    /// опубликованный компонент и обычный крейт без метаданных.
+    #[test]
+    fn load_installed_from_json_reads_light_metadata() {
+        let dir = std::env::temp_dir().join("light-fw-cli-meta-load");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("app")).unwrap();
+        std::fs::create_dir_all(dir.join("light-widget-datepicker")).unwrap();
+        std::fs::create_dir_all(dir.join("serde")).unwrap();
+
+        std::fs::write(dir.join("app/Cargo.toml"), PLAIN_MANIFEST).unwrap();
+        std::fs::write(
+            dir.join("light-widget-datepicker/Cargo.toml"),
+            VALID_MANIFEST,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("serde/Cargo.toml"),
+            "[package]\nname = \"serde\"\n",
+        )
+        .unwrap();
+
+        let path = |name: &str| {
+            dir.join(name)
+                .join("Cargo.toml")
+                .to_string_lossy()
+                .into_owned()
+        };
+        // Собираем JSON через serde_json — пути Windows (обратные слэши)
+        // экранируются корректно; ручная подстановка строк это сломала бы.
+        let json = serde_json::to_string(&serde_json::json!({
+            "packages": [
+                { "name": "my-app", "version": "0.1.0", "manifest_path": path("app") },
+                { "name": "light-widget-datepicker", "version": "0.19.0", "manifest_path": path("light-widget-datepicker") },
+                { "name": "serde", "version": "1.0.0", "manifest_path": path("serde") }
+            ]
+        }))
+        .expect("serialize fixture");
+
+        let installed = load_installed_from_json(&json).expect("parse");
+        assert_eq!(
+            installed.len(),
+            1,
+            "только пакет с [package.metadata.light]"
+        );
+        let meta = &installed[0];
+        assert_eq!(meta.crate_name, "light-widget-datepicker");
+        assert_eq!(meta.version, "0.19.0");
+        assert_eq!(meta.kind.as_deref(), Some("widget"));
+        assert_eq!(meta.provides_elements, vec!["datepicker".to_string()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn validate_ok_for_compatible_component() {
