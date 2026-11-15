@@ -771,8 +771,10 @@ pub fn run_exe_path(run_dir: &Path, bin: &str) -> PathBuf {
     p
 }
 
-/// Удаляет все `.exe` в `run_dir`, кроме активного (`keep`). Ошибки молча
-/// игнорируются: файл мог быть ещё жив в AV-кэше.
+/// Удаляет все старые копии бинарника в `run_dir`, кроме активного (`keep`).
+/// На Windows — файлы с расширением `.exe`; на Unix — файлы без расширения
+/// (бесшовные бинарники). Ошибки молча игнорируются: файл мог быть ещё жив
+/// в AV-кэше.
 pub fn cleanup_run_dir(run_dir: &Path, keep: &Path) {
     if let Ok(entries) = std::fs::read_dir(run_dir) {
         for entry in entries.flatten() {
@@ -780,8 +782,21 @@ pub fn cleanup_run_dir(run_dir: &Path, keep: &Path) {
             if path == keep {
                 continue;
             }
-            if path.extension().and_then(|e| e.to_str()) == Some("exe") {
-                let _ = std::fs::remove_file(&path);
+            #[cfg(windows)]
+            {
+                // На Windows копии всегда заканчиваются `.exe`.
+                if path.extension().and_then(|e| e.to_str()) == Some("exe") {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                // На Unix бинарник копируется без расширения (`<bin>-<ts>`),
+                // поэтому чистим файлы без расширения, чтобы не удалить
+                // случайный файл с `.exe`-суффиксом (не наш формат).
+                if path.extension().is_none() {
+                    let _ = std::fs::remove_file(&path);
+                }
             }
         }
     }
@@ -2637,6 +2652,10 @@ mod tests {
         assert!(sm.in_progress);
         let first_start = sm.started_at.unwrap();
         // Имитация: новый save пришёл, старую сборку убили, новая запускается.
+        // Короткий sleep гарантирует, что второй вызов Instant::now() внутри
+        // start() вернёт значение, строго отличное от первого (на Linux
+        // разрешение системных часов может быть грубым — несколько мс).
+        std::thread::sleep(std::time::Duration::from_millis(5));
         sm.start();
         assert!(sm.in_progress, "после нового start(): in_progress=true");
         assert_ne!(

@@ -484,7 +484,7 @@ fn is_core_name(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fetch::{Catalog, DependencyEntry, RemoteRegistry, ResolvedComponent, SourceKind};
+    use crate::fetch::{Catalog, DependencyEntry, RemoteRegistry, SourceKind};
     use crate::process::CommandOutput;
     use crate::registry::ComponentRegistry;
     use std::path::PathBuf;

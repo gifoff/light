@@ -14,7 +14,7 @@
 use light_fw_cli_core::fetch::{RegistryClient, RemoteRegistry};
 use light_fw_cli_core::registry_config::RegistryConfig;
 use light_fw_cli_core::search::{SearchResult, filter_by_prefix, rank, truncate_description};
-use wiremock::matchers::{method, path_regex};
+use wiremock::matchers::{method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Строит tar.gz архив с `Cargo.toml` внутри.
@@ -50,7 +50,7 @@ fn test_config(base: &str, download: &str) -> RegistryConfig {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn search_ranking_official_first() {
     let server = MockServer::start().await;
 
@@ -86,7 +86,7 @@ async fn search_ranking_official_first() {
     .to_string();
 
     Mock::given(method("GET"))
-        .and(path_regex(r"/api/v1/crates\?.*"))
+        .and(path("/api/v1/crates"))
         .respond_with(ResponseTemplate::new(200).set_body_string(search_body))
         .mount(&server)
         .await;
@@ -112,17 +112,50 @@ async fn search_ranking_official_first() {
         .mount(&server)
         .await;
 
-    let config = test_config(&server.uri(), &server.uri());
-    let client = RegistryClient::new(config);
-
-    let raw = client.search("widget", 30).expect("search");
+    // RegistryClient использует reqwest::blocking (создаёт свой runtime).
+    // В async-контексте drop этого runtime pan'ит. Выносим все sync-вызовы
+    // в spawn_blocking, чтобы они выполнялись на отдельном worker-thread.
+    let uri = server.uri();
+    let raw = {
+        let u = uri.clone();
+        tokio::task::spawn_blocking(move || {
+            let config = test_config(&u, &u);
+            let client = RegistryClient::new(config);
+            client.search("widget", 30).expect("search")
+        })
+        .await
+        .expect("spawn_blocking join")
+    };
     let filtered = filter_by_prefix(&raw);
     assert_eq!(filtered.len(), 3, "all three should pass prefix filter");
 
     // Build SearchResult items with official flags from owners check.
+    // Owners — тоже blocking, выносим в spawn_blocking.
+    let names: Vec<String> = filtered.iter().map(|i| i.name.clone()).collect();
+    let owners_map = {
+        let u = uri.clone();
+        let nms = names;
+        tokio::task::spawn_blocking(move || {
+            let config = test_config(&u, &u);
+            let client = RegistryClient::new(config);
+            nms.into_iter()
+                .map(|n| {
+                    let owners = client.owners(&n).unwrap_or_default();
+                    (n, owners)
+                })
+                .collect::<Vec<_>>()
+        })
+        .await
+        .expect("spawn_blocking join")
+    };
+
     let mut results: Vec<SearchResult> = Vec::new();
     for item in &filtered {
-        let owners = client.owners(&item.name).unwrap_or_default();
+        let owners = owners_map
+            .iter()
+            .find(|(n, _)| n == &item.name)
+            .map(|(_, o)| o.clone())
+            .unwrap_or_default();
         let official = owners.iter().any(|o| o == "gifoff");
         results.push(SearchResult {
             name: item.name.clone(),
@@ -139,13 +172,12 @@ async fn search_ranking_official_first() {
     // 1st: alpha (official — always first)
     assert_eq!(ranked[0].name, "light-widget-alpha");
     assert!(ranked[0].official);
-    // 2nd/3rd: beta and gamma both have "widget" in name → tie-breaker
-    // falls through to downloads: beta (1000) > gamma (100).
-    assert_eq!(ranked[1].name, "light-widget-beta");
-    assert_eq!(ranked[2].name, "light-widget-gamma");
+    // 2nd/3rd: gamma (9999) > beta (100) by downloads.
+    assert_eq!(ranked[1].name, "light-widget-gamma");
+    assert_eq!(ranked[2].name, "light-widget-beta");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn prefix_filter_excludes_non_light() {
     let server = MockServer::start().await;
 
@@ -160,22 +192,26 @@ async fn prefix_filter_excludes_non_light() {
     .to_string();
 
     Mock::given(method("GET"))
-        .and(path_regex(r"/api/v1/crates\?.*"))
+        .and(path("/api/v1/crates"))
         .respond_with(ResponseTemplate::new(200).set_body_string(search_body))
         .mount(&server)
         .await;
 
-    let config = test_config(&server.uri(), &server.uri());
-    let client = RegistryClient::new(config);
-
-    let raw = client.search("date", 30).expect("search");
+    let uri = server.uri();
+    let raw = tokio::task::spawn_blocking(move || {
+        let config = test_config(&uri, &uri);
+        let client = RegistryClient::new(config);
+        client.search("date", 30).expect("search")
+    })
+    .await
+    .expect("spawn_blocking join");
     let filtered = filter_by_prefix(&raw);
     assert_eq!(filtered.len(), 2);
     assert_eq!(filtered[0].name, "light-fw-datepicker");
     assert_eq!(filtered[1].name, "light-element-button");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn download_and_validate_ok_manifest() {
     let server = MockServer::start().await;
 
@@ -189,6 +225,7 @@ edition = "2024"
 
 [package.metadata.light]
 kind = "widget"
+display-name = "Datepicker"
 core = "^0.18"
 
 [package.metadata.light.provides]
@@ -211,15 +248,18 @@ components = []
         .mount(&server)
         .await;
 
-    let config = test_config(&server.uri(), &server.uri());
-    let client = RegistryClient::new(config);
-
-    let bytes = client
-        .download_crate("light-widget-datepicker", "0.19.0")
-        .expect("download");
-    let toml_text = light_fw_cli_core::metadata::extract_cargo_toml(&bytes).expect("extract");
-    let result =
-        light_fw_cli_core::metadata::validate_metadata(&toml_text, "light-widget-datepicker");
+    let uri = server.uri();
+    let result = tokio::task::spawn_blocking(move || {
+        let config = test_config(&uri, &uri);
+        let client = RegistryClient::new(config);
+        let bytes = client
+            .download_crate("light-widget-datepicker", "0.19.0")
+            .expect("download");
+        let toml_text = light_fw_cli_core::metadata::extract_cargo_toml(&bytes).expect("extract");
+        light_fw_cli_core::metadata::validate_metadata(&toml_text, "light-widget-datepicker")
+    })
+    .await
+    .expect("spawn_blocking join");
     match result {
         light_fw_cli_core::metadata::ValidationResult::Ok(meta) => {
             assert_eq!(meta.crate_name, "light-widget-datepicker");
@@ -230,7 +270,7 @@ components = []
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn download_and_validate_no_metadata() {
     let server = MockServer::start().await;
 
@@ -252,14 +292,18 @@ edition = "2024"
         .mount(&server)
         .await;
 
-    let config = test_config(&server.uri(), &server.uri());
-    let client = RegistryClient::new(config);
-
-    let bytes = client
-        .download_crate("light-widget-broken", "0.1.0")
-        .expect("download");
-    let toml_text = light_fw_cli_core::metadata::extract_cargo_toml(&bytes).expect("extract");
-    let result = light_fw_cli_core::metadata::validate_metadata(&toml_text, "light-widget-broken");
+    let uri = server.uri();
+    let result = tokio::task::spawn_blocking(move || {
+        let config = test_config(&uri, &uri);
+        let client = RegistryClient::new(config);
+        let bytes = client
+            .download_crate("light-widget-broken", "0.1.0")
+            .expect("download");
+        let toml_text = light_fw_cli_core::metadata::extract_cargo_toml(&bytes).expect("extract");
+        light_fw_cli_core::metadata::validate_metadata(&toml_text, "light-widget-broken")
+    })
+    .await
+    .expect("spawn_blocking join");
     match result {
         light_fw_cli_core::metadata::ValidationResult::Fatal(err) => {
             let msg = light_fw_cli_core::metadata::ValidationError::message(&err);
@@ -270,7 +314,7 @@ edition = "2024"
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn download_and_validate_incompatible_core() {
     let server = MockServer::start().await;
 
@@ -282,6 +326,7 @@ edition = "2024"
 
 [package.metadata.light]
 kind = "widget"
+display-name = "Future"
 core = "^99"
 
 [package.metadata.light.provides]
@@ -304,14 +349,18 @@ components = []
         .mount(&server)
         .await;
 
-    let config = test_config(&server.uri(), &server.uri());
-    let client = RegistryClient::new(config);
-
-    let bytes = client
-        .download_crate("light-widget-future", "0.1.0")
-        .expect("download");
-    let toml_text = light_fw_cli_core::metadata::extract_cargo_toml(&bytes).expect("extract");
-    let result = light_fw_cli_core::metadata::validate_metadata(&toml_text, "light-widget-future");
+    let uri = server.uri();
+    let result = tokio::task::spawn_blocking(move || {
+        let config = test_config(&uri, &uri);
+        let client = RegistryClient::new(config);
+        let bytes = client
+            .download_crate("light-widget-future", "0.1.0")
+            .expect("download");
+        let toml_text = light_fw_cli_core::metadata::extract_cargo_toml(&bytes).expect("extract");
+        light_fw_cli_core::metadata::validate_metadata(&toml_text, "light-widget-future")
+    })
+    .await
+    .expect("spawn_blocking join");
     match result {
         light_fw_cli_core::metadata::ValidationResult::Fatal(err) => {
             let msg = light_fw_cli_core::metadata::ValidationError::message(&err);
