@@ -5,6 +5,7 @@
 //! автоматически командами `light add`/`remove`/`update`/`lock` — вручную
 //! редактировать его не нужно.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -34,6 +35,15 @@ pub struct Lockfile {
     /// Зафиксированные компоненты.
     #[serde(rename = "component", default)]
     pub components: Vec<LockComponent>,
+    /// Приоритет по тегам элемента при конфликте: тег → победитель (имя крейта).
+    ///
+    /// Этап 2 Plugin API: когда два установленных компонента предоставляют
+    /// один и тот же элемент (`provides.elements`), `light add --force`
+    /// фиксирует, какой из них «выигрывает». Секция `[plugins]` в `light.lock`,
+    /// например `datepicker = "light-widget-datepicker"`. Старые файлы без
+    /// секции разбираются как пустой набор ([`serde::default`](default)).
+    #[serde(default)]
+    pub plugins: BTreeMap<String, String>,
 }
 
 /// Один зафиксированный компонент.
@@ -94,10 +104,18 @@ impl Lockfile {
     }
 
     /// Строит lock-файл из текущего `Cargo.toml` проекта.
+    ///
+    /// Секция `[plugins]` (приоритеты по тегам) **переносится** из
+    /// существующего `light.lock`, если он есть: она не выводится из
+    /// `Cargo.toml`, а живёт только в lock-файле и пишется `light add --force`.
+    /// Если `light.lock` ещё не существует — приоритетов нет (пустой набор).
     pub fn from_project(project_root: &Path) -> Result<Lockfile> {
         let registry = ComponentRegistry::builtin();
         let core = resolve_core_version(project_root)?;
         let details = collect_project_components(project_root)?;
+        let existing_plugins = Self::read(project_root)
+            .map(|lf| lf.plugins)
+            .unwrap_or_default();
 
         let mut components = Vec::new();
         for dep in details {
@@ -127,7 +145,21 @@ impl Lockfile {
             version: 1,
             core,
             components,
+            plugins: existing_plugins,
         })
+    }
+
+    /// Фиксирует приоритет по тегу: победителем (владельцем тега) становится
+    /// `crate_name`. Этап 2 Plugin API: вызывается при `light add --force`,
+    /// когда новый компонент «вытесняет» уже установленный владельца общего
+    /// элемента. Повторный вызов перезаписывает прежнего победителя.
+    pub fn set_plugin_priority(&mut self, tag: &str, crate_name: &str) {
+        self.plugins.insert(tag.to_string(), crate_name.to_string());
+    }
+
+    /// Победитель по тегу (если приоритет был зафиксирован).
+    pub fn plugin_priority(&self, tag: &str) -> Option<&str> {
+        self.plugins.get(tag).map(String::as_str)
     }
 
     /// Сравнивает set компонентов (имя+версия) с другим lock-файлом.
@@ -272,11 +304,22 @@ mod tests {
         dir
     }
 
+    /// Создаёт минимальный lock-файл без компонентов.
+    fn empty_lock() -> Lockfile {
+        Lockfile {
+            version: 1,
+            core: "0.1.0".to_string(),
+            components: Vec::new(),
+            plugins: BTreeMap::new(),
+        }
+    }
+
     #[test]
     fn toml_round_trip() {
         let lock = Lockfile {
             version: 1,
             core: "0.1.0".to_string(),
+            plugins: BTreeMap::new(),
             components: vec![LockComponent {
                 name: "light-fw-element-form".to_string(),
                 version: "0.1.0".to_string(),
@@ -387,6 +430,7 @@ mod tests {
         let base = Lockfile {
             version: 1,
             core: "0.1.0".to_string(),
+            plugins: BTreeMap::new(),
             components: vec![
                 component("light-fw-element-form", "0.1.0"),
                 component("light-fw-behavior-validation", "0.1.0"),
@@ -395,6 +439,7 @@ mod tests {
         let updated = Lockfile {
             version: 1,
             core: "0.1.0".to_string(),
+            plugins: BTreeMap::new(),
             components: vec![
                 component("light-fw-element-form", "0.2.0"),
                 component("light-widget-datepicker", "0.3.0"),
@@ -417,6 +462,79 @@ mod tests {
             path: None,
             dependencies: Vec::new(),
         }
+    }
+
+    #[test]
+    fn set_plugin_priority_inserts_and_overwrites() {
+        let mut lock = empty_lock();
+        lock.set_plugin_priority("datepicker", "light-fw-datepicker");
+        assert_eq!(
+            lock.plugin_priority("datepicker"),
+            Some("light-fw-datepicker")
+        );
+        // Повторный вызов перезаписывает победителя.
+        lock.set_plugin_priority("datepicker", "light-widget-datepicker");
+        assert_eq!(
+            lock.plugin_priority("datepicker"),
+            Some("light-widget-datepicker")
+        );
+        // Незафиксированный тег — None.
+        assert_eq!(lock.plugin_priority("color-picker"), None);
+    }
+
+    #[test]
+    fn old_lockfile_without_plugins_parses_empty() {
+        // Обратная совместимость: файл без секции [plugins] разбирается как
+        // пустой набор приоритетов, сериализуется валидно.
+        let text = "# light.lock\nversion = 1\ncore = \"0.1.0\"\n\n\
+                    [[component]]\nname = \"light-fw-element-form\"\n\
+                    version = \"0.1.0\"\nsource = \"crates.io\"\n";
+        let lock = Lockfile::from_toml(text).expect("from_toml");
+        assert!(lock.plugins.is_empty(), "старый файл → нет приоритетов");
+        assert_eq!(lock.components.len(), 1);
+        // После записи секция [plugins] появляется, но пуста (томli-edit
+        // пропускает пустые таблицы), round-trip стабилен.
+        let out = lock.to_toml().expect("to_toml");
+        let reparsed = Lockfile::from_toml(&out).expect("reparse");
+        assert_eq!(reparsed, lock);
+    }
+
+    #[test]
+    fn plugins_serialize_to_named_keys() {
+        let mut lock = empty_lock();
+        lock.set_plugin_priority("datepicker", "light-widget-datepicker");
+        let text = lock.to_toml().expect("to_toml");
+        // Ключ-тег = значение-крейт внутри секции [plugins].
+        assert!(text.contains("[plugins]"), "отсутствует [plugins]\n{text}");
+        assert!(
+            text.contains("datepicker = \"light-widget-datepicker\""),
+            "нет пары тег→крейт\n{text}"
+        );
+        let parsed = Lockfile::from_toml(&text).expect("from_toml");
+        assert_eq!(parsed, lock);
+    }
+
+    #[test]
+    fn from_project_preserves_plugins_from_existing_lock() {
+        // Приоритеты не выводятся из Cargo.toml — они переносятся из
+        // существующего light.lock при регенерации.
+        let dir = temp_dir("preserve-plugins");
+        fs::write(
+            dir.join("Cargo.toml"),
+            "[package]\nname=\"p\"\nversion=\"0.1.0\"\n\n[dependencies]\nlight = \"0.1\"\n",
+        )
+        .expect("write");
+        // Записываем lock с одним приоритетом.
+        let mut seed = Lockfile::from_project(&dir).expect("seed");
+        seed.set_plugin_priority("datepicker", "light-widget-datepicker");
+        seed.write(&dir).expect("write seed lock");
+        // Регенерация из Cargo.toml должна сохранить приоритет.
+        let regenerated = Lockfile::from_project(&dir).expect("regen");
+        assert_eq!(
+            regenerated.plugin_priority("datepicker"),
+            Some("light-widget-datepicker"),
+            "приоритет должен переноситься из light.lock"
+        );
     }
 
     #[test]
