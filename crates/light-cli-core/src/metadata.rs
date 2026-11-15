@@ -162,20 +162,35 @@ pub fn validate_metadata(toml_text: &str, crate_name: &str) -> ValidationResult 
 /// Для каждого пакета, чей `Cargo.toml` содержит секцию
 /// `[package.metadata.light]`, возвращает [`ComponentMetadata`] (имя, версия и
 /// `provides` из манифеста). Пакеты без секции пропускаются. Если `cargo
-/// metadata` завершился ошибкой — возвращается [`Error`] (не паника).
+/// metadata` завершился ошибкой (нет cargo в PATH, пустой stdout, битый JSON),
+/// функция **не** возвращает ошибку — печатает предупреждение на stderr и
+/// возвращает пустой вектор. Это делает `light check` устойчивым: отчёт
+/// формируется по данным из bundled registry и сканера шаблонов, а «Установлено»
+/// будет просто пусто (или некорректно, если компоненты есть, но `cargo`
+/// недоступен). Для интерактивного использования это приемлемо: пользователь
+/// видит предупреждение и может повторить команду в рабочей среде.
 pub fn load_installed(project_root: &Path) -> Result<Vec<ComponentMetadata>> {
-    let runner = SystemRunner;
-    let out = runner.run(
-        "cargo",
-        &[
-            "metadata".into(),
-            "--format-version".into(),
-            "1".into(),
-            "--no-deps".into(),
-        ],
-        Some(project_root),
-    )?;
-    load_installed_from_json(&out.stdout)
+    let result = (|| -> Result<Vec<ComponentMetadata>> {
+        let runner = SystemRunner;
+        let out = runner.run(
+            "cargo",
+            &[
+                "metadata".into(),
+                "--format-version".into(),
+                "1".into(),
+                "--no-deps".into(),
+            ],
+            Some(project_root),
+        )?;
+        load_installed_from_json(&out.stdout)
+    })();
+    match result {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            eprintln!("warning: cargo metadata failed: {e}");
+            Ok(Vec::new())
+        }
+    }
 }
 
 /// Разбирает вывод `cargo metadata` (JSON, format-version 1) и извлекает
