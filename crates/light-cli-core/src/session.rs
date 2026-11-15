@@ -143,6 +143,9 @@ fn actions_path(cwd: &Path, id: &str) -> PathBuf {
 /// Закрывает активную сессию: снимает маркер `current`, генерирует
 /// `summary.md` (хронологию) и возвращает путь к нему.
 pub fn stop_session(cwd: &Path, id: &str) -> Result<PathBuf> {
+    if !sessions_dir(cwd).join(id).is_dir() {
+        return Err(SessionError::NoActiveSession);
+    }
     let marker = current_marker_path(cwd);
     if let Ok(cur) = fs::read_to_string(&marker)
         && cur.trim() == id
