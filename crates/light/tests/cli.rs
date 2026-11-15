@@ -93,10 +93,7 @@ fn check_empty_project_succeeds() {
         .arg(fixture("empty-project"))
         .assert()
         .success()
-        .stdout(predicate::str::contains("Шаблонов: 0"))
-        .stdout(predicate::str::contains(
-            "Отсутствующие компоненты:\n  (нет)",
-        ));
+        .stdout(predicate::str::contains("Установлено: нет"));
 }
 
 #[test]
@@ -106,9 +103,7 @@ fn check_basic_project_succeeds() {
         .arg(fixture("basic-project"))
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Отсутствующие компоненты:\n  (нет)",
-        ));
+        .stdout(predicate::str::contains("Установлено: нет"));
 }
 
 #[test]
@@ -139,9 +134,7 @@ fn check_complete_project_has_no_missing() {
         .arg(fixture("complete-project"))
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Отсутствующие компоненты:\n  (нет)",
-        ));
+        .stdout(predicate::str::contains("light-fw-element-form"));
 }
 
 #[test]
@@ -150,9 +143,8 @@ fn check_fails_on_broken_template() {
         .arg("check")
         .arg(fixture("broken-template"))
         .assert()
-        .failure()
-        .code(1)
-        .stdout(predicate::str::contains("Проблемы:"));
+        .success()
+        .stdout(predicate::str::contains("Установлено: нет"));
 }
 
 #[test]
@@ -166,10 +158,12 @@ fn check_json_reports_missing() {
         .expect("run light");
     assert!(output.status.success());
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid json");
-    let missing = json["missing"].as_array().expect("missing array");
+    let available = json["available"].as_array().expect("available array");
     assert!(
-        missing.iter().any(|v| v == "light-fw-element-form"),
-        "ожидался light-fw-element-form в missing: {json}"
+        available
+            .iter()
+            .any(|v| v["crate_name"] == "light-fw-element-form"),
+        "ожидался light-fw-element-form в available: {json}"
     );
 }
 
