@@ -96,12 +96,18 @@
 //! [`capture_snapshot`](devtools::capture_snapshot).
 
 #![deny(missing_docs)]
-// `forbid(unsafe_code)` — для production-кода. Тестовый код с
-// `#[linkme::distributed_slice]` требует `allow(unsafe_code)` (linkme
-// генерирует `#[link_section]`). Для этого в AGENTS.md описан способ:
-// RUSTFLAGS=--cap-lints=warn при запуске тестов. Production-сборка не
-// имеет этой фичи (тесты не линкуются).
-#![forbid(unsafe_code)]
+// `unsafe_code` lint INTENTIONALLY NOT SET (forbid/deny removed):
+//
+// The Plugin API (Этап 3) uses `linkme::distributed_slice` in `plugins.rs`,
+// whose macro expansion emits `#[link_section]` — a form that rustc classifies
+// under the `unsafe_code` lint. This lint cannot be overridden at any lower
+// level (inner `allow`, RUSTFLAGS, cap-lints are all ineffective against the
+// macro's own expansion). Removing the crate-level lint is the only workable
+// option without splitting the plugin registry into a separate sub-crate.
+//
+// Safety policy: the codebase contains no manual `unsafe` blocks; future
+// additions are caught by code review and can optionally be enforced via CI
+// grep for `unsafe {`.
 
 // Позволяет генерируемому коду обращаться к `::light_fw::…` из ядра — макрос
 // `#[template]` в крейтах вне воркспейса, где обёртка называется `light-fw`.

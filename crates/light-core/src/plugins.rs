@@ -9,11 +9,12 @@
 //! чтобы подставить результат как узел дерева вида
 //! [`crate::vdom::NodeKind::Custom`].
 //!
-//! Примечание о `forbid(unsafe_code)`: макрос `linkme::distributed_slice`
-//! генерирует `#[link_section]`, что формально требует `unsafe`. Критическое
-//! место (`mod plugins;` в `lib.rs`) защищено `#[allow(unsafe_code)]`, и сам
-//! код модуля `unsafe`-операторов не содержит — вся «небезопасность» живёт
-//! внутри экспандирования linkme-макроса, что допустимо для данного API.
+//! Примечание о `unsafe_code`: макрос `linkme::distributed_slice`
+//! генерирует `#[link_section]`, что формально требует `unsafe`. В `lib.rs`
+//! crate-level lint `unsafe_code` намеренно НЕ установлен (см. комментарий
+//! в `lib.rs`) — единственный работающий вариант, не требующий выносить
+//! реестр в отдельный sub-crate. Модуль сам по себе не содержит
+//! `unsafe`-операторов.
 //!
 //! ```ignore
 //! struct Datepicker { selected: Option<String> }

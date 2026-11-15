@@ -363,7 +363,7 @@ fn build_custom_element<C: Component + ?Sized>(
 ) -> Option<VElement> {
     let factory = plugins::lookup(&element.name)?;
     if let Err(msg) = plugins::check_core_version(factory.core_version_req) {
-        parse_fail(&element.name, "core-version", &format!("{msg}"));
+        parse_fail(&element.name, "core-version", &msg.to_string());
         return None;
     }
     // Атрибуты тега (имя + значение) передаются плагину как есть. Директивы
