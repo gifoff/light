@@ -629,9 +629,16 @@ impl Layout {
         // размером по `cross`-оси родителя растягивается на доступный размер;
         // иначе `Auto` даёт базу `0` (как неопределённая высота в CSS).
         let root = parent.is_none() || matches!(vnode.kind, NodeKind::Window);
+        // Кастомный элемент (Plugin API) кладётся как контейнер: плагин
+        // вернул произвольное поддерево, и layout разворачивает его по обычным
+        // правилам потока (вертикально, как Column).
         let is_container = matches!(
             vnode.kind,
-            NodeKind::Column | NodeKind::Row | NodeKind::TitleBar | NodeKind::Window
+            NodeKind::Column
+                | NodeKind::Row
+                | NodeKind::TitleBar
+                | NodeKind::Window
+                | NodeKind::Custom(_)
         );
         let stretch_w = is_container && flow.stretch == Some(Axis::Width);
         let stretch_h = is_container && flow.stretch == Some(Axis::Height);
@@ -970,8 +977,16 @@ impl Layout {
                 self.push(vnode, Rect::new(flow_x, flow_y, w, h), parent);
                 (w, h)
             }
-            NodeKind::Column | NodeKind::Row | NodeKind::TitleBar | NodeKind::Window => {
+            // Custom — атомарный контейнер: его поддерево (выданное плагином)
+            // раскладывается по обычным правилам потока, как Column.
+            NodeKind::Column
+            | NodeKind::Row
+            | NodeKind::TitleBar
+            | NodeKind::Window
+            | NodeKind::Custom(_) => {
                 let index = self.push(vnode, Rect::default(), parent);
+                // Кастомный элемент течёт вертикально (как Column): горизонтально
+                // остаются только Row и TitleBar.
                 let horizontal = matches!(vnode.kind, NodeKind::Row | NodeKind::TitleBar);
                 // Заголовок `h1`–`h5` (`Column` с теком-меткой) при `align-items !=
                 // start` родителя получает нулевую базу ширины и его внутренний текст

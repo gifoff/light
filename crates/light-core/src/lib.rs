@@ -96,6 +96,11 @@
 //! [`capture_snapshot`](devtools::capture_snapshot).
 
 #![deny(missing_docs)]
+// `forbid(unsafe_code)` — для production-кода. Тестовый код с
+// `#[linkme::distributed_slice]` требует `allow(unsafe_code)` (linkme
+// генерирует `#[link_section]`). Для этого в AGENTS.md описан способ:
+// RUSTFLAGS=--cap-lints=warn при запуске тестов. Production-сборка не
+// имеет этой фичи (тесты не линкуются).
 #![forbid(unsafe_code)]
 
 // Позволяет генерируемому коду обращаться к `::light_fw::…` из ядра — макрос
@@ -130,6 +135,7 @@ pub mod error;
 #[cfg(feature = "file-dialog")]
 pub mod file_dialog;
 pub mod layout;
+pub mod plugins;
 pub mod prelude;
 pub mod reactive;
 pub mod runtime;

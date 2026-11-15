@@ -114,6 +114,9 @@ pub fn default_role(kind: &NodeKind) -> Role {
         NodeKind::Radio { .. } => Role::RadioButton,
         #[cfg(feature = "elements-select")]
         NodeKind::Select { .. } => Role::ComboBox,
+        // Кастомный элемент плагина — непрозрачный контейнер: внутреннее
+        // содержимое рендерится плагином и не описано в VDOM.
+        NodeKind::Custom(_) => Role::GenericContainer,
     }
 }
 

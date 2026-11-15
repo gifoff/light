@@ -26,6 +26,7 @@ use std::{
 
 use crate::{
     component::{Component, WindowConfig},
+    plugins,
     vdom::{
         Align, ButtonType, Edges, NodeKind, Offset, Overflow, Position, RequiredIndicator, Resize,
         SelectOption, Size, Style, VElement, intern_key, parse_align_items, parse_bool,
@@ -273,10 +274,16 @@ fn build_element<C: Component + ?Sized>(
         "checkbox" => (ElementKind::Checkbox, None),
         "radio" => (ElementKind::Radio, None),
         "select" => (ElementKind::Select, None),
-        _ => {
-            parse_fail(&element.name, "tag", &element.name);
-            return None;
-        }
+        // Нестандартный тег: ищем зарегистрированную фабрику плагина (Plugin API,
+        // Этап 3). Если плагин подключён — строим кастомный элемент через его
+        // render(); если нет — это неподдерживаемый тег (откат как раньше).
+        _ => match build_custom_element(element, component) {
+            Some(custom) => return Some(custom),
+            None => {
+                parse_fail(&element.name, "tag", &element.name);
+                return None;
+            }
+        },
     };
     let leaf = match &kind {
         ElementKind::Container(node_kind) => {
@@ -335,6 +342,65 @@ fn build_element<C: Component + ?Sized>(
         elem = elem.with_style(s);
     }
     Some(elem)
+}
+
+/// Строит кастомный элемент, зарегистрированный плагином (Plugin API, Этап 3).
+///
+/// Ищет фабрику по тегу в distributed-slice [`plugins::REGISTERED_COMPONENTS`],
+/// проверяет совместимость версии ядра, создаёт экземпляр и вызывает его
+/// [`CustomElement::render`](crate::plugins::CustomElement::render) с
+/// атрибутами тега и уже разобранными дочерними узлами. Результат оборачивается
+/// в [`NodeKind::Custom`] с интернированным ключом — так layout/paint/diff
+/// видят его как атомарное целое, а окно может доставлять события плагину.
+///
+/// Возвращает `None`, если тег не зарегистрирован (это обычный
+/// «неподдерживаемый тег» — откат к статическому дереву) или если версия
+/// ядра несовместима с требованием плагина. В обоих случаях запись в лог идёт
+/// через [`parse_fail`].
+fn build_custom_element<C: Component + ?Sized>(
+    element: &light_fw_html::Element,
+    component: &C,
+) -> Option<VElement> {
+    let factory = plugins::lookup(&element.name)?;
+    if let Err(msg) = plugins::check_core_version(factory.core_version_req) {
+        parse_fail(&element.name, "core-version", &format!("{msg}"));
+        return None;
+    }
+    // Атрибуты тега (имя + значение) передаются плагину как есть. Директивы
+    // (`@click`/`:attr`/`v-if`) не поддерживаются в runtime-шаблонах и уже
+    // отсеяны вызывающим кодом — сюда доходят только простые атрибуты.
+    let attrs: Vec<(&'static str, String)> = element
+        .attrs
+        .iter()
+        .map(|a| (intern_key(&a.name), a.value.clone()))
+        .collect();
+    // Дочерние узлы разбираем с обычным компонентом: тексты с `{{ }}`
+    // интёрполируются геттером компонента, элементы — рекурсивно. Кастомный
+    // тег внутри (если плагин вкладывает свой же тег) снова попадёт в
+    // `build_custom_element` через общий путь `build_element`.
+    let children = build_children(&element.children, ROOT_KEY, &NodeKind::Column, component)?;
+    let instance = (factory.factory)();
+    let mut rendered = instance.render(&attrs, &children);
+    // Плагин вернул произвольное поддерево. Перекрашиваем корень в
+    // Custom(tag): ядро узнаёт, что это чужой элемент, и layout/paint/diff
+    // обрабатывают его как атомарное целое. Дочерние узлы остаются в
+    // поддереве — layout развернёт их как у обычного контейнера.
+    // Если плагин вернул лист (Text/Button и т. п.), оборачиваем его в
+    // Column, чтобы Custom гарантированно оставался контейнером.
+    if !matches!(
+        rendered.kind,
+        NodeKind::Column
+            | NodeKind::Row
+            | NodeKind::TitleBar
+            | NodeKind::Window
+            | NodeKind::Custom(_)
+    ) {
+        let col = VElement::container(intern_key(ROOT_KEY), NodeKind::Column, vec![rendered]);
+        rendered = col;
+    }
+    let tag = intern_key(&element.name);
+    rendered.kind = NodeKind::Custom(tag);
+    Some(rendered)
 }
 
 /// Строит список дочерних узлов.
@@ -1036,4 +1102,47 @@ fn build_window_config(element: &light_fw_html::Element) -> WindowConfig {
         }
     }
     cfg
+}
+
+/// Тесты кастомных элементов (Plugin API, Этап 3).
+///
+/// Полноценные проверки рендера через `parse_template` находятся в
+/// интеграционном тесте [`crate::tests::custom_elements`] (там же
+/// живёт фиктивный «datepicker», подключённый через distributed-slice).
+/// Здесь — только smoke-тест для незарегистрированного тега.
+#[cfg(test)]
+mod custom_smoke_tests {
+    use super::*;
+    use crate::vdom::VElement;
+
+    /// Тестовый компонент без полей и реактивности.
+    struct NullComponent;
+    impl Component for NullComponent {
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+
+        fn render(&self) -> VElement {
+            VElement::container(intern_key(ROOT_KEY), NodeKind::Column, Vec::new())
+        }
+    }
+
+    /// Несуществующий тег → build_custom_element возвращает None (и запись
+    /// в лог через parse_fail). Публичный путь — через parse_template, но
+    /// здесь проверяется именно внутренний helper.
+    #[test]
+    fn build_custom_unregistered_returns_none() {
+        // <totally-unknown-tag> с одним текстовым дочерним узлом.
+        let el = light_fw_html::Element {
+            name: "totally-unknown-tag".to_string(),
+            attrs: Vec::new(),
+            children: vec![light_fw_html::Node::Text(vec![
+                light_fw_html::Segment::Literal("hi".to_string()),
+            ])],
+        };
+        assert!(
+            build_custom_element::<NullComponent>(&el, &NullComponent).is_none(),
+            "незарегистрированный тег должен давать None"
+        );
+    }
 }

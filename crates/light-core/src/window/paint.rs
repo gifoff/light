@@ -600,6 +600,10 @@ pub fn render(
                 crate::vdom::NodeKind::Column
                 | crate::vdom::NodeKind::Row
                 | crate::vdom::NodeKind::Window => {}
+                // Кастомный элемент плагина: фон (background) уже отрисован выше,
+                // содержимое — как у Column (отдельные children в своём цикле),
+                // дополнительная обводка/рамка не нужна.
+                crate::vdom::NodeKind::Custom(_) => {}
                 crate::vdom::NodeKind::TitleBar => {
                     if style.border_size > 0.0 {
                         if let Some(color) = style.border_color {

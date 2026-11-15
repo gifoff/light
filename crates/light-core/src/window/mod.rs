@@ -632,6 +632,9 @@ impl WindowState {
             }),
             #[cfg(feature = "elements-select")]
             NodeKind::Select { .. } => Some(ClickAction::ToggleSelect(node.key)),
+            // Кастомный элемент плагина: клик доставляется как обычный
+            // Click, чтобы @click-обработчик (и on_event плагина) сработали.
+            NodeKind::Custom(_) => Some(ClickAction::Click(node.key)),
             _ => None,
         }
     }
