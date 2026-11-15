@@ -67,10 +67,9 @@ Workaround: `cargo build --release -p light`. Или clippy без network:
 временного файла в `C:\Temp`. Файлы `examples/dashboard/src/main.rs`
 не менялись в этой ветке.
 
-### `light-fw-cli-core` — network-dependent integration (5 шт.)
+### `light-fw-cli-core` — network-dependent integration (4 шт.)
 
 - `tests/search_integration.rs` — 4 теста (mock server 404 / network)
-- `tests/session.rs` — 1 тест (network)
 
 Нужен локальный mock-сервер или доступ к сети, который в CI есть, а
 локально (по EDR/сетевую политику) — нет.
@@ -119,3 +118,11 @@ Doctor честно детектит несовместимость и заве�
 Фикстуры `core-workspace` синхронизированы: workspace `0.7.0` → `0.18.0`,
 form `^0.7` → `^0.17`. `registry.toml` не тронут (production data,
 бум в 0.19.0).
+
+## Починено в da16407 (Stage 0, feature/plugin-api)
+
+- `stop_without_active_session_fails` (crates/light-cli-core/tests/session.rs) —
+  `stop_session` возвращала `Ok(path)` для несуществующей сессии, создавая
+  пустые артефакты. Добавлен guard: `if !sessions_dir(cwd).join(id).is_dir()`
+  → `Err(SessionError::NoActiveSession)`. Тест не менялся — он был написан
+  под правильный контракт, код потерял проверку.
