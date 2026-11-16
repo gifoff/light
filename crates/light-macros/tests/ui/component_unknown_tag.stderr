@@ -1,4 +1,4 @@
-﻿error: неизвестный элемент <datepicker>; поддерживаются: <div>, <span>, <h1>…<h5>, <text>, <password>, <checkbox>, <radio>, <select>, <option>, <button>, <titlebar>, <image>, <include>, <window>. Для собственного элемента объявите тег в [package.metadata.light.provides] elements в Cargo.toml и реализуйте его через #[component] (Plugin API)
+error: неизвестный элемент <datepicker>; поддерживаются: <div>, <span>, <h1>…<h5>, <text>, <password>, <checkbox>, <radio>, <select>, <option>, <button>, <titlebar>, <image>, <include>, <window>. Для собственного элемента объявите тег в [package.metadata.light.provides] elements в Cargo.toml и реализуйте его через #[component] (Plugin API)
  --> $DIR/component_unknown_tag.rs:14:1
   |
 14 | #[template("../../../../crates/light-macros/templates/ui_unknown_tag.html")]
