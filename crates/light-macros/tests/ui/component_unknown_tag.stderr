@@ -1,2 +1,15 @@
 error: неизвестный элемент <datepicker>; поддерживаются: <div>, <span>, <h1>…<h5>, <text>, <password>, <checkbox>, <radio>, <select>, <option>, <button>, <titlebar>, <image>, <include>, <window>. Для собственного элемента объявите тег в [package.metadata.light.provides] elements в Cargo.toml и реализуйте его через #[component] (Plugin API)
-  --> $DIR/ui/component_unknown_tag.rs:LL:NN
+ --> $DIR/component_unknown_tag.rs:14:1
+  |
+14 | #[template("../../../../crates/light-macros/templates/ui_unknown_tag.html")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `template` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unused import: `proxy`
+ --> $DIR/component_unknown_tag.rs:12:16
+  |
+12 | use light_fw::{proxy, template};
+  |                ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
