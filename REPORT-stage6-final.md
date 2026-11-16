@@ -160,13 +160,17 @@ with `NodeKind::Custom` → runtime `build_custom_element` → plugin factory
 
 ## 6. CI
 
-**Run URL:** https://github.com/gifoff/light/actions/runs/43903198801
+**Run URL:** https://github.com/gitoff/light/actions/runs/43907728515
 
-- Commit: `f057e8f` (report commit, on top of code commit `a9ef36e`)
+- Commit: `a9ef36e` (code) + `65ae1c5` (test fix)
 - Branch: `release/0.19.0`
-- Code run (same tree): https://github.com/gifoff/light/actions/runs/43901196467
-- Status: in progress at time of report writing; expected 15/15 based on
-  previous runs `6f03e9f` → 15/15 green
+- **Status: 15/15 GREEN** (success)
+
+First run (https://github.com/gitoff/light/actions/runs/43904199464, commit
+`a9ef36e`) failed 14/15: the pre-existing integration test `check_datepicker_is_unknown`
+asserted that `<datepicker>` is an unknown tag, but Stage 6 adds `light-widget-datepicker`
+to the bundled registry, so `compare_tags` now classifies it as *available*. Fixed in
+`65ae1c5` (test renamed to `check_datepicker_is_available`, assertions updated).
 
 Previous runs for reference:
 - `fc0fe5c` run 43880919188 — 15/15 ✅
