@@ -5,11 +5,3 @@ error: неизвестный элемент <datepicker>; поддержива�
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   |
   = note: this error originates in the attribute macro `template` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-warning: unused import: `proxy`
- --> $DIR/component_unknown_tag.rs:12:16
-  |
-12 | use light_fw::{proxy, template};
-  |                ^^^^^
-  |
-  = note: `[warn(unused_imports)]` (part of `[warn(unused)]`) on by default

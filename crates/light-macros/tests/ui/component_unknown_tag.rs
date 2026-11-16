@@ -9,10 +9,9 @@
 //! (`target/tests/trybuild/light-fw-macros/`), где `CARGO_MANIFEST_DIR`
 //! указывает на этот каталог при компиляции.
 
-use light_fw::{proxy, template};
+use light_fw::template;
 
 #[template("../../../../crates/light-macros/templates/ui_unknown_tag.html")]
-#[proxy]
 struct UiApp {
     title: String,
 }
