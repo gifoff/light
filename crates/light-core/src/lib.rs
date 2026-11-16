@@ -176,7 +176,7 @@ pub use devtools::{
 };
 pub use dom::Dom;
 pub use error::{Error, Result};
-pub use light_fw_macros::{proxy, template};
+pub use light_fw_macros::{component, proxy, template};
 pub use reactive::{Property, Proxy, ProxyState, Watcher, watch};
 #[cfg(feature = "window")]
 pub use render::RendererBackend;

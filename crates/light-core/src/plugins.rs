@@ -16,6 +16,12 @@
 //! реестр в отдельный sub-crate. Модуль сам по себе не содержит
 //! `unsafe`-операторов.
 //!
+//! Примечание о `Send + Sync`: [`CustomElement`] реализует только `Any`.
+//! Экземпляры живут в потоке отрисовки (ядро создаёт и использует их там же,
+//! см. [`crate::runtime::build_custom_element`]), а реактивные `Property`
+//! используют `Rc<RefCell<_>>` — межпоточные маркеры не нужны и ломали бы
+//! типичный плагин с `Property`.
+//!
 //! ```ignore
 //! struct Datepicker { selected: Option<String> }
 //! impl CustomElement for Datepicker {
@@ -46,7 +52,14 @@ use crate::vdom::{Event, VElement};
 /// [`CustomElementFactory::factory`]. Тег фиксируется статически
 /// ([`tag`](Self::tag)), рендер — [`render`](Self::render), реакция на
 /// события — необязательный [`on_event`](Self::on_event).
-pub trait CustomElement: Any + Send + Sync {
+///
+/// Границы: **только [`Any`]** — без `Send + Sync`. Реактивные свойства
+/// (`Property`) используют `Rc<RefCell<_>>` и живут исключительно в потоке
+/// отрисовки; ядро создаёт/вызывает экземпляры в том же потоке и не держит их
+/// между кадрами, поэтому межпоточные маркеры не требуются. Плагин с
+/// собственным состоянием должен хранить его в `RwLock`/`Atomic*`, только
+/// если он реально передаёт данные в другие потоки.
+pub trait CustomElement: Any {
     /// Имя тега элемента (например `"datepicker"`). Статически, чтобы
     /// сравнивать при поиске фабрики по тегу.
     fn tag(&self) -> &'static str
@@ -199,8 +212,9 @@ mod tests {
     ///
     /// Не содержит состояния: достаточно для проверки, что runtime
     /// действительно вызывает `render` и оборачивает результат в
-    /// `NodeKind::Custom`. Реальные плагины хранят состояние в `RwLock` /
-    /// `AtomicUsize` (требуется `Send + Sync`).
+    /// `NodeKind::Custom`. Реальные плагины хранят состояние в
+    /// реактивных `Property` (один поток отрисовки) или в `RwLock`/
+    /// `AtomicUsize`, если данные уходят в другие потоки.
     struct FakeDatepicker;
 
     impl CustomElement for FakeDatepicker {

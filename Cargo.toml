@@ -17,6 +17,7 @@ members = [
     "examples/async-counter",
     "examples/multi-window",
     "examples/devtools-demo",
+    "examples/plugin-demo",
 ]
 
 [workspace.package]

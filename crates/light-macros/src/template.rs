@@ -198,16 +198,18 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").map_err(|_| {
-        syn::Error::new(
-            Span::call_site(),
-            "РЅРµ СѓРґР°Р»РѕСЃСЊ РѕРїСЂРµРґРµР»РёС‚СЊ CARGO_MANIFEST_DIR",
-        )
-    })?;
-    let manifest_dir = PathBuf::from(manifest_dir);
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."));
     let full_path = manifest_dir.join(&relative);
     let mut stack = Vec::new();
     let loaded = load_nodes(&full_path, &mut stack)?;
+
+    // Кастомные теги текущего пакета: `[package.metadata.light.provides.elements]`.
+    // Читается *умершим* манифестом (см. `crate::provides`): если `Cargo.toml`
+    // отсутствует или бит — пустой набор, стандартные элементы продолжают
+    // работать, неизвестный тег даст понятную `compile_error!` (ТЗ 0.19.0 Этап 4).
+    let custom_tags = crate::provides::read_provides_elements(&manifest_dir);
 
     // РљРѕСЂРЅРµРІРѕР№ РЎРЊР В»Р ВµР СР ВµР Р…РЎвЂљ `<window>` РѕРїРёСЃС‹РІР°РµС‚ РЎРѓР С‘РЎРѓРЎвЂљР ВµР СР Р…Р С•Р Вµ РѕРєРЅРѕ; РµРіРѕ РґРµС‚Рё вЂ”
     // РЎРѓР С•Р Т‘Р ВµРЎР‚Р В¶Р С‘Р СР С•Р Вµ РёРЅС‚РµСЂС„РµР№СЃР°. РџСѓСЃС‚РѕР№ С€Р°Р±Р»РѕРЅ (Р±РµР· СѓР·Р»РѕРІ) Р Т‘Р В°РЎвЂРЎвЂљ `None` вЂ”
@@ -239,7 +241,13 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
-    let mut generator = Generator::default();
+    // Инициализируем `custom_tags` при создании, чтобы не ловить
+    // `clippy::field_reassign_with_default` (генератор остаётся `mut` —
+    // в процессе генерации он накапливает `arms`, `scopes`, обработчики и т. д.).
+    let mut generator = Generator {
+        custom_tags,
+        ..Default::default()
+    };
     if let Some(element) = &window {
         generator.push_events(element, &quote!(""))?;
     }
@@ -794,6 +802,11 @@ fn validate_include(attrs: &[Attr]) -> syn::Result<()> {
 #[derive(Default)]
 struct Generator {
     arms: Vec<TokenStream>,
+    /// Кастомные теги текущего пакета (из `[package.metadata.light.provides.elements]`).
+    /// Разрешены в HTML-шаблонах и рендерятся как `NodeKind::Custom` через
+    /// плагинную фабрику; прочие нестандартные теги — `compile_error!`
+    /// (ТЗ 0.19.0 Этап 4, Plugin API).
+    custom_tags: std::collections::HashSet<String>,
     /// РРјРµРЅР° локальных переменных `v-for`, видимых в текущей вложенности.
     scopes: Vec<String>,
     /// Пользовательские проверки полей: `(ключ узла, вызов метода)`.
@@ -1233,6 +1246,12 @@ impl Generator {
                 ),
             ));
         }
+        // Кастомный тег (ТЗ 0.19.0 Этап 4, Plugin API): объявлен в
+        // `[package.metadata.light.provides.elements]` текущего пакета →
+        // рендерится как `NodeKind::Custom` через плагинную фабрику
+        // (`runtime::build_custom_element`), атрибуты и дети передаются ядром.
+        // Прочие нестандартные теги — ошибка компиляции с подсказкой, как
+        // объявить свой элемент.
         match element.name.as_str() {
             "div" => self.gen_container(element, key, None),
             "span" => self.gen_container(element, key, None),
@@ -1249,15 +1268,44 @@ impl Generator {
             "radio" => self.gen_radio(element, key),
             "select" => self.gen_select(element, key),
             "image" => self.gen_image(element, key),
+            name if self.custom_tags.contains(name) => self.gen_custom_element(element, key),
             other => Err(syn::Error::new(
                 Span::call_site(),
                 format!(
                     "неизвестный элемент <{other}>; поддерживаются: \
                      <div>, <span>, <h1>…<h5>, <text>, <password>, <checkbox>, <radio>, \
-                     <select>, <option>, <button>, <titlebar>, <image>, <include>, <template>"
+                     <select>, <option>, <button>, <titlebar>, <image>, <include>, <window>. \
+                     Для собственного элемента объявите тег в [package.metadata.light.provides] \
+                     elements в Cargo.toml и реализуйте его через #[component] (Plugin API)"
                 ),
             )),
         }
+    }
+
+    /// Кастомный элемент (плагин, ТЗ 0.19.0 Этап 4): объявлен в
+    /// `[package.metadata.light.provides.elements]` текущего пакета.
+    ///
+    /// Статически генерируется как контейнер `NodeKind::Custom(<тег>)`.
+    /// На самом деле контент подставляется runtime'ом в
+    /// `runtime::build_custom_element`, где фабрика (созданная через
+    /// `#[linkme::distributed_slice(REGISTERED_COMPONENTS)]` в `#[component]`)
+    /// вызывает `render` плагина и перекрашивает корень в `Custom(тег)`.
+    /// Атрибуты и дочерние узлы из HTML передаются плагину тем же путём.
+    fn gen_custom_element(&mut self, element: &Element, key: &KeyExpr) -> syn::Result<TokenStream> {
+        let tag_literal = element.name.clone();
+        // Ключ для контейнера (без `.token()` — он нужен только для `#key` в quote!).
+        let children_tokens = self.gen_children(&element.children, Some(key))?;
+        let key = key.token();
+        Ok(quote! {
+            __children.push(
+                ::light_fw::vdom::VElement::container(
+                    #key,
+                    ::light_fw::vdom::NodeKind::Custom(::light_fw::vdom::intern_key(#tag_literal)),
+                    vec![],
+                )
+            );
+            #(#children_tokens)*
+        })
     }
 
     /// Ветви обработчиков событий элемента; регистрируются в `arms`.
