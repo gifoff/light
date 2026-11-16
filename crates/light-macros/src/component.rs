@@ -179,7 +179,7 @@ pub(super) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             let tag: &'static str = #tag_lit;
             ::light_fw::plugins::CustomElementFactory {
                 tag,
-                core_version_req: "^0.18",
+                core_version_req: "^0.19",
                 crate_name: env!("CARGO_PKG_NAME"),
                 provides: &[tag],
                 factory: || ::std::boxed::Box::new(#ident::new()),
@@ -228,7 +228,7 @@ mod tests {
             "не хватает linkme-фабрики: {text}"
         );
         assert!(
-            text.contains("^0.18"),
+            text.contains("^0.19"),
             "нет требования к версии ядра: {text}"
         );
         assert!(
