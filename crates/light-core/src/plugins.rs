@@ -78,7 +78,46 @@ pub trait CustomElement: Any {
     /// По умолчанию ничего не делает; переопределяется элементами, которым
     /// нужна реактивность внутри. Перерисовка запрашивается через
     /// [`EventCtx::schedule_redraw`].
+    ///
+    /// **Собственное состояние** (Этап 5): ядро сохраняет экземпляр по ключу
+    /// родительского узла и передаёт его в `on_event` как `&mut self`. Плагин
+    /// может мутировать собственное состояние — например, `downcast_mut::<T>()`
+    /// из [`Any`], чтобы привести `self` к конкретному типу и изменить поле, а
+    /// затем вызвать `ctx.schedule_redraw()`. Следующий рендер увидит обновлённое
+    /// состояние (макрос `#[component]` создаёт новый экземпляр при каждом
+    /// `render`, поэтому мутации должны быть видны на следующем кадре).
     fn on_event(&mut self, _event: &Event, _ctx: &mut EventCtx<'_>) {}
+}
+
+/// Даункаст `dyn CustomElement` к конкретному типу.
+///
+/// Псевдоним для читаемости тестов и отладочного кода. В production-коде
+/// не нужен — плагин уже знает свой тип внутри `on_event` (через `&mut self`).
+///
+/// ```rust
+/// use light_fw_core::plugins::{CustomElement, downcast_custom};
+/// use std::cell::Cell;
+///
+/// struct Counter { count: Cell<i32> }
+/// impl CustomElement for Counter {
+///     fn tag(&self) -> &'static str { "counter" }
+///     fn render(&self, _: &[(&str, String)], _: &[light_fw_core::vdom::VElement]) -> light_fw_core::vdom::VElement { unimplemented!() }
+///     fn on_event(&mut self, e: &light_fw_core::vdom::Event, ctx: &mut light_fw_core::plugins::EventCtx) {
+///         if matches!(e, light_fw_core::vdom::Event::Click) {
+///             self.count.set(self.count.get() + 1);
+///             ctx.schedule_redraw();
+///         }
+///     }
+/// }
+/// let mut box_elem: Box<dyn CustomElement> = Box::new(Counter { count: Cell::new(0) });
+/// let counter = downcast_custom::<Counter>(&*box_elem).expect("должен быть Counter");
+/// assert_eq!(counter.count.get(), 0);
+/// ```
+pub fn downcast_custom<T: 'static>(elem: &dyn CustomElement) -> Option<&T> {
+    // `CustomElement: Any`, therefore `&dyn CustomElement` coerces to `&dyn Any`
+    // (unsize_coercion, stable since Rust 1.86).
+    let any: &dyn Any = elem;
+    any.downcast_ref::<T>()
 }
 
 /// Контекст события, передаваемый в [`CustomElement::on_event`].
@@ -90,7 +129,17 @@ pub struct EventCtx<'a> {
     pub(crate) redraw: &'a dyn Fn(),
 }
 
-impl EventCtx<'_> {
+impl<'a> EventCtx<'a> {
+    /// Создаёт новый контекст событий.
+    ///
+    /// `redraw` — замыкание, которое вызывается при
+    /// [`schedule_redraw`](Self::schedule_redraw). В production-коде ядро
+    /// создаёт этот экземпляр самостоятельно; публичный конструктор нужен
+    /// для тестов и интеграционных примеров.
+    pub fn new(redraw: &'a dyn Fn()) -> Self {
+        Self { redraw }
+    }
+
     /// Запрашивает перерисовку окна (вызывается оконным бэкендом после
     /// обработки всех событий текущего кадра).
     pub fn schedule_redraw(&self) {

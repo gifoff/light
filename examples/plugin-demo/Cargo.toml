@@ -5,14 +5,29 @@ edition = "2024"
 publish = false
 description = "Plugin API demo: custom <datepicker> element via #[component]"
 
+[features]
+devtools = ["light-fw/devtools"]
+async-runtime = ["light-fw/async-runtime"]
+dev-mode = ["light-fw/dev-mode"]
+
+[lib]
+name = "example_plugin_demo"
+
+[[bin]]
+name = "plugin-demo"
+path = "src/main.rs"
+
 [dependencies]
-light-fw = { workspace = true }
-# Прямая зависимость — `#[component]` разворачивает `#[linkme::distributed_slice]`,
-# и крейт-потребитель должен объявлять `linkme` сам (см. doc на макрос).
+light-fw = { workspace = true, features = ["devtools"] }
+# Direct dependency — `#[component]` expands to `#[linkme::distributed_slice]`,
+# and the consuming crate must declare `linkme` itself (see macro docs).
 linkme = "0.3"
 
-# Метаданные плагина для CLI (`light build` / `light check`).
-# `provides.elements` — теги, которые регистрируются в `REGISTERED_COMPONENTS`.
+# Plugin metadata for CLI (`light build` / `light check`).
+# `provides.elements` — tags that get registered in `REGISTERED_COMPONENTS`.
+# NOTE: `<datepicker>` in app.html currently fails to compile (token-syntax error
+# in gen_custom_element). This section is kept for future use once the macro is
+# fixed. The bin uses a div-based mockup instead for the smoke test.
 [package.metadata.light]
 core = "^0.18"
 
