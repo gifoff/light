@@ -50,4 +50,3 @@ toml = "0.8"
 
 [dev-dependencies]
 trybuild = "1"
-light-fw = { workspace = true }

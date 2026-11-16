@@ -2365,6 +2365,7 @@ dependencies = [
  "serde_json",
  "softbuffer",
  "thiserror 2.0.21",
+ "trybuild",
  "winit",
 ]
 
@@ -2393,7 +2394,6 @@ version = "0.19.0"
 name = "light-fw-macros"
 version = "0.19.0"
 dependencies = [
- "light-fw",
  "light-fw-html",
  "proc-macro2",
  "quote",
