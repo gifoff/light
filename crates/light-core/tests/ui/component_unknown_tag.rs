@@ -11,7 +11,7 @@
 
 use light_fw_core::template;
 
-#[template("../../../../../crates/light-core/templates/ui_unknown_tag.html")]
+#[template("../../../../crates/light-core/templates/ui_unknown_tag.html")]
 struct UiApp {
     title: String,
 }
