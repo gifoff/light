@@ -29,3 +29,15 @@ core = "^0.17"
 light-features = ["validation"]
 attributes = [":validator", "required"]
 directives = ["@validate"]
+
+# Этап 6 Plugin API: дата-пикер — первый «внешний» плагин (`light-widget-*`),
+# реализованный в workspace (`examples/plugin-demo`). После `light init` +
+# `<datepicker />` CLI classifies тег как `available` и предлагает
+# `light add light-widget-datepicker` (автоустановка в `light dev`/`build`).
+[[components]]
+name = "light-widget-datepicker"
+kind = "element"
+display-name = "Date Picker"
+version = "0.1.0"
+core = "^0.18"
+elements = ["datepicker"]

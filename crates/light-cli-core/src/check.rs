@@ -683,15 +683,36 @@ mod tests {
     }
 
     #[test]
-    fn check_compare_datepicker_without_plugin_is_unknown() {
+    fn check_compare_unknown_tag_is_unknown() {
+        // Этап 6 Plugin API: `datepicker` теперь есть в bundled registry.toml
+        // (`light-widget-datepicker`), поэтому для покрытия `unknown`-ветки
+        // используем тег, которого реально нет ни в ядре, ни в реестре.
+        let mut used: BTreeMap<String, usize> = BTreeMap::new();
+        used.insert("div".into(), 1);
+        used.insert("alien-widget".into(), 1);
+        let installed: Vec<ComponentInfo> = Vec::new();
+        let report = compare_tags(&used, &installed);
+        // alien-widget нет в bundled registry.toml → unknown.
+        assert!(report.available.is_empty());
+        assert_eq!(report.unknown, vec!["alien-widget".to_string()]);
+        assert!(report.has_problems());
+    }
+
+    #[test]
+    fn check_compare_datepicker_without_plugin_is_available() {
+        // Этап 6 Plugin API: `<datepicker />` в свежем проекте (плагин не
+        // установлен) классифицируется как `available` — `light dev`/`build`
+        // предложат установить `light-widget-datepicker`.
         let mut used: BTreeMap<String, usize> = BTreeMap::new();
         used.insert("div".into(), 1);
         used.insert("datepicker".into(), 1);
         let installed: Vec<ComponentInfo> = Vec::new();
         let report = compare_tags(&used, &installed);
-        // datepicker нет в bundled registry.toml → unknown.
-        assert!(report.available.is_empty());
-        assert_eq!(report.unknown, vec!["datepicker".to_string()]);
+        assert!(report.installed.is_empty());
+        assert_eq!(report.available.len(), 1);
+        assert_eq!(report.available[0].tag, "datepicker");
+        assert_eq!(report.available[0].crate_name, "light-widget-datepicker");
+        assert!(report.unknown.is_empty());
         assert!(report.has_problems());
     }
 
