@@ -1,3 +1,26 @@
+## [0.19.0] - 2026-11-16
+
+### Added
+
+- **Plugin API**: `CustomElement` trait, `linkme` registry, `NodeKind::Custom`, runtime `on_event` dispatch. Сторонние крейты могут добавлять собственные HTML-теги без форка ядра.
+- **Макрос** `#[component(tag = "...")]` (крейт `light-fw-macros`) для регистрации кастомных тегов.
+- **CLI**: `light check` — 5 категорий (установлено, доступно, неизвестно, не используется, конфликты).
+- **CLI**: `light add --force` + разрешение конфликтов в `light.lock` (секция `[plugins]`).
+- **CLI**: auto-discovery кастомных тегов в `light dev` (TTY → prompt, non-TTY → auto-install, `--no-auto-install` → instructions only).
+- **Example**: `examples/plugin-demo` с демонстрационным тегом `<datepicker />`.
+
+### Fixed
+
+- `gen_custom_element` (токен-синтаксис).
+- `light check` graceful fallback при ошибке `cargo metadata`.
+- `session.rs` (macOS флейк).
+
+### Docs
+
+- Обновлены `docs/cli.md`, `docs/guide.md` (раздел «Плагины и кастомные теги»), `AGENTS.md` (правила CI и Pre-existing failures).
+- `README.md`: статус 0.19.0 + упоминание Plugin API.
+- `docs/ROADMAP.md`: 0.19.0 отмечена как выполненная.
+
 ## [Unreleased]
 
 ### Added

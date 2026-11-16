@@ -367,7 +367,7 @@ edition = "2021"
 [package.metadata.light]
 kind = "widget"
 display-name = "Date Picker"
-core = "^0.18"
+core = "^0.19"
 [package.metadata.light.provides]
 elements = ["datepicker"]
 "#;
@@ -440,7 +440,7 @@ edition = "2021"
                 assert_eq!(meta.crate_name, "light-widget-datepicker");
                 assert_eq!(meta.version, "0.19.0");
                 assert_eq!(meta.kind.as_deref(), Some("widget"));
-                assert_eq!(meta.core_version_req.as_deref(), Some("^0.18"));
+                assert_eq!(meta.core_version_req.as_deref(), Some("^0.19"));
                 assert_eq!(meta.provides_elements, vec!["datepicker"]);
                 assert!(meta.provides_attributes.is_empty());
                 assert!(meta.requires_components.is_empty());
@@ -495,7 +495,7 @@ edition = "2021"
 [package.metadata.light]
 kind = "subsystem"
 display-name = "A11y"
-core = "^0.18"
+core = "^0.19"
 "#;
         let result = validate_metadata(toml, "light-subsystem-a11y");
         match result {

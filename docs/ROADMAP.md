@@ -106,10 +106,21 @@ DevTools TCP-порт (`127.0.0.1`, по умолчанию 9229; все при�
 
 ---
 
-## Версия 0.19.0+ — Ядро и расширяемость
+## Версия 0.19.0 (выполнено) — Plugin API v1
+
+- **Plugin API**: `CustomElement` trait, `linkme`-реестр, `NodeKind::Custom`, runtime `on_event` dispatch ✓.
+- Макрос `#[component(tag = "...")]` для регистрации кастомных тегов ✓.
+- `light check`: 5 категорий (установлено, доступно, неизвестно, не используется, конфликты) ✓.
+- `light add --force` + разрешение конфликтов в `light.lock` ✓.
+- Auto-discovery кастомных тегов в `light dev` (TTY/non-TTY/`--no-auto-install`) ✓.
+- Пример `examples/plugin-demo` (`<datepicker />`) ✓.
+- Документация: `docs/cli.md`, `docs/guide.md`, `AGENTS.md` ✓.
+
+---
+
+## Версия 0.20.0+ — Ядро и расширяемость
 
 - **Fix Layout**: Полная поддержка flexbox-модели для текстовых узлов и вложенных контейнеров (баг с `<div>` внутри `align-items="center"`).
-- **Plugin API**: Возможность создавать новые теги (`NodeKind`) из сторонних крейтов без форка ядра.
 
 ---
 
