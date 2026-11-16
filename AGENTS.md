@@ -160,6 +160,89 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features -j 2
 ```
 
+**`cargo build -p light` (debug) с фичей `network`** — `reqwest` → `ring`
+превышает лимит командной строки MSVC (D8050). Обход:
+- `cargo build --release -p light` (release работает);
+- `cargo clippy -p light-fw-cli-core --no-default-features -- -D warnings`
+  (без network — для проверки логики);
+- полный clippy с network — только в CI (Linux).
+
+## CI Workflow (.github/workflows/ci.yml)
+
+CI состоит из 15 джобов:
+
+- `fmt` (Linux): `cargo fmt --all -- --check`.
+- `docs` (Linux): `mdbook build`.
+- `clippy` (3 OS): `cargo clippy --all-targets --all-features -- -D warnings`.
+- `test` (3 OS): `cargo test --all-features` + `cargo bench --no-run`.
+- `build-default` (Windows): сборка примеров без `--all-features`.
+- `features` (Linux, 6 вариантов): `cargo test -p light-fw --no-default-features --features "..."`.
+
+### Обязательные правила
+
+1. **Локальный прогон перед push** (минимум):
+   ```powershell
+   $env:CARGO_BUILD_JOBS = "1"
+   cargo fmt --all -- --check
+   cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+   cargo test --workspace --all-features --release -j 2 --no-fail-fast
+   ```
+   Если 0 failed — можно пушить. Иначе — фиксить до пуша.
+
+2. **D8050 (Windows debug)**: `cargo build -p light` (debug) с
+   фичей `network` падает. Использовать `--release` или
+   `--no-default-features`. См. `docs/TODO_TESTS.md`.
+
+3. **CARGO_BUILD_JOBS в workflow**: не ставить пустую строку
+   (`''`). Использовать `'default'` или конкретное число.
+
+4. **Features-джобы**: таргет `-p light-fw` (не `-p light` —
+   фичи живут в мета-крейте).
+
+5. **После пуша**: смотреть CI-status PR. Если красный — фиксить
+   немедленно (не откладывать). Красный CI на release-ветке —
+   блокер мержа.
+
+### Что НЕ делать
+
+- ❌ Не отключать джобы через `if: false` или `continue-on-error: true`
+  ради зелёного CI.
+- ❌ Не добавлять `#[ignore]` в тесты ради прохождения.
+- ❌ Не мержить с красным CI.
+- ❌ Не создавать push в master без PR (кроме hotfix-релизов,
+  согласованных с пользователем).
+
+### Чтение логов CI (GH_TOKEN)
+
+Агенту предоставлен read-only токен `GH_TOKEN` (переменная окружения).
+Он позволяет читать статусы и логи GitHub Actions.
+
+**Когда использовать:**
+- Если CI упал (красный), агент **обязан** использовать `gh` для
+  получения логов, прежде чем делать выводы о причинах.
+- Запрещено писать «вероятно, pre-existing» или «ошибка в окружении»,
+  если есть возможность посмотреть точный стектрейс.
+
+**Как использовать:**
+```bash
+# Посмотреть последние запуски
+gh run list --branch release/0.19.0 --limit 3
+
+# Посмотреть статус конкретного запуска
+gh run view <run-id>
+
+# Показать ТОЛЬКО логи упавших джобов (главная команда)
+gh run view <run-id> --log-failed
+
+# Скачать все логи (если нужно посмотреть зелёные)
+gh run view <run-id> --log
+```
+
+**Ограничения токена:**
+- Только чтение (`Actions: read`, `Contents: read`).
+- ❌ Запрещено: `git push`, `gh pr merge`, `gh api -X DELETE`.
+- Все изменения кода — только через `git` (локально).
+
 ## Development Workflow (Правильная последовательность)
 
 1. **Изучение контекста**: Прочитайте `docs/ARCHITECTURE.md` и релевантные разделы `docs/guide.md` перед планированием.
@@ -183,6 +266,88 @@ cargo test --workspace --all-features -j 2
    - **Дождитесь апрува.**
    - После апрува — внесите изменения.
 8. **Коммит**: Используйте Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`). В сообщении коммита укажите, если были обновлены доки (например, `feat(devtools): ... (+ docs)`).
+
+## Branching Strategy
+
+### Ветки по версиям
+
+Каждая минорная версия (0.19.0, 0.20.0, ...) разрабатывается в
+отдельной ветке:
+
+- **Имя:** `release/X.Y.0` (например, `release/0.19.0`).
+- **База:** `master` в состоянии, где CI зелёный.
+- **Мерж:** только после завершения **всех** этапов версии +
+  CI 15/15 зелёный + docs обновлены + CHANGELOG + bump версии.
+
+### Feature-ветки внутри версии (опционально)
+
+Для крупных подзадач можно создавать временные ветки от
+`release/X.Y.0` (например, `feat/0.19.0-plugin-api`), но они
+мержатся **в release-ветку**, не в master.
+
+### Правила PR
+
+- **Draft PR** создаётся в первый день работы над версией
+  (`release/X.Y.0 → master`).
+- Push в release-ветку **автоматически обновляет PR** и
+  триггерит CI.
+- PR мержится **только** после полной готовности версии.
+- Название PR: `Release X.Y.0: <краткое описание>`.
+
+### Почему так
+
+- CI `ci.yml` триггерится только на `push: master` и
+  `pull_request: master`. Push в `feat/*` **не запускает CI**.
+  Draft PR решает это: он виден в CI с первого дня.
+- Пользователь видит "в работе" через PR, но master остаётся
+  стабильным (0.18.0) до полной готовности 0.19.0.
+
+## Pre-existing Failures: правило "чинить, а не игнорировать"
+
+Если CI на release-ветке красный, но падения **не связаны с
+изменениями ветки** (проверено через `git stash` + повторный
+прогон на чистом HEAD):
+
+1. **Не игнорировать.** Красный CI на PR блокирует мерж.
+2. **Фиксить в этой же ветке.** Не откладывать "на потом" —
+   отдельный коммит `test: fix pre-existing <тест>` или
+   `ci: fix pre-existing <проблема>`.
+3. **Документировать в `docs/TODO_TESTS.md`:**
+   - Что было сломано.
+   - Причина (в 1-2 предложениях).
+   - Как починено (с хешем коммита).
+4. **Если нельзя починить сейчас** (например, требует решения
+   пользователя или внешней инфраструктуры):
+   - Добавить в `TODO_TESTS.md` с явным приоритетом.
+   - Если блокирует CI — обсудить с пользователем, возможно
+     временно отключить в workflow с явным TODO-комментарием
+     (и это тоже задокументировать).
+
+### Как отличить pre-existing от нашего
+
+```bash
+git stash
+git checkout <commit-before-our-changes>
+cargo test <failing-test>  # если падает — pre-existing
+git checkout <our-branch>
+git stash pop
+```
+
+Если падает на чистом HEAD — pre-existing. Если проходит —
+наш баг.
+
+### Частые причины pre-existing failures
+
+- **Hardcoded versions** (`"0.7.0"` вместо `ComponentRegistry::builtin()`).
+  Фикс: читать из источника истины (registry, env!, fixtures).
+- **Flaky timing** (`assert_ne!(Instant::now(), Instant::now())`).
+  Фикс: добавить `sleep(1-10ms)` или заменить на монотонный счётчик.
+- **Platform-specific** (Windows `.exe`, Unix без расширения).
+  Фикс: `#[cfg(windows)]` / `#[cfg(not(windows))]`.
+- **Network-dependent** в unit-тестах (mock должен быть).
+  Фикс: mock server (wiremock), не реальная сеть.
+- **God-test** (тест проверяет слишком много). Фикс: разбить или
+  убрать нерелевантные assertion'ы.
 
 ## Release Workflow (Публикация)
 

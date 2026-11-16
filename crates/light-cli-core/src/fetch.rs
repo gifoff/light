@@ -803,7 +803,13 @@ mod tests {
             .resolve("light-fw-element-form")
             .expect("registry fallback");
         assert_eq!(resolved.source, SourceKind::CratesIo);
-        assert_eq!(resolved.version, semver::Version::new(0, 7, 0));
+        // Ожидаемая версия — из bundled-реестра (CLI резолвит её офлайн).
+        let expected = ComponentRegistry::builtin()
+            .by_name("light-fw-element-form")
+            .expect("bundled component")
+            .latest_version
+            .clone();
+        assert_eq!(resolved.version, expected);
     }
 
     #[test]

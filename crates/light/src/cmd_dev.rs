@@ -4,9 +4,10 @@
 //! перезапускает его при изменении исходников, сохраняя состояние через
 //! DevTools (см. [`light_fw_cli_core::dev`]).
 
+use std::io::IsTerminal;
 use std::path::Path;
 
-use light_fw_cli_core::check::ensure_components_present;
+use light_fw_cli_core::check::{build_check_report, ensure_components_present, parse_yn};
 use light_fw_cli_core::dev::{parse_dev_command, run as run_dev};
 use light_fw_devtools_web::{config, server};
 
@@ -80,6 +81,96 @@ pub fn run(args: DevArgs) -> anyhow::Result<i32> {
         let auto_install = !args.no_auto_install;
         let ready = ensure_components_present(&project_root, &install_fn, auto_install)?;
         if !ready {
+            return Ok(1);
+        }
+
+        // Этап 6 Plugin API: авто-детект кастомных тегов (`<datepicker />` и
+        // прочие «неизвестные стандартному HTML» теги из шаблонов проекта).
+        // `ensure_components_present` выше смотрит ТОЛЬКО standard-component
+        // зависимости; здесь — теги, которые должен предоставлять плагин.
+        //
+        //   * `available` (тег в bundled/remote реестре, плагин не установлен)
+        //     → TTY: спросить «Установить <crate>? [Y/n]»; Y или non-TTY →
+        //     `plan_add`/`apply_add`; N → warn и продолжить (сборка может
+        //     упасть, это на совести пользователя);
+        //   * `unknown` (тега нет ни в ядре, ни в реестре) → error +
+        //     подсказка `light search <tag>` и выход с кодом 1.
+        //
+        let check_report = match build_check_report(&project_root) {
+            Ok(report) => report,
+            Err(e) => {
+                eprintln!("light dev: не удалось построить отчёт `light check`: {e}");
+                return Ok(1);
+            }
+        };
+        if !check_report.available.is_empty() || !check_report.unknown.is_empty() {
+            eprintln!("\n🔍 Light: обнаружены кастомные теги в шаблонах проекта:\n");
+            for a in &check_report.available {
+                eprintln!(
+                    "   🟡 <{}> — доступно (не установлено): {}",
+                    a.tag, a.requirement
+                );
+            }
+            for t in &check_report.unknown {
+                eprintln!(
+                    "   🔴 <{t}> — неизвестно (нет ни в ядре (light-fw-core), ни в реестре Light"
+                );
+            }
+        }
+        for a in &check_report.available {
+            let mut install = true;
+            if !auto_install {
+                // `--no-auto-install`: только показать список и инструкции
+                // `light add`; ничего не устанавливаем.
+                install = false;
+                eprintln!(
+                    "   → вручную: light add {} (--feature / --features при необходимости)",
+                    a.crate_name
+                );
+            } else if std::io::stdin().is_terminal() {
+                // TTY-режим: спрашиваем пользователя (Y по умолчанию).
+                print!(
+                    "   Установить {}? [Y/n] ",
+                    a.requirement
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or(a.crate_name.as_str())
+                );
+                std::io::Write::flush(&mut std::io::stderr()).ok();
+                let mut line = String::new();
+                if std::io::stdin().read_line(&mut line).is_err() {
+                    // В CI/пайплайне stdin может закрыться — считаем «да»
+                    // (auto-install по умолчанию включён).
+                    eprintln!("(ответ не получен, устанавливаю автоматически)");
+                } else if !parse_yn(&line) {
+                    install = false;
+                    eprintln!(
+                        "   ⚠️ Отказано. Сборка может не пройти, пока <{}> не подключён.",
+                        a.tag
+                    );
+                }
+            }
+            // non-TTY + auto_install → install остаётся `true` (автоустановка).
+            if install {
+                eprintln!("⏳ Устанавливаю {} …", a.crate_name);
+                if let Err(e) = (install_fn)(&a.crate_name) {
+                    eprintln!(
+                        "❌ Не удалось установить {}: {e}\n   Попробуйте вручную: light add {}",
+                        a.crate_name, a.crate_name
+                    );
+                    return Ok(1);
+                }
+                eprintln!("✅ {} установлен", a.crate_name);
+            }
+        }
+        if !check_report.unknown.is_empty() {
+            eprintln!();
+            for t in &check_report.unknown {
+                eprintln!(
+                    "   ❌ <{t}> — неизвестный тег. Проверьте опечатку или найдите плагин: `light search {t}`"
+                );
+            }
+            eprintln!();
             return Ok(1);
         }
     }

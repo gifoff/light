@@ -19,6 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "runtime-templates")]
 use std::time::SystemTime;
 use std::{
+    cell::RefCell,
     collections::HashMap,
     sync::{LazyLock, Mutex, MutexGuard},
     time::Duration,
@@ -26,6 +27,7 @@ use std::{
 
 use crate::{
     component::{Component, WindowConfig},
+    plugins,
     vdom::{
         Align, ButtonType, Edges, NodeKind, Offset, Overflow, Position, RequiredIndicator, Resize,
         SelectOption, Size, Style, VElement, intern_key, parse_align_items, parse_bool,
@@ -273,10 +275,16 @@ fn build_element<C: Component + ?Sized>(
         "checkbox" => (ElementKind::Checkbox, None),
         "radio" => (ElementKind::Radio, None),
         "select" => (ElementKind::Select, None),
-        _ => {
-            parse_fail(&element.name, "tag", &element.name);
-            return None;
-        }
+        // Нестандартный тег: ищем зарегистрированную фабрику плагина (Plugin API,
+        // Этап 3). Если плагин подключён — строим кастомный элемент через его
+        // render(); если нет — это неподдерживаемый тег (откат как раньше).
+        _ => match build_custom_element(element, key, component) {
+            Some(custom) => return Some(custom),
+            None => {
+                parse_fail(&element.name, "tag", &element.name);
+                return None;
+            }
+        },
     };
     let leaf = match &kind {
         ElementKind::Container(node_kind) => {
@@ -335,6 +343,129 @@ fn build_element<C: Component + ?Sized>(
         elem = elem.with_style(s);
     }
     Some(elem)
+}
+
+/// Строит кастомный элемент, зарегистрированный плагином (Plugin API, Этап 3).
+///
+/// Ищет фабрику по тегу в distributed-slice [`plugins::REGISTERED_COMPONENTS`],
+/// проверяет совместимость версии ядра, создаёт экземпляр и вызывает его
+/// [`CustomElement::render`](crate::plugins::CustomElement::render) с
+/// атрибутами тега (включая `v-model`, если задан — см. Этап 5) и уже
+/// разобранными дочерними узлами. Результат оборачивается в
+/// [`NodeKind::Custom`] с интернированным ключом — так layout/paint/diff
+/// видят его как атомарное целое, а окно может доставлять события плагину.
+///
+/// Ключ узла (`key`) — ключ родительского тега (например `"0.1"`). С ним
+/// связывается созданный экземпляр элемента в карте [`custom_instances`]:
+/// при следующем рендере того же дерева запись перезаписывается свежим
+/// экземпляром, а при отрисовке окна [`drain_custom_instances`] отдаёт их
+/// оконному бэкенду для доставки событий через [`CustomElement::on_event`].
+///
+/// Возвращает `None`, если тег не зарегистрирован (это обычный
+/// «неподдерживаемый тег» — откат к статическому дереву) или если версия
+/// ядра несовместима с требованием плагина. В обоих случаях запись в лог идёт
+/// через [`parse_fail`].
+fn build_custom_element<C: Component + ?Sized>(
+    element: &light_fw_html::Element,
+    key: &str,
+    component: &C,
+) -> Option<VElement> {
+    let factory = plugins::lookup(&element.name)?;
+    if let Err(msg) = plugins::check_core_version(factory.core_version_req) {
+        parse_fail(&element.name, "core-version", &msg.to_string());
+        return None;
+    }
+    // Атрибуты тега (имя + значение) передаются плагину как есть. Директивы
+    // (`@click`/`:attr`/`v-if`) не поддерживаются в runtime-шаблонах и уже
+    // отсеяны вызывающим кодом — сюда доходят только простые атрибуты.
+    // `v-model` (если задан) уже присутствует в списке — плагин может
+    // использовать его как имя поля в `on_event` (Этап 5).
+    let attrs: Vec<(&'static str, String)> = element
+        .attrs
+        .iter()
+        .map(|a| (intern_key(&a.name), a.value.clone()))
+        .collect();
+    // Дочерние узлы разбираем с обычным компонентом: тексты с `{{ }}`
+    // интёрполируются геттером компонента, элементы — рекурсивно. Кастомный
+    // тег внутри (если плагин вкладывает свой же тег) снова попадёт в
+    // `build_custom_element` через общий путь `build_element`.
+    let children = build_children(&element.children, ROOT_KEY, &NodeKind::Column, component)?;
+    let instance = (factory.factory)();
+    let mut rendered = instance.render(&attrs, &children);
+    // Плагин вернул произвольное поддерево. Перекрашиваем корень в
+    // Custom(tag): ядро узнаёт, что это чужой элемент, и layout/paint/diff
+    // обрабатывают его как атомарное целое. Дочерние узлы остаются в
+    // поддереве — layout развернёт их как у обычного контейнера.
+    // Если плагин вернул лист (Text/Button и т. п.), оборачиваем его в
+    // Column, чтобы Custom гарантированно оставался контейнером.
+    if !matches!(
+        rendered.kind,
+        NodeKind::Column
+            | NodeKind::Row
+            | NodeKind::TitleBar
+            | NodeKind::Window
+            | NodeKind::Custom(_)
+    ) {
+        let col = VElement::container(intern_key(ROOT_KEY), NodeKind::Column, vec![rendered]);
+        rendered = col;
+    }
+    let tag = intern_key(&element.name);
+    rendered.kind = NodeKind::Custom(tag);
+    // Сохраняем экземпляр по ключу родительского узла, чтобы окно могло
+    // доставить ему события через on_event (Этап 5). Ключ интернируется:
+    // при следующем рендере того же дерева запись перезапишется, при другом
+    // дереве — старая запись будет удалена вместе с map при drain в redraw.
+    store_custom_instance(key, instance);
+    Some(rendered)
+}
+
+// ---------------------------------------------------------------------------
+// Реестр кастомных элементов (Plugin API, Этап 5: доставка on_event)
+// ---------------------------------------------------------------------------
+
+/// Экземпляры кастомных элементов, созданных текущим рендером в этом потоке,
+/// по ключу родительского узла.
+///
+/// Рендер выполняется в UI-потоке; после полного рендера окна
+/// [`crate::window::WindowState::redraw`] выносит все записи через
+/// [`drain_custom_instances`] и передаёт их оконному бэкенду для доставки
+/// событий через [`CustomElement::on_event`](crate::plugins::CustomElement::on_event).
+/// Каждый следующий рендер создаёт новые экземпляры (статический код макроса
+/// вызывает `component.render()`, который для каждого `<custom>` вызывает
+/// [`build_custom_element`]); запись с тем же ключом перезаписывается.
+type CustomInstancesMap = HashMap<String, Box<dyn plugins::CustomElement>>;
+
+thread_local! {
+    /// Карта «ключ родительского узла → экземпляр кастомного элемента» для
+    /// текущего потока.
+    static INSTANCES: RefCell<CustomInstancesMap> = RefCell::new(HashMap::new());
+}
+
+/// Запоминает экземпляр кастомного элемента под ключом узла.
+///
+/// Вызывается из [`build_custom_element`] сразу после создания экземпляра.
+/// Повторный вызов с тем же ключом (рендер того же дерева) перезаписывает
+/// предыдущую запись; другой ключ добавляет новую запись.
+///
+/// Публичный — чтобы тесты могли напрямую регистрировать фиктивные элементы
+/// и проверять [`drain_custom_instances`].
+pub fn store_custom_instance(key: &str, instance: Box<dyn plugins::CustomElement>) {
+    INSTANCES.with_borrow_mut(|map| {
+        map.insert(key.to_owned(), instance);
+    });
+}
+
+/// Выносит все накопленные экземпляры кастомных элементов (очищая карту).
+///
+/// Вызывается из [`crate::window::WindowState::redraw`] один раз перед
+/// рендером компонента (чтобы сбросить записи предыдущего кадра), а затем
+/// повторно после `component.render()` — чтобы забрать свежие экземпляры,
+/// созданные в этом кадре. Возвращает пустую map, если карта пуста.
+///
+/// Публичный — чтобы интеграционные тесты могли вынести задрейненные
+/// экземпляры и проверить контракт `on_event`.
+pub fn drain_custom_instances() -> HashMap<String, Box<dyn plugins::CustomElement>> {
+    INSTANCES.with_borrow_mut(std::mem::take)
 }
 
 /// Строит список дочерних узлов.
@@ -1036,4 +1167,96 @@ fn build_window_config(element: &light_fw_html::Element) -> WindowConfig {
         }
     }
     cfg
+}
+
+/// Тесты кастомных элементов (Plugin API, Этап 3).
+///
+/// Полноценные проверки рендера через `parse_template` находятся в
+/// интеграционном тесте [`crate::tests::custom_elements`] (там же
+/// живёт фиктивный «datepicker», подключённый через distributed-slice).
+/// Здесь — только smoke-тест для незарегистрированного тега.
+#[cfg(test)]
+mod custom_smoke_tests {
+    use super::*;
+    use crate::vdom::VElement;
+
+    /// Тестовый компонент без полей и реактивности.
+    struct NullComponent;
+    impl Component for NullComponent {
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+
+        fn render(&self) -> VElement {
+            VElement::container(intern_key(ROOT_KEY), NodeKind::Column, Vec::new())
+        }
+    }
+
+    /// Несуществующий тег → build_custom_element возвращает None (и запись
+    /// в лог через parse_fail). Публичный путь — через parse_template, но
+    /// здесь проверяется именно внутренний helper.
+    #[test]
+    fn build_custom_unregistered_returns_none() {
+        // <totally-unknown-tag> с одним текстовым дочерним узлом.
+        let el = light_fw_html::Element {
+            name: "totally-unknown-tag".to_string(),
+            attrs: Vec::new(),
+            children: vec![light_fw_html::Node::Text(vec![
+                light_fw_html::Segment::Literal("hi".to_string()),
+            ])],
+        };
+        assert!(
+            build_custom_element::<NullComponent>(&el, "0", &NullComponent).is_none(),
+            "незарегистрированный тег должен давать None"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Этап 5 — реестр custom instances: store → drain roundtrip
+    // -----------------------------------------------------------------------
+
+    /// Фиктивный элемент, который не делает ничего в on_event.
+    struct NoopCustom;
+    impl crate::plugins::CustomElement for NoopCustom {
+        fn tag(&self) -> &'static str
+        where
+            Self: Sized,
+        {
+            "noop-custom"
+        }
+        fn render(&self, _attrs: &[(&'static str, String)], _children: &[VElement]) -> VElement {
+            VElement::leaf(intern_key(""), NodeKind::Custom("noop-custom"))
+        }
+    }
+
+    /// `store_custom_instance` кладёт экземпляр под ключом, а
+    /// `drain_custom_instances` выносит его обратно (очищая карту).
+    ///
+    /// Это unit-тест на сам реестр (без оконного бэкенда): проверка того,
+    /// что `build_custom_element` действительно сохраняет инстанс, а
+    /// `WindowState::redraw` сможет его забрать через drain.
+    #[test]
+    fn stage5_store_then_drain_roundtrip() {
+        // Очистим карту от записей других тестов (тесты крутятся в одном
+        // процессе, thread-local общий).
+        let _ = super::drain_custom_instances();
+
+        super::store_custom_instance("0.1", Box::new(NoopCustom));
+        super::store_custom_instance("0.2", Box::new(NoopCustom));
+
+        let drained = super::drain_custom_instances();
+        assert_eq!(drained.len(), 2, "две записи должны быть в карте");
+        assert!(drained.contains_key("0.1"), "ключ 0.1 обязан быть");
+        assert!(drained.contains_key("0.2"), "ключ 0.2 обязан быть");
+        // Тег можно проверить через downcast.
+        let inst = &drained["0.1"];
+        assert!(
+            super::plugins::downcast_custom::<NoopCustom>(&**inst).is_some(),
+            "должен быть NoopCustom"
+        );
+
+        // После drain карта пуста.
+        let again = super::drain_custom_instances();
+        assert!(again.is_empty(), "после drain карта должна быть пуста");
+    }
 }

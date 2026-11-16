@@ -242,6 +242,11 @@ struct WindowState {
     /// Ключ узла, получившего фокус через дерево доступности или `Tab`.
     #[cfg(feature = "a11y-winit")]
     a11y_focus: Option<String>,
+    /// Экземпляры кастомных элементов (Plugin API, Этап 5): ключ родительского
+    /// узла → экземпляр. Заполняется при рендере из thread-local реестра
+    /// [`crate::runtime`], используется при доставке событий через
+    /// `on_event` (см. [`dispatch_custom_event`](Self::dispatch_custom_event)).
+    custom_instances: HashMap<String, Box<dyn crate::plugins::CustomElement>>,
 }
 
 impl WindowState {
@@ -264,6 +269,10 @@ impl WindowState {
         // обновление — в `invalidate` при каждом изменении состояния).
         #[cfg(feature = "devtools")]
         self.update_devtools_snapshot();
+        // Сбрасываем записи предыдущего кадра: после рендера компонента в
+        // thread-local реестре накопятся только те экземпляры, которые создались
+        // в этом кадре (Plugin API, Этап 5 — доставка on_event).
+        crate::runtime::drain_custom_instances();
         let mut tree = self.component.render();
         apply_overrides(&mut tree, &self.resized);
         apply_validation(&mut tree, &self.validation);
@@ -279,6 +288,10 @@ impl WindowState {
         // в пустоту.
         prune_scroll_offsets(&mut self.scroll, &layout);
         let tree = Arc::new(tree);
+        // Забираем свежие экземпляры кастомных элементов, созданных в этом
+        // кадре, и передаём их в окно: теперь события можно доставлять им
+        // через on_event.
+        self.custom_instances = crate::runtime::drain_custom_instances();
         let full = self.full_redraw;
         let mut damage = if full {
             vec![Rect::new(0.0, 0.0, self.width as f32, self.height as f32)]
@@ -488,6 +501,57 @@ impl WindowState {
         self.component.dispatch(key, event)
     }
 
+    /// Доставляет событие ближайшему «родителю» кастомному элементу (Plugin API,
+    /// Этап 5). Поднимается от `key` вверх по дереву, пока не найдётся ключ,
+    /// заведённый в `custom_instances`; затем вызывает `on_event` на экземпляре
+    /// и возвращает `true`, если плагин обработал событие (остановить доставку
+    /// дальше) или запросил перерисовку через `schedule_redraw`.
+    ///
+    /// Возвращает `false`, если под `key` (и по пути вверх) нет кастомного
+    /// элемента — тогда вызывающий код продолжает обычную доставку в
+    /// [`Self::dispatch`].
+    fn dispatch_custom_event(&mut self, key: &str, event: &DomEvent) -> bool {
+        // Пошагово поднимаемся по родительским ключам: строка вида "0.1.2" →
+        // "0.1" → "0" → "" (корень). Для каждого проверяем, есть ли экземпляр.
+        // Ключи в map — `String`, поэтому на каждом шаге создаём новый `String`.
+        let mut cur: String = key.to_owned();
+        loop {
+            if self.custom_instances.contains_key(&cur) {
+                // Забираем экземпляр из карты, чтобы `on_event` мог мутировать
+                // его без конфликта заимствований с самой картой.
+                let mut inst = self
+                    .custom_instances
+                    .remove(&cur)
+                    .expect("just checked contains_key");
+                // Флаг «хочу перерисовку»: `schedule_redraw` внутри `on_event`
+                // ставит его через `Cell::set` (работает через `&dyn Fn()`).
+                let want = std::cell::Cell::new(false);
+                let flag = &want;
+                let redraw: &dyn Fn() = &|| {
+                    flag.set(true);
+                };
+                let mut ctx = crate::plugins::EventCtx { redraw };
+                inst.on_event(event, &mut ctx);
+                // Возвращаем экземпляр на место.
+                self.custom_instances.insert(cur.clone(), inst);
+                // Если плагин поставил флаг — перерисовываемся (актуализируем
+                // devtools-снимок + запрашиваем новый кадр).
+                if want.get() {
+                    self.invalidate();
+                }
+                // В текущем Этапе 5 любой обработанный кастомный элемент
+                // останавливает дальнейшую доставку (по ТЗ: «если плагин
+                // обработал/остановил propagation — не доставлять дальше»).
+                return true;
+            }
+            // Поднимаемся на уровень выше: "0.1.2" → "0.1". Если корень — стоп.
+            match cur.rsplit_once('.') {
+                Some((parent, _)) => cur = parent.to_owned(),
+                None => return false,
+            }
+        }
+    }
+
     /// Отключён ли узел с ключом `key` в текущем дереве.
     ///
     /// Учитывает как встроенный флаг `disabled`, так и `aria-disabled` —
@@ -581,15 +645,33 @@ impl WindowState {
     }
 
     /// Доставляет событие узлам под курсором от глубокого к корню.
-    fn deliver(&self, event: DomEvent) -> bool {
+    ///
+    /// Если узел — кастомный элемент плагина, сначала пробует доставить
+    /// событие ближайшему родителю кастомному (Этап 5 — on_event): если плагин
+    /// обработал, доставка дальше не идёт. Иначе — обычная доставка в
+    /// [`Self::dispatch`].
+    fn deliver(&mut self, event: DomEvent) -> bool {
         let Some(layout) = self.layout.as_ref() else {
             return false;
         };
-        for node in layout.hit_stack(self.cursor) {
-            if self.node_disabled(node.key) {
+        // Снимок ключей до входа в цикл: `dispatch_custom_event` заимствует
+        // `self` mutably, поэтому `layout` (immutable borrow) должен завершить
+        // своё использование перед первым вызовом.
+        let keys: Vec<&'static str> = layout
+            .hit_stack(self.cursor)
+            .iter()
+            .map(|n| n.key)
+            .collect();
+        for key in keys {
+            if self.node_disabled(key) {
                 return true;
             }
-            if self.dispatch(node.key, event.clone()) {
+            // Кастомный элемент: пробуем on_event у ближайшего родителя.
+            // Если плагин обработал — stop propagation (не ходить дальше).
+            if self.dispatch_custom_event(key, &event) {
+                return true;
+            }
+            if self.dispatch(key, event.clone()) {
                 return true;
             }
         }
@@ -632,6 +714,9 @@ impl WindowState {
             }),
             #[cfg(feature = "elements-select")]
             NodeKind::Select { .. } => Some(ClickAction::ToggleSelect(node.key)),
+            // Кастомный элемент плагина: клик доставляется как обычный
+            // Click, чтобы @click-обработчик (и on_event плагина) сработали.
+            NodeKind::Custom(_) => Some(ClickAction::Click(node.key)),
             _ => None,
         }
     }
@@ -736,6 +821,12 @@ impl WindowState {
         }
         match self.click_action() {
             Some(ClickAction::Click(key)) => {
+                // Кастомный элемент плагина: сначала пробуем доставить событие
+                // ближайшему родителю кастомному (Этап 5 — on_event). Если
+                // плагин обработал — доставка дальше не нужна.
+                if self.dispatch_custom_event(key, &DomEvent::Click) {
+                    return;
+                }
                 self.dispatch_checked(key, DomEvent::Click);
             }
             Some(ClickAction::FocusField { key, value, caret }) => {
@@ -2314,6 +2405,7 @@ impl App {
             adapter,
             #[cfg(feature = "a11y-winit")]
             a11y_focus: None,
+            custom_instances: HashMap::new(),
         };
         self.tokens.insert(token, id);
         self.windows.insert(id, state);

@@ -44,3 +44,10 @@ syn.workspace = true
 quote.workspace = true
 proc-macro2.workspace = true
 light-fw-html = { workspace = true }
+# Чтение `[package.metadata.light.provides]` из Cargo.toml текущего пакета
+# на этапе компиляции `#[template]` (ТЗ 0.19.0 Этап 4).
+toml = "0.8"
+
+[dev-dependencies]
+trybuild = "1"
+light-fw = { workspace = true }

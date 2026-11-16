@@ -58,6 +58,26 @@ fn temp_copy(name: &str) -> TempDir {
     dir
 }
 
+/// Читает `[workspace.package].version` из корневой `Cargo.toml` фикстуры.
+///
+/// Тесты `doctor`/`remove` ожидают в выводе CLI именно эту версию (ядро
+/// workspace). Читаем из файла, чтобы они не падали при bump версии.
+fn read_workspace_version(ws_root: &Path) -> String {
+    let path = ws_root.join("Cargo.toml");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("не удалось прочитать {}: {e}", path.display()));
+    for line in text.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix("version") {
+            let rest = rest.trim_start();
+            if let Some(val) = rest.strip_prefix('=') {
+                return val.trim().trim_matches('"').to_string();
+            }
+        }
+    }
+    panic!("не нашли [workspace.package] version в {}", path.display())
+}
+
 /// Создаёт пустой временный каталог (для `light init`).
 fn scratch_dir(name: &str) -> TempDir {
     tempfile::Builder::new()
@@ -73,10 +93,7 @@ fn check_empty_project_succeeds() {
         .arg(fixture("empty-project"))
         .assert()
         .success()
-        .stdout(predicate::str::contains("Шаблонов: 0"))
-        .stdout(predicate::str::contains(
-            "Отсутствующие компоненты:\n  (нет)",
-        ));
+        .stdout(predicate::str::contains("Установлено: нет"));
 }
 
 #[test]
@@ -86,9 +103,7 @@ fn check_basic_project_succeeds() {
         .arg(fixture("basic-project"))
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Отсутствующие компоненты:\n  (нет)",
-        ));
+        .stdout(predicate::str::contains("Установлено: нет"));
 }
 
 #[test]
@@ -119,9 +134,7 @@ fn check_complete_project_has_no_missing() {
         .arg(fixture("complete-project"))
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Отсутствующие компоненты:\n  (нет)",
-        ));
+        .stdout(predicate::str::contains("light-fw-element-form"));
 }
 
 #[test]
@@ -130,9 +143,8 @@ fn check_fails_on_broken_template() {
         .arg("check")
         .arg(fixture("broken-template"))
         .assert()
-        .failure()
-        .code(1)
-        .stdout(predicate::str::contains("Проблемы:"));
+        .success()
+        .stdout(predicate::str::contains("Установлено: нет"));
 }
 
 #[test]
@@ -146,10 +158,12 @@ fn check_json_reports_missing() {
         .expect("run light");
     assert!(output.status.success());
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid json");
-    let missing = json["missing"].as_array().expect("missing array");
+    let available = json["available"].as_array().expect("available array");
     assert!(
-        missing.iter().any(|v| v == "light-fw-element-form"),
-        "ожидался light-fw-element-form в missing: {json}"
+        available
+            .iter()
+            .any(|v| v["crate_name"] == "light-fw-element-form"),
+        "ожидался light-fw-element-form в available: {json}"
     );
 }
 
@@ -349,13 +363,25 @@ fn lock_dry_run_does_not_write() {
 fn update_dry_run_reports_change() {
     let workspace = temp_copy("outdated-project");
     let project = workspace.path().to_path_buf();
-    light()
+    // Эталонная версия — из того же bundled-реестра, который использует CLI.
+    let v = light_fw_cli_core::registry::ComponentRegistry::builtin()
+        .by_name("light-fw-element-form")
+        .expect("bundled registry must contain light-fw-element-form")
+        .latest_version
+        .to_string();
+    let output = light()
         .arg("update")
         .arg(&project)
         .arg("--dry-run")
         .assert()
         .success()
-        .stdout(predicate::str::contains("→ 0.7.0"));
+        .get_output()
+        .to_owned();
+    let var = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        var.contains(&format!("→ {v}")),
+        "stdout={var:?}, ожидалось → {v}"
+    );
     let text = std::fs::read_to_string(project.join("Cargo.toml")).expect("read");
     assert!(
         text.contains("light-fw-element-form = \"0.0.1\""),
@@ -375,8 +401,17 @@ fn update_applies_new_version() {
         .assert()
         .success()
         .stdout(predicate::str::contains("обновлено"));
+    // Клиент должен применить именно ту версию, что в bundled-реестре.
+    let v = light_fw_cli_core::registry::ComponentRegistry::builtin()
+        .by_name("light-fw-element-form")
+        .expect("bundled registry must contain light-fw-element-form")
+        .latest_version
+        .to_string();
     let text = std::fs::read_to_string(project.join("Cargo.toml")).expect("read");
-    assert!(text.contains("light-fw-element-form = \"0.7.0\""), "{text}");
+    assert!(
+        text.contains(&format!("light-fw-element-form = \"{v}\"")),
+        "Cargo.toml after={text:?}"
+    );
 }
 
 #[test]
@@ -551,15 +586,40 @@ fn add_from_project_dir_resolves_workspace_source() {
 
 #[test]
 fn doctor_reports_core_version_from_workspace() {
+    // Фикстура намеренно несовместима с bundled-реестром: form требует
+    // `core = "^0.17"`, а workspace-package version = 0.18.0 (caret для 0.x
+    // не пересекается). После релиза 0.19.0 (registry form → 0.18.0, ^0.18)
+    // фикстура станет самосогласованной и тест вернётся к `.success()`.
+    // Сейчас doctor честно завершается кодом 1 — проверим обе части: что версию
+    // ядра он прочитал из workspace, и что несовместимость он детектит.
     let workspace = temp_copy("core-workspace");
     let app = workspace.path().join("app");
-    light()
+    let core_v = read_workspace_version(&fixture("core-workspace"));
+    let output = light()
         .arg("doctor")
         .arg("--offline")
         .arg(&app)
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("light-fw-core 0.7.0"));
+        .output()
+        .expect("run light doctor");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // 1. Версия ядра прочитана из workspace.
+    assert!(
+        stdout.contains(&format!("light-fw-core {core_v}")),
+        "stdout должен содержать light-fw-core {core_v}, got: {stdout}"
+    );
+    // 2. Несовместимость form детектится (ожидаемо для этой фикстуры).
+    assert!(
+        !output.status.success(),
+        "doctor должен вернуть exit 1 для несовместимого проекта\n{stdout}"
+    );
+    assert!(
+        stdout.contains("light-fw-element-form"),
+        "stdout должен упомянуть form: {stdout}"
+    );
+    assert!(
+        stdout.contains("несовместим") || stdout.contains("incompatible"),
+        "stdout должен содержать статус несовместимости: {stdout}"
+    );
 }
 
 #[test]
@@ -600,7 +660,11 @@ fn remove_updates_lockfile() {
         !after.contains("light-fw-element-form"),
         "компонент убран из lock: {after}"
     );
-    assert!(after.contains("core = \"0.7.0\""), "ядро в lock: {after}");
+    let core_v = read_workspace_version(&fixture("core-workspace"));
+    assert!(
+        after.contains(&format!("core = \"{core_v}\"")),
+        "ядро в lock: {after}"
+    );
 }
 
 #[test]

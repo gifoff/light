@@ -220,6 +220,15 @@ mod tests {
         dir
     }
 
+    /// Актуальная версия компонента из bundled-реестра (то, что применяет CLI).
+    fn registry_latest_version(name: &str) -> String {
+        ComponentRegistry::builtin()
+            .by_name(name)
+            .expect("bundled registry must contain component")
+            .latest_version
+            .to_string()
+    }
+
     const OLD_MANIFEST: &str = "[package]\nname = \"p\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n\
          [workspace]\n\n[dependencies]\nlight = \"0.1\"\nlight-fw-element-form = \"0.0.1\"\n";
 
@@ -229,12 +238,14 @@ mod tests {
         std::fs::write(dir.join("Cargo.toml"), OLD_MANIFEST).expect("write");
         // light не компонент? — он в реестре как ядро? нет: registry знает только компоненты.
         let plan = plan_update(&dir, &UpdateOptions::default()).expect("plan");
+        // Эталонная версия — из того же bundled-реестра, что и CLI (не хардкод).
+        let latest = registry_latest_version("light-fw-element-form");
         assert_eq!(plan.changed_count(), 1);
         let entry = &plan.entries[0];
         assert_eq!(entry.name, "light-fw-element-form");
         assert_eq!(entry.from.as_deref(), Some("0.0.1"));
-        assert_eq!(entry.to, "0.7.0");
-        assert!(plan.to_text().contains("→ 0.7.0"));
+        assert_eq!(entry.to, latest);
+        assert!(plan.to_text().contains(&format!("→ {latest}")));
     }
 
     #[test]
@@ -243,17 +254,26 @@ mod tests {
         std::fs::write(dir.join("Cargo.toml"), OLD_MANIFEST).expect("write");
         let plan = plan_update(&dir, &UpdateOptions::default()).expect("plan");
         apply_update(&dir, &MockRunner, &plan, &UpdateOptions::default()).expect("apply");
+        // Клиент должен применить именно ту версию, что в bundled-реестре.
+        let latest = registry_latest_version("light-fw-element-form");
         let text = std::fs::read_to_string(dir.join("Cargo.toml")).expect("read");
-        assert!(text.contains("light-fw-element-form = \"0.7.0\""), "{text}");
+        assert!(
+            text.contains(&format!("light-fw-element-form = \"{latest}\"")),
+            "{text}"
+        );
         assert!(dir.join("light.lock").exists());
     }
 
     #[test]
     fn up_to_date_is_noop() {
         let dir = temp_dir("uptodate");
+        // Фикстура уже «актуальная»: версия = той, что в bundled-реестре.
+        let latest = registry_latest_version("light-fw-element-form");
         std::fs::write(
             dir.join("Cargo.toml"),
-            "[package]\nname = \"p\"\nversion = \"0.1.0\"\n\n[workspace]\n\n[dependencies]\nlight-fw-element-form = \"0.7.0\"\n",
+            format!(
+                "[package]\nname = \"p\"\nversion = \"0.1.0\"\n\n[workspace]\n\n[dependencies]\nlight-fw-element-form = \"{latest}\"\n"
+            ),
         )
         .expect("write");
         let plan = plan_update(&dir, &UpdateOptions::default()).expect("plan");

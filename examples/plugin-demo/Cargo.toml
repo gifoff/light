@@ -1,0 +1,32 @@
+[package]
+name = "example-plugin-demo"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Plugin API demo: custom <datepicker> element via #[component]"
+
+[features]
+devtools = ["light-fw/devtools"]
+async-runtime = ["light-fw/async-runtime"]
+dev-mode = ["light-fw/dev-mode"]
+
+[lib]
+name = "example_plugin_demo"
+
+[[bin]]
+name = "plugin-demo"
+path = "src/main.rs"
+
+[dependencies]
+light-fw = { workspace = true, features = ["devtools"] }
+# Direct dependency — `#[component]` expands to `#[linkme::distributed_slice]`,
+# and the consuming crate must declare `linkme` itself (see macro docs).
+linkme = "0.3"
+
+# Plugin metadata for CLI (`light build` / `light check`).
+# `provides.elements` — tags that get registered in `REGISTERED_COMPONENTS`.
+[package.metadata.light]
+core = "^0.18"
+
+[package.metadata.light.provides]
+elements = ["datepicker"]

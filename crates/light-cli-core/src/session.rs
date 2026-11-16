@@ -143,6 +143,9 @@ fn actions_path(cwd: &Path, id: &str) -> PathBuf {
 /// Закрывает активную сессию: снимает маркер `current`, генерирует
 /// `summary.md` (хронологию) и возвращает путь к нему.
 pub fn stop_session(cwd: &Path, id: &str) -> Result<PathBuf> {
+    if !sessions_dir(cwd).join(id).is_dir() {
+        return Err(SessionError::NoActiveSession);
+    }
     let marker = current_marker_path(cwd);
     if let Ok(cur) = fs::read_to_string(&marker)
         && cur.trim() == id
@@ -206,6 +209,10 @@ pub fn stop_session(cwd: &Path, id: &str) -> Result<PathBuf> {
         md.push_str(&format!("{}) `{ts}` — **{cmd}**{shot}\n", i + 1));
     }
     let summary_path = session_dir.join(SUMMARY_FILE);
+    // Обеспечиваем наличие каталога (защита от гонок на macOS).
+    if let Some(parent) = summary_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
     fs::write(&summary_path, md)?;
     Ok(summary_path)
 }
@@ -276,6 +283,12 @@ pub fn read_actions(cwd: &Path, id: &str) -> Result<Vec<serde_json::Value>> {
 }
 
 fn append_line(path: &Path, line: &str) -> std::io::Result<()> {
+    // Обеспечиваем наличие родительских каталогов: на macOS arm64 путь
+    // temp_dir() может содержать симлинки, и промежуточные каталоги
+    // могут быть удалены между start_session и record_action.
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
     let mut f = OpenOptions::new().create(true).append(true).open(path)?;
     writeln!(f, "{line}")?;
     Ok(())

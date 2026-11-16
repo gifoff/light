@@ -2,10 +2,15 @@
 //!
 //! Макросы:
 //! * `#[proxy]` — делает поля структуры реактивными свойствами;
-//! * `#[template("...")]` — компилирует HTML-шаблон в функцию отрисовки компонента.
+//! * `#[template("...")]` — компилирует HTML-шаблон в функцию отрисовки компонента;
+//! * `#[component(tag = "...")]` — регистрирует компонент как плагинный элемент
+//!   (`CustomElement` + distributed-slice фабрика) на основе `#[template]` +
+//!   `#[proxy]` (Plugin API, ТЗ 0.19.0 Этап 4).
 
 #![deny(missing_docs)]
 
+mod component;
+mod provides;
 mod proxy;
 mod template;
 
@@ -85,6 +90,47 @@ pub fn template(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     template::expand(attr.into(), item.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Регистрирует компонент как плагинный элемент (Plugin API, ТЗ 0.19.0 Этап 4).
+///
+/// Композиция `#[template("...")]` + `#[proxy]`: структура **обязана** иметь
+/// оба атрибута — иначе `compile_error!`. Генерируется:
+/// * `impl ::light_fw::plugins::CustomElement for <Тип>`: `tag()` — литерал из
+///   аргумента макроса, `render` делегирует статической `Component::render`
+///   (атрибуты и дочерние узлы плагина в Этапе 4 не используются);
+/// * фабрика `CustomElementFactory` через
+///   `#[linkme::distributed_slice(REGISTERED_COMPONENTS)]`: ядро находит её по
+///   тегу при runtime-рендеринге `<тег>` из HTML.
+///
+/// ```ignore
+/// #[component(tag = "datepicker")]
+/// #[template("templates/datepicker.html")]
+/// #[proxy]
+/// struct Datepicker {
+///     selected: Option<String>,
+/// }
+/// ```
+///
+/// Чтобы использовать `#[component]`, крейт-потребитель должен иметь
+/// прямую зависимость `linkme = "0.3"` (макрос разворачивается в его коде):
+///
+/// ```toml
+/// [dependencies]
+/// light-fw = { path = "..." }
+/// linkme = "0.3"
+/// ```
+///
+/// Имя тега — латинские буквы, цифры, дефис; первая — буква. Валидируется
+/// на этапе компиляции.
+#[proc_macro_attribute]
+pub fn component(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    component::expand(attr.into(), item.into())
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

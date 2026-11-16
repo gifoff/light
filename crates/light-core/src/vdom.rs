@@ -1063,6 +1063,14 @@ pub enum NodeKind {
         /// Заблокирован ли список (`:disabled`).
         disabled: bool,
     },
+    /// Кастомный элемент, зарегистрированный плагином (Plugin API, Этап 3).
+    ///
+    /// Аргумент — имя тега элемента (например `"datepicker"`). Ядро
+    /// обрабатывает такой узел как **атомарное целое**: layout/paint/diff не
+    /// заглядывают внутрь поддерева, рендер которого произвёл плагин. При
+    /// сравнении деревьев два `Custom`-узла совместимы, если их теги равны
+    /// (см. [`kind_compatible`]).
+    Custom(&'static str),
 }
 
 /// Узел виртуального дерева.
@@ -1806,6 +1814,9 @@ fn kind_compatible(a: &NodeKind, b: &NodeKind) -> bool {
         (NodeKind::Radio { .. }, NodeKind::Radio { .. }) => true,
         #[cfg(feature = "elements-select")]
         (NodeKind::Select { .. }, NodeKind::Select { .. }) => true,
+        // Кастомные элементы совместимы, только если их теги совпадают:
+        // смена тега — это смена плагина/компонента, а не обновление в place.
+        (NodeKind::Custom(a), NodeKind::Custom(b)) => a == b,
         _ => false,
     }
 }
@@ -2041,6 +2052,11 @@ fn diff_kind(old: &NodeKind, new: &NodeKind, key: &'static str, patch: &mut Patc
         | (NodeKind::Row, NodeKind::Row)
         | (NodeKind::TitleBar, NodeKind::TitleBar)
         | (NodeKind::Window, NodeKind::Window) => {}
+        // Кастомный элемент — атомарное целое: его внутреннее состояние
+        // живёт в плагин-экземпляре (custom_instances), а не в VDOM, поэтому
+        // diff ничего не генерирует. Равенство тегов уже проверено в
+        // kind_compatible.
+        (NodeKind::Custom(_), NodeKind::Custom(_)) => {}
         _ => debug_assert!(false, "несовместимые типы должны фильтроваться раньше"),
     }
 }
@@ -2096,5 +2112,36 @@ mod tests {
             "parse_align_items panicked on invalid value"
         );
         assert_eq!(result.unwrap(), Align::Start);
+    }
+
+    /// Кастомные элементы совместимы только при равном теге.
+    #[test]
+    fn custom_kind_compatible_by_tag() {
+        assert!(kind_compatible(
+            &NodeKind::Custom("datepicker"),
+            &NodeKind::Custom("datepicker")
+        ));
+        assert!(!kind_compatible(
+            &NodeKind::Custom("datepicker"),
+            &NodeKind::Custom("calendar")
+        ));
+        // Custom несовместим со стандартным контейнером.
+        assert!(!kind_compatible(
+            &NodeKind::Custom("datepicker"),
+            &NodeKind::Column
+        ));
+    }
+
+    /// Diff Custom→Custom того же тега не генерирует ops (атомарное целое).
+    #[test]
+    fn diff_custom_same_tag_is_noop() {
+        let mut patch = Patch::default();
+        diff_kind(
+            &NodeKind::Custom("datepicker"),
+            &NodeKind::Custom("datepicker"),
+            "k1",
+            &mut patch,
+        );
+        assert!(patch.ops.is_empty());
     }
 }

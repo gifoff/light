@@ -49,7 +49,7 @@ jobs:
       # командной строки D8050 при параллельной сборке.
       - name: Clippy
         env:
-          CARGO_BUILD_JOBS: ${{ matrix.os == 'windows-latest' && '1' || '' }}
+          CARGO_BUILD_JOBS: ${{ matrix.os == 'windows-latest' && '1' || 'default' }}
         run: cargo clippy --all-targets --all-features -- -D warnings
 
   test:
@@ -103,6 +103,10 @@ jobs:
           cargo build -p example-dashboard
           cargo build -p example-multi-window
           cargo build -p example-devtools-demo
+          # Плагин с #[component] (Plugin API, Этап 4): проверяет что кастомный
+          # тег `<datepicker>` проходит через compile-time валидацию и
+          # регистрируется через linkme.
+          cargo build -p example-plugin-demo
 
   # Feature combinations are checked separately on Linux: they catch code that
   # is valid only with `--all-features` but broken with a reduced feature set.
@@ -132,4 +136,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Test feature set
-        run: cargo test -p light ${{ matrix.args }}
+        run: cargo test -p light-fw ${{ matrix.args }}

@@ -49,7 +49,7 @@ pub enum ComponentKind {
 }
 
 /// Что компонент предоставляет.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct Provides {
     /// Новые теги.
     #[serde(default)]

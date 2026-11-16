@@ -9,14 +9,15 @@ use serde_json::json;
 use light_fw_cli_core::session;
 
 /// Уникальный изолированный каталог «рабочей директории» приложения.
-fn scratch() -> PathBuf {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("clock")
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!("light-session-test-{nanos}"));
-    fs::create_dir_all(&dir).expect("create");
-    dir
+///
+/// Использует `tempfile::TempDir` (гарантированная уникальность +
+/// авто-очистка), а не ручной `temp_dir().join(nanos)` — на macOS arm64
+/// путь `temp_dir()` может содержать не полностью разрешённые симлинки,
+/// а nanosecond-based имя не гарантирует уникальность при параллельном
+/// запуске тестов.
+fn scratch() -> (PathBuf, tempfile::TempDir) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    (dir.path().to_path_buf(), dir)
 }
 
 /// Минимальный валидный PNG 1x1 (base64), чтобы `save_screenshot` его принял.
@@ -25,7 +26,7 @@ const TINY_PNG_B64: &str =
 
 #[test]
 fn session_lifecycle_with_actions_and_screenshot() {
-    let cwd = scratch();
+    let (cwd, _guard) = scratch();
     let _ = fs::remove_dir_all(cwd.join(".light")); // чистый старт
 
     // --- start ---
@@ -89,15 +90,15 @@ fn session_lifecycle_with_actions_and_screenshot() {
     // нумерованная хроника
     assert!(text.contains("## Sequence"), "раздел Sequence: {text}");
 
-    // --- cleanup ---
-    let _ = fs::remove_dir_all(&cwd);
+    // --- cleanup (TempDir guard auto-cleans) ---
+    drop(_guard);
 }
 
 #[test]
 fn stop_without_active_session_fails() {
-    let cwd = scratch();
+    let (cwd, _guard) = scratch();
     let err = session::stop_session(&cwd, "no-such-id").expect_err("нет активной сессии");
     let msg = format!("{err}");
     assert!(!msg.is_empty(), "возвращается осмысленная ошибка");
-    let _ = fs::remove_dir_all(&cwd);
+    drop(_guard);
 }
