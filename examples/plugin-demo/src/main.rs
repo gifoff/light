@@ -9,13 +9,6 @@ struct App {
     count: i64,
 }
 
-impl App {
-    fn increment(&self) -> bool {
-        self.set_count(self.count() + 1);
-        true
-    }
-}
-
 fn main() -> light_fw::Result<()> {
     light_fw::run(App::new())
 }

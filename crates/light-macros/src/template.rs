@@ -1291,21 +1291,25 @@ impl Generator {
     /// `#[linkme::distributed_slice(REGISTERED_COMPONENTS)]` в `#[component]`)
     /// вызывает `render` плагина и перекрашивает корень в `Custom(тег)`.
     /// Атрибуты и дочерние узлы из HTML передаются плагину тем же путём.
+    ///
+    /// Важно: генерирует **блок-выражение** (как `gen_container`), а не
+    /// statement. Вызывающий код (`gen_push_node`) оборачивает результат в
+    /// `__children.push(#element);` — поэтому здесь свой `let mut __children`
+    /// создаётся внутри блока, а на выходе возвращается `VElement` как
+    /// значение последнего выражения.
     fn gen_custom_element(&mut self, element: &Element, key: &KeyExpr) -> syn::Result<TokenStream> {
         let tag_literal = element.name.clone();
-        // Ключ для контейнера (без `.token()` — он нужен только для `#key` в quote!).
-        let children_tokens = self.gen_children(&element.children, Some(key))?;
+        let pushes = self.gen_children(&element.children, Some(key))?;
         let key = key.token();
-        Ok(quote! {
-            __children.push(
-                ::light_fw::vdom::VElement::container(
-                    #key,
-                    ::light_fw::vdom::NodeKind::Custom(::light_fw::vdom::intern_key(#tag_literal)),
-                    vec![],
-                )
-            );
-            #(#children_tokens)*
-        })
+        Ok(quote! {{
+            let mut __children = ::std::vec::Vec::new();
+            #(#pushes)*
+            ::light_fw::vdom::VElement::container(
+                #key,
+                ::light_fw::vdom::NodeKind::Custom(::light_fw::vdom::intern_key(#tag_literal)),
+                __children,
+            )
+        }})
     }
 
     /// Ветви обработчиков событий элемента; регистрируются в `arms`.
