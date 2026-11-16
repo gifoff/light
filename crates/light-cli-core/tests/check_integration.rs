@@ -102,19 +102,20 @@ fn check_checkbox_without_form_is_available() {
 }
 
 // ---------------------------------------------------------------------------
-// Сценарий 3 по ТЗ: добавлен `<datepicker>` (нет в bundled registry) →
-// «Неизвестно».
+// Сценарий 3 по ТЗ: добавлен `<datepicker>` (есть в bundled registry как
+// `light-widget-datepicker`) → «Доступно» (не установлено, но известно).
 // ---------------------------------------------------------------------------
 #[test]
-fn check_datepicker_is_unknown() {
+fn check_datepicker_is_available() {
     let mut used: BTreeMap<String, usize> = BTreeMap::new();
     used.insert("div".into(), 1);
     used.insert("datepicker".into(), 1);
     let installed: Vec<ComponentInfo> = vec![];
 
     let report = compare_tags(&used, &installed);
-    assert!(report.available.is_empty());
-    assert_eq!(report.unknown, vec!["datepicker".to_string()]);
+    assert_eq!(report.available.len(), 1);
+    assert_eq!(report.available[0].crate_name, "light-widget-datepicker");
+    assert!(report.unknown.is_empty());
     assert!(report.has_problems());
 }
 
