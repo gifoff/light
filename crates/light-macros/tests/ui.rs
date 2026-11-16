@@ -11,5 +11,5 @@
 fn ui() {
     let t = trybuild::TestCases::new();
     // `#[template]` с неизвестным тегом → compile_error «неизвестный элемент».
-    t.compile_fail("ui/component_unknown_tag.rs");
+    t.compile_fail("tests/ui/component_unknown_tag.rs");
 }
