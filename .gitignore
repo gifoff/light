@@ -44,3 +44,7 @@ test-dx/
 
 # E2E staging directory
 .e2e/
+
+# Временные файлы и отчёты (см. AGENTS.md, раздел «Временные файлы и отчёты»)
+target/temp/
+REPORT-*.md
