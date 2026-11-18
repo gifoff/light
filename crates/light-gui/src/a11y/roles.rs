@@ -6,7 +6,7 @@
 
 use accesskit::{Role, Toggled};
 
-use crate::vdom::{NodeKind, VElement};
+use light_vdom::{NodeKind, VElement};
 
 /// Роль по значению атрибута `role="…"` (kebab-case).
 ///
@@ -171,7 +171,7 @@ pub fn parse_tristate(value: &str) -> Option<Toggled> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vdom::Style;
+    use light_vdom::Style;
 
     fn element(tag: &'static str, kind: NodeKind, attrs: &[(&'static str, &str)]) -> VElement {
         let mut node = VElement::leaf("k", kind).with_tag(tag);
@@ -224,7 +224,7 @@ mod tests {
                 placeholder: String::new(),
                 disabled: false,
                 multiline: true,
-                resize: crate::vdom::Resize::None,
+                resize: light_vdom::Resize::None,
                 masked: false,
             }),
             Role::MultilineTextInput
@@ -235,7 +235,7 @@ mod tests {
                 placeholder: String::new(),
                 disabled: false,
                 multiline: false,
-                resize: crate::vdom::Resize::None,
+                resize: light_vdom::Resize::None,
                 masked: true,
             }),
             Role::PasswordInput
@@ -366,7 +366,7 @@ mod tests {
                 placeholder: String::new(),
                 disabled: false,
                 multiline: false,
-                resize: crate::vdom::Resize::None,
+                resize: light_vdom::Resize::None,
                 masked: true,
             },
             &[("role", "combobox")],
@@ -383,7 +383,7 @@ mod tests {
                 placeholder: String::new(),
                 disabled: false,
                 multiline: false,
-                resize: crate::vdom::Resize::None,
+                resize: light_vdom::Resize::None,
                 masked: true,
             },
             &[],

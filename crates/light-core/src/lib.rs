@@ -130,37 +130,75 @@ pub const RUNTIME_TEMPLATES_ENABLED: bool = false;
 pub use serde;
 pub use serde_json;
 
-pub mod a11y;
+// GUI-модули (0.20.0, этап 4 — Strangler Fig): окно на winit, a11y-мост,
+// рендер-бэкенды, асинхронный рантайм и DevTools вынесены в `light-gui`.
+// Реэкспортируем каждый из них под прежними именами, чтобы публичный API
+// `light_fw_core::*` (и генерируемый код `::light_fw::…`) не изменился.
+// Заглушки (`#[doc(hidden)]`) нужны только там, где без фичи модуля в
+// `light-gui` нет вовсе: headless-режим сохраняет стабильные имена
+// реэкспорта (`post_to_ui`, `TaskHandle`, …) для макросного кода.
+/// GUI-слой: окно, события ввода, a11y — перебазиан в `light-gui` (этап 4).
+pub use light_gui::a11y;
+// Этап 4 (Strangler Fig): `accesskit` живёт в `light-gui`. Для интеграционных
+// тестов ядра (`tests/a11y_*.rs`) реэкспортируем его под прежним именем,
+// чтобы не добавлять прямую зависимость `accesskit` на уровне `[dev-dependencies]`
+// (она и так пробрасывается через фичу `a11y` в `light-gui`).
+// Тестам ядра нужен прямой путь `light_fw_core::accesskit` — добавляем его
+// как `[dev-dependencies]` с той же версией, что и `light-gui`.
+#[cfg(feature = "window")]
+/// Модуль окна (winit): реализация живёт в `light-gui`.
+pub use light_gui::window;
+// Без фичи `window` — заглушка (пустой модуль) под тем же именем, чтобы
+// код 0.19.x, ссылающийся на `light_fw::window::…`, не ломался компиляцией
+// в headless-режиме (`--no-default-features`).
+#[cfg(not(feature = "window"))]
+pub mod window {
+    //! Заглушка модуля окна без фичи `window`.
+}
+#[cfg(feature = "async-runtime")]
+pub use light_gui::async_runtime;
+// Без фичи `async-runtime` — заглушка с теми же именами (см. light_gui::stub):
+// headless-режим (`--no-default-features`) всё равно компилирует модуль
+// `async_runtime`, но функции возвращают `Err(TaskError)` вместо того, чтобы
+// паниковать на отсутствии EventLoopProxy.
+#[cfg(not(feature = "async-runtime"))]
+pub use light_gui::stub as async_runtime;
 pub mod component;
 pub mod control;
 #[cfg(feature = "devtools")]
-pub mod devtools;
-// VDOM, layout, DOM, runtime, plugins, validation — перенесены в `light-vdom`
-// (0.20.0, этап 3 — Strangler Fig). Реэкспортируем под прежними именами для
-// обратной совместимости с 0.19.x.
-#[cfg(feature = "file-dialog")]
-pub mod file_dialog;
-// `error` остаётся локальным: полный тип с 8 вариантами (VDOM + window-backend),
-// а `light_vdom::error` содержит упрощённый тип с 3 вариантами.
+/// Инспекция состояния приложения: JSON-снимки VDOM/раскладки (DevTools).
+pub use light_gui::devtools;
+// `error` остаётся локальным: полный тип с вариантами VDOM (`Font`,
+// `UnregisteredCustomElement`, `Image`) плюс `From<light_gui::Error>` для
+// оконных/бэкенд-вариантов (теперь живут в `light-gui`, этап 4).
 pub mod error;
+#[cfg(feature = "file-dialog")]
+pub use light_gui::file_dialog;
 pub use light_vdom::{dom, layout, plugins, runtime, text_wrap, validation, vdom};
 pub mod prelude;
-
-#[cfg(feature = "async-runtime")]
-pub mod async_runtime;
 #[cfg(feature = "window")]
-pub mod render;
-#[cfg(feature = "window")]
-pub mod window;
+/// Рендер-бэкенды (`softbuffer`/`pixels`): перебазианы в `light-gui` (этап 4).
+pub use light_gui::render;
+#[cfg(not(feature = "window"))]
+#[doc(hidden)]
+mod render {
+    //! Заглушка модуля рендера без фичи `window`.
+}
 
+// Реэкспорт API асинхронного рантайма (этап 4: модуль живёт в `light-gui`;
+// без фичи `async-runtime` — заглушка с теми же именами).
 #[cfg(feature = "async-await")]
-pub use async_runtime::spawn_async;
+pub use light_gui::async_runtime::spawn_async;
 #[cfg(feature = "async-runtime")]
-pub use async_runtime::{
+pub use light_gui::async_runtime::{
     TaskContext, TaskError, TaskHandle, UserEvent, apply_action, post_to_ui, post_update,
     post_update_to, spawn,
 };
+// Обратная совместимость 0.20.0: channel-абстракция оконных операций
+// (закрытие, минимизация, toggle maximize) перебазиана в `light-vdom`
+// (этап 3).
 pub use light_reactivity as reactivity;
+pub use light_vdom::window_backend;
 // Обратная совместимость 0.20.0: реактивное ядро и коллекция перебазированы
 // в `light-reactivity`; реэкспортируем оба модуля под прежними именами, чтобы
 // `light_fw_core::reactive` / `light_fw_core::collection` работали без изменений.
@@ -195,8 +233,8 @@ pub use vdom::{
 ///
 /// Возвращает только при закрытии окна или ошибке.
 #[cfg(feature = "window")]
-pub fn run(component: impl Component + 'static) -> Result<()> {
-    window::run(component)
+pub fn run(component: impl Component + 'static) -> crate::error::Result<()> {
+    window::run(component).map_err(crate::error::Error::from)
 }
 
 /// Запускает TCP-сервер DevTools на `127.0.0.1:port`.

@@ -16,7 +16,7 @@
 //! ```rust
 //! # #[cfg(feature = "window")]
 //! # fn example() {
-//! use light_fw_core::async_runtime::{post_to_ui, spawn};
+//! use light_gui::async_runtime::{post_to_ui, spawn_async, spawn};
 //!
 //! spawn(|ctx| {
 //!     std::thread::sleep(std::time::Duration::from_secs(1));
@@ -40,9 +40,12 @@ use winit::window::WindowId;
 
 #[cfg(feature = "devtools")]
 use crate::devtools::DevToolsCommand;
-use crate::{WindowCommand, component::Component, control::WindowToken};
-#[cfg(feature = "a11y-winit")]
-use accesskit_winit;
+// Этап 4: `Component` — из `light_vdom::component`; `WindowCommand`/
+// `WindowToken` — из `light_vdom::window_backend` (канал + `WindowBackend`
+// trait; core реэкспортирует их как `light_fw_core::control` для
+// обратной совместимости 0.19.x).
+use light_vdom::component::Component;
+use light_vdom::window_backend::{WindowCommand, WindowToken};
 
 /// Типизированное действие над состоянием компонента в UI-потоке.
 ///
@@ -259,7 +262,7 @@ where
 /// ```rust
 /// # #[cfg(feature = "async-await")]
 /// # fn example() {
-/// use light_fw_core::async_runtime::spawn_async;
+/// use light_gui::async_runtime::spawn_async;
 ///
 /// spawn_async(|ctx| async move {
 ///     // асинхронная работа с доступом к флагу отмены
@@ -409,7 +412,7 @@ pub fn apply_action<'a>(
 /// обновление тихо отбрасывается (в UI-потоке логируется
 /// `async-runtime: target window closed`).
 ///
-/// Токен окна получается через [`crate::control::current_window_token`]
+/// Токен окна получается через [`light_vdom::window_backend::current_window_token`]
 /// (из UI-потока, например из `on_click`) или хранится в состоянии
 /// компонента (поле типа `WindowToken` в `#[proxy]`-структуре).
 ///
@@ -474,14 +477,14 @@ mod tests {
     #[test]
     fn post_update_without_install_errors() {
         struct S;
-        impl crate::Component for S {
+        impl light_vdom::component::Component for S {
             fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
                 self
             }
-            fn render(&self) -> crate::VElement {
-                crate::VElement::leaf(
+            fn render(&self) -> light_vdom::vdom::VElement {
+                light_vdom::vdom::VElement::leaf(
                     "",
-                    crate::NodeKind::Text {
+                    light_vdom::vdom::NodeKind::Text {
                         content: "noop".into(),
                     },
                 )

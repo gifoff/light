@@ -19,7 +19,6 @@ thread_local! {
 }
 
 /// Сохраняет дерево окна `token` (вызывается оконным бэкендом).
-#[cfg(feature = "window")]
 pub fn set_tree(token: WindowToken, tree: Arc<VElement>) {
     TREES.with(|trees| {
         trees.borrow_mut().insert(token, tree);
@@ -27,7 +26,6 @@ pub fn set_tree(token: WindowToken, tree: Arc<VElement>) {
 }
 
 /// Удаляет дерево закрытого окна.
-#[cfg(feature = "window")]
 pub fn remove_tree(token: WindowToken) {
     TREES.with(|trees| {
         trees.borrow_mut().remove(&token);

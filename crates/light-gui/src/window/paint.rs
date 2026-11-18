@@ -9,14 +9,14 @@ use ab_glyph::{Font, FontVec, PxScale, ScaleFont, point};
 
 use super::font::measure;
 #[cfg(feature = "elements-select")]
-use crate::layout::SELECT_PAD_X;
+use light_vdom::layout::SELECT_PAD_X;
 #[cfg(any(
     feature = "elements-checkbox",
     feature = "elements-radio",
     feature = "elements-select"
 ))]
-use crate::layout::{CHECKBOX_BOX, CHECKBOX_GAP};
-use crate::layout::{FIELD_PAD_X, FONT_SIZE, Layout, PlacedNode, Rect};
+use light_vdom::layout::{CHECKBOX_BOX, CHECKBOX_GAP};
+use light_vdom::layout::{FIELD_PAD_X, FONT_SIZE, Layout, PlacedNode, Rect};
 
 /// Цвет в формате `0xRRGGBBAA`.
 pub const fn rgba(r: u8, g: u8, b: u8, a: u8) -> u32 {
@@ -522,7 +522,7 @@ fn mark_disabled_text(nodes: &[PlacedNode], index: usize, inherited: bool, out: 
     let disabled = inherited
         || matches!(
             nodes[index].kind,
-            crate::vdom::NodeKind::Button { disabled: true, .. }
+            light_vdom::NodeKind::Button { disabled: true, .. }
         );
     out[index] = disabled;
     for &child in &nodes[index].children {
@@ -577,8 +577,8 @@ pub fn render(
             border
         };
         let background = match &node.kind {
-            crate::vdom::NodeKind::TitleBar => Some(style.background.unwrap_or(TITLEBAR_BG)),
-            crate::vdom::NodeKind::Button { disabled, .. } => {
+            light_vdom::NodeKind::TitleBar => Some(style.background.unwrap_or(TITLEBAR_BG)),
+            light_vdom::NodeKind::Button { disabled, .. } => {
                 Some(style.background.unwrap_or(if *disabled {
                     BUTTON_BG_DISABLED
                 } else if hover == Some(node.key) {
@@ -587,9 +587,9 @@ pub fn render(
                     BUTTON_BG
                 }))
             }
-            crate::vdom::NodeKind::TextField { .. } => Some(style.background.unwrap_or(FIELD_BG)),
+            light_vdom::NodeKind::TextField { .. } => Some(style.background.unwrap_or(FIELD_BG)),
             #[cfg(feature = "elements-select")]
-            crate::vdom::NodeKind::Select { .. } => Some(style.background.unwrap_or(FIELD_BG)),
+            light_vdom::NodeKind::Select { .. } => Some(style.background.unwrap_or(FIELD_BG)),
             _ => style.background,
         };
         let draw = |canvas: &mut Canvas| {
@@ -597,14 +597,14 @@ pub fn render(
                 canvas.fill_rect(color, rect);
             }
             match &node.kind {
-                crate::vdom::NodeKind::Column
-                | crate::vdom::NodeKind::Row
-                | crate::vdom::NodeKind::Window => {}
+                light_vdom::NodeKind::Column
+                | light_vdom::NodeKind::Row
+                | light_vdom::NodeKind::Window => {}
                 // Кастомный элемент плагина: фон (background) уже отрисован выше,
                 // содержимое — как у Column (отдельные children в своём цикле),
                 // дополнительная обводка/рамка не нужна.
-                crate::vdom::NodeKind::Custom(_) => {}
-                crate::vdom::NodeKind::TitleBar => {
+                light_vdom::NodeKind::Custom(_) => {}
+                light_vdom::NodeKind::TitleBar => {
                     if style.border_size > 0.0 {
                         if let Some(color) = style.border_color {
                             canvas.stroke_rect(color, rect, thickness);
@@ -616,7 +616,7 @@ pub fn render(
                         );
                     }
                 }
-                crate::vdom::NodeKind::Text { content } => {
+                light_vdom::NodeKind::Text { content } => {
                     let color = if style.font_color.is_none() && dimmed[index] {
                         BUTTON_LABEL_DISABLED
                     } else {
@@ -630,8 +630,8 @@ pub fn render(
                     );
                     canvas.clipped(text_rect, |canvas| {
                         match style.white_space.unwrap_or_default() {
-                            crate::vdom::WhiteSpace::Normal => {
-                                let lines = crate::text_wrap::wrap_words(
+                            light_vdom::WhiteSpace::Normal => {
+                                let lines = light_vdom::text_wrap::wrap_words(
                                     content,
                                     text_rect.w.max(1.0),
                                     |line| measure(font.font(), line, size).0,
@@ -648,7 +648,7 @@ pub fn render(
                                     );
                                 }
                             }
-                            crate::vdom::WhiteSpace::Nowrap => {
+                            light_vdom::WhiteSpace::Nowrap => {
                                 let line = ellipsized(font, content, size, text_rect.w);
                                 canvas.draw_text(
                                     font,
@@ -663,7 +663,7 @@ pub fn render(
                     });
                 }
                 #[cfg(feature = "image-support")]
-                crate::vdom::NodeKind::Image { src, data, .. } => {
+                light_vdom::NodeKind::Image { src, data, .. } => {
                     if let Some(image) = super::image::load(src, data) {
                         let image_rect = Rect::new(
                             rect.x + inset.left,
@@ -680,7 +680,7 @@ pub fn render(
                     }
                 }
                 #[cfg(feature = "image-support")]
-                crate::vdom::NodeKind::RuntimeImage { image, .. } => {
+                light_vdom::NodeKind::RuntimeImage { image, .. } => {
                     if let Some(decoded) = super::image::load_runtime(image) {
                         let image_rect = Rect::new(
                             rect.x + inset.left,
@@ -696,14 +696,14 @@ pub fn render(
                         canvas.stroke_rect(color, rect, thickness);
                     }
                 }
-                crate::vdom::NodeKind::Button { .. } => {
+                light_vdom::NodeKind::Button { .. } => {
                     canvas.stroke_rect(
                         style.border_color.unwrap_or(BUTTON_BORDER),
                         rect,
                         thickness,
                     );
                 }
-                crate::vdom::NodeKind::TextField {
+                light_vdom::NodeKind::TextField {
                     value,
                     placeholder,
                     disabled,
@@ -749,7 +749,7 @@ pub fn render(
                         caret_pos,
                         if active { selection } else { None },
                     );
-                    if *resize != crate::vdom::Resize::None {
+                    if *resize != light_vdom::Resize::None {
                         draw_grip(canvas, rect, scale);
                     }
                     if style.required {
@@ -764,7 +764,7 @@ pub fn render(
                     }
                 }
                 #[cfg(feature = "elements-checkbox")]
-                crate::vdom::NodeKind::Checkbox {
+                light_vdom::NodeKind::Checkbox {
                     label,
                     checked,
                     disabled,
@@ -790,7 +790,7 @@ pub fn render(
                     }
                 }
                 #[cfg(feature = "elements-radio")]
-                crate::vdom::NodeKind::Radio {
+                light_vdom::NodeKind::Radio {
                     label,
                     selected,
                     disabled,
@@ -817,7 +817,7 @@ pub fn render(
                     }
                 }
                 #[cfg(feature = "elements-select")]
-                crate::vdom::NodeKind::Select {
+                light_vdom::NodeKind::Select {
                     value,
                     options,
                     disabled,
@@ -946,7 +946,7 @@ pub fn render(
     // фокусом. Текстовые поля имеют собственную рамку фокуса.
     if let Some(key) = focus_ring
         && let Some(node) = layout.node(key)
-        && !matches!(node.kind, crate::vdom::NodeKind::TextField { .. })
+        && !matches!(node.kind, light_vdom::NodeKind::TextField { .. })
     {
         draw_focus_ring(canvas, node.rect, scale);
     }
@@ -954,7 +954,7 @@ pub fn render(
     #[cfg(feature = "elements-select")]
     if let Some(key) = open_select
         && let Some(node) = layout.node(key)
-        && let crate::vdom::NodeKind::Select { value, options, .. } = &node.kind
+        && let light_vdom::NodeKind::Select { value, options, .. } = &node.kind
         && !options.is_empty()
     {
         let size = node.style.font_size.unwrap_or(FONT_SIZE) * scale;
@@ -991,11 +991,11 @@ fn draw_field_required(
     rect: Rect,
     scale: f32,
     size: f32,
-    indicator: crate::vdom::RequiredIndicator,
+    indicator: light_vdom::RequiredIndicator,
 ) {
     match indicator {
-        crate::vdom::RequiredIndicator::None => {}
-        crate::vdom::RequiredIndicator::Asterisk => {
+        light_vdom::RequiredIndicator::None => {}
+        light_vdom::RequiredIndicator::Asterisk => {
             let (width, _) = measure(font.font(), "*", size);
             canvas.draw_text(
                 font,
@@ -1006,7 +1006,7 @@ fn draw_field_required(
                 size,
             );
         }
-        crate::vdom::RequiredIndicator::Accent(color) => {
+        light_vdom::RequiredIndicator::Accent(color) => {
             let width = (2.0 * scale).max(2.0);
             canvas.fill_rect(color, Rect::new(rect.x, rect.y, width, rect.h));
         }
@@ -1022,11 +1022,11 @@ fn draw_inline_required(
     rect: Rect,
     scale: f32,
     size: f32,
-    indicator: crate::vdom::RequiredIndicator,
+    indicator: light_vdom::RequiredIndicator,
 ) {
     match indicator {
-        crate::vdom::RequiredIndicator::None => {}
-        crate::vdom::RequiredIndicator::Asterisk => {
+        light_vdom::RequiredIndicator::None => {}
+        light_vdom::RequiredIndicator::Asterisk => {
             let (_, text_h) = measure(font.font(), "*", size);
             canvas.draw_text(
                 font,
@@ -1037,7 +1037,7 @@ fn draw_inline_required(
                 size,
             );
         }
-        crate::vdom::RequiredIndicator::Accent(color) => {
+        light_vdom::RequiredIndicator::Accent(color) => {
             let width = (2.0 * scale).max(2.0);
             canvas.fill_rect(color, Rect::new(rect.x, rect.y, width, rect.h));
         }
@@ -1051,13 +1051,13 @@ fn draw_checkbox(
     canvas: &mut Canvas,
     font: &super::font::FontMetrics,
     rect: Rect,
-    inset: crate::vdom::Edges,
+    inset: light_vdom::Edges,
     scale: f32,
     size: f32,
     label: &str,
     checked: bool,
     disabled: bool,
-    style: crate::vdom::Style,
+    style: light_vdom::Style,
 ) {
     let box_size = CHECKBOX_BOX * scale;
     let gap = CHECKBOX_GAP * scale;
@@ -1098,13 +1098,13 @@ fn draw_radio(
     canvas: &mut Canvas,
     font: &super::font::FontMetrics,
     rect: Rect,
-    inset: crate::vdom::Edges,
+    inset: light_vdom::Edges,
     scale: f32,
     size: f32,
     label: &str,
     selected: bool,
     disabled: bool,
-    style: crate::vdom::Style,
+    style: light_vdom::Style,
 ) {
     let box_size = CHECKBOX_BOX * scale;
     let gap = CHECKBOX_GAP * scale;
@@ -1141,14 +1141,14 @@ fn draw_select(
     canvas: &mut Canvas,
     font: &super::font::FontMetrics,
     rect: Rect,
-    inset: crate::vdom::Edges,
+    inset: light_vdom::Edges,
     scale: f32,
     size: f32,
     thickness: f32,
     value: &str,
-    options: &[crate::vdom::SelectOption],
+    options: &[light_vdom::SelectOption],
     disabled: bool,
-    style: crate::vdom::Style,
+    style: light_vdom::Style,
     open: bool,
 ) {
     let frame = if style.invalid {
@@ -1216,7 +1216,7 @@ fn draw_select_popup(
     canvas: &mut Canvas,
     font: &super::font::FontMetrics,
     rect: Rect,
-    options: &[crate::vdom::SelectOption],
+    options: &[light_vdom::SelectOption],
     value: &str,
     hover: Option<usize>,
     scale: f32,
@@ -1258,7 +1258,7 @@ fn render_field(
     canvas: &mut Canvas,
     font: &super::font::FontMetrics,
     rect: Rect,
-    inset: crate::vdom::Edges,
+    inset: light_vdom::Edges,
     scale: f32,
     size: f32,
     border: f32,

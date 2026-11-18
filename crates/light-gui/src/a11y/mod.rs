@@ -1,6 +1,6 @@
 //! Доступность интерфейса (Accessibility / a11y).
 //!
-//! Модуль описывает, как виртуальное дерево [`crate::vdom::VElement`]
+//! Модуль описывает, как виртуальное дерево [`light_vdom::vdom::VElement`]
 //! превращается в дерево доступности [AccessKit](https://accesskit.dev/),
 //! которое читают экранные дикторы (NVDA, Narrator, VoiceOver, Orca).
 //!
@@ -82,8 +82,8 @@ pub fn parse_bool(value: &str) -> Option<bool> {
 /// курсора. Атрибут `aria-disabled` имеет приоритет; иначе смотрится
 /// встроенный флаг `disabled` у интерактивных узлов. Доступна независимо от
 /// фичи `a11y`, поэтому проверку можно использовать в оконной логике.
-pub fn is_disabled(element: &crate::vdom::VElement) -> bool {
-    use crate::vdom::NodeKind;
+pub fn is_disabled(element: &light_vdom::vdom::VElement) -> bool {
+    use light_vdom::vdom::NodeKind;
     if element.attr("aria-disabled").and_then(parse_bool) == Some(true) {
         return true;
     }
@@ -230,12 +230,12 @@ pub fn blur() {
 /// поддержке доступности [`active_window`] вернёт `None`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowHandle {
-    token: crate::control::WindowToken,
+    token: light_vdom::window_backend::WindowToken,
 }
 
 impl WindowHandle {
-    /// Токен окна, принятый в [`crate::control`].
-    pub fn token(self) -> crate::control::WindowToken {
+    /// Токен окна, принятый в [`light_vdom::window_backend`].
+    pub fn token(self) -> light_vdom::window_backend::WindowToken {
         self.token
     }
 
@@ -253,7 +253,7 @@ pub fn active_window() -> Option<WindowHandle> {
         return None;
     }
     Some(WindowHandle {
-        token: crate::control::active_window(),
+        token: light_vdom::window_backend::active_window(),
     })
 }
 

@@ -6,7 +6,7 @@
 //! Узлы с `tabindex="-1"` доступны для программного фокуса, но пропускаются
 //! при обходе.
 
-use crate::vdom::VElement;
+use light_vdom::VElement;
 
 use super::roles::parse_bool;
 
@@ -133,7 +133,7 @@ pub fn next_focus<'a>(root: &'a VElement, current: &str, forward: bool) -> Optio
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vdom::{ButtonType, NodeKind, Style, VElement};
+    use light_vdom::{ButtonType, NodeKind, Style, VElement};
 
     fn button(key: &'static str, disabled: bool) -> VElement {
         VElement::leaf(
@@ -162,7 +162,7 @@ mod tests {
                 placeholder: String::new(),
                 disabled,
                 multiline: false,
-                resize: crate::vdom::Resize::None,
+                resize: light_vdom::Resize::None,
                 masked: false,
             },
         )

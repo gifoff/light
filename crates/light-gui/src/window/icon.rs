@@ -2,7 +2,7 @@
 
 use winit::window::Icon;
 
-use crate::component::WindowConfig;
+use light_vdom::component::WindowConfig;
 
 /// Встроенная иконка Light (128×128, сырые RGBA-байты: синий скруглённый
 /// квадрат с белым шевроном). Формат совпадает с тем, что принимает

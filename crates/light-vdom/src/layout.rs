@@ -1632,7 +1632,6 @@ pub fn damage_regions(
     regions.into_values().collect()
 }
 
-#[cfg(feature = "window")]
 /// Объединяет пересекающиеся области перерисовки в общие прямоугольники.
 ///
 /// Перерисовка каждой области требует отдельного прохода по дереву, поэтому
@@ -1666,7 +1665,6 @@ pub fn coalesce_regions(regions: Vec<Rect>) -> Vec<Rect> {
     merged
 }
 
-#[cfg(feature = "window")]
 fn overlaps(a: Rect, b: Rect) -> bool {
     a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 }

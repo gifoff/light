@@ -9,8 +9,10 @@
 //! * `Escape` — закрытие модального окна или раскрытого списка;
 //! * стрелки — навигация внутри группы переключателей и списка.
 
-/// Кнопка отправки ближайшей формы — см. [`crate::validation::find_submit_button`].
-pub use crate::validation::find_submit_button;
+/// Кнопка отправки ближайшей формы — см. [`light_vdom::validation::find_submit_button`].
+#[doc(hidden)]
+#[allow(unused_imports)]
+pub use light_vdom::validation::find_submit_button;
 
 /// Встроенное действие, соответствующее нажатой клавише.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,7 +33,7 @@ pub enum KeyAction {
 
 /// Встроенное действие для клавиши `key` с учётом `Shift`.
 ///
-/// Значения `key` совпадают с [`crate::vdom::KeyInfo::key`] (`"Tab"`,
+/// Значения `key` совпадают с [`light_vdom::vdom::KeyInfo::key`] (`"Tab"`,
 /// `"Enter"`, `" "`, `"Escape"`, `"ArrowUp"`…).
 pub fn builtin_action(key: &str, shift: bool) -> Option<KeyAction> {
     let action = match key {

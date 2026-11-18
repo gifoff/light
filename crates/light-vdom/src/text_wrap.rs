@@ -68,7 +68,6 @@ where
     lines
 }
 
-#[cfg(feature = "window")]
 /// Переносит `text` по словам и возвращает только строки.
 pub fn wrap_words<F>(text: &str, max_width: f32, measure: F) -> Vec<String>
 where

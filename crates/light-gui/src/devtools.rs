@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 #[cfg(all(feature = "async-runtime", feature = "window"))]
 use winit::event_loop::EventLoopProxy;
 
-use crate::component::Component;
+use light_vdom::component::Component;
 
 /// Прокси цикла событий для доставки команд DevTools в UI-поток.
 ///
@@ -32,7 +32,7 @@ static DEVTOOLS_PROXY: OnceLock<EventLoopProxy<crate::async_runtime::UserEvent>>
 #[derive(Debug)]
 pub enum DevToolsCommand {
     /// Симулировать клик по элементу с ключом `key`
-    /// (вызывает [`Component::dispatch`] с [`Event::Click`](crate::vdom::Event::Click)).
+    /// (вызывает [`Component::dispatch`] с [`Event::Click`](light_vdom::Event::Click)).
     ///
     /// Результат обработки (`true` — обработано, `false` — нет) возвращается
     /// в TCP-сервер по каналу `response_tx`; сервер на его основе отвечает
@@ -46,7 +46,7 @@ pub enum DevToolsCommand {
     /// Изменить значение реактивного поля `field` на `value`.
     ///
     /// Применяется к компоненту активного окна через
-    /// [`Component::inject_state`](crate::component::Component::inject_state);
+    /// [`Component::inject_state`](light_vdom::component::Component::inject_state);
     /// результат обработки (`true` — окно найдено и перерисовано,
     /// `false` — активного окна нет) возвращается TCP-серверу по каналу
     /// `response_tx`; сервер на его основе отвечает клиенту
@@ -115,7 +115,7 @@ pub enum DevToolsCommand {
     /// ТЗ 0.16.0: вернуть VDOM-дерево активного окна в ТЗ-формате
     /// (`{"key","tag","text","children"}`).
     ///
-    /// Обрабатывается в UI-потоке (нужен живой [`crate::vdom::VElement`],
+    /// Обрабатывается в UI-потоке (нужен живой [`light_vdom::VElement`],
     /// JSON-снимок не содержит текста). Результат — JSON-строка или `null`.
     Tree {
         /// Канал возврата: `Some(json)` / `Some("null")`.
@@ -246,7 +246,7 @@ pub(crate) fn drain_commands() -> Vec<DevToolsCommand> {
 pub struct DevToolsSnapshot {
     /// Токен окна, которому принадлежит снимок.
     pub window_token: u32,
-    /// Виртуальное дерево ([`crate::vdom::VElement`]) в JSON-представлении.
+    /// Виртуальное дерево ([`light_vdom::VElement`]) в JSON-представлении.
     pub vdom: serde_json::Value,
     /// Значения реактивных свойств компонента (результат [`Component::inspect_state`]).
     pub state: serde_json::Value,
@@ -386,12 +386,12 @@ pub fn encode_screenshot(buf: &[u8], width: u32, height: u32) -> String {
 /// Формат (по ТЗ): `{"key":"...","tag":"..."|null,"text":null|"...","children":[...]}`.
 /// Текстовое содержимое берётся только из `NodeKind::Text`; у контейнеров
 /// `text = null`, а `tag` — атрибут `tag` элемента (если задан), иначе `null`.
-pub fn serialize_tree(element: &crate::vdom::VElement) -> serde_json::Value {
+pub fn serialize_tree(element: &light_vdom::VElement) -> serde_json::Value {
     serialize_tree_inner(element)
 }
 
-fn serialize_tree_inner(el: &crate::vdom::VElement) -> serde_json::Value {
-    use crate::vdom::NodeKind;
+fn serialize_tree_inner(el: &light_vdom::VElement) -> serde_json::Value {
+    use light_vdom::NodeKind;
     let tag = if el.tag.is_empty() {
         None
     } else {
@@ -413,13 +413,13 @@ fn serialize_tree_inner(el: &crate::vdom::VElement) -> serde_json::Value {
 /// ТЗ 0.16.0: сериализует плоское дерево раскладки в JSON для команды
 /// `LAYOUT`.
 ///
-/// Раскладка хранится как плоский список [`crate::layout::PlacedNode`] с
+/// Раскладка хранится как плоский список [`light_vdom::layout::PlacedNode`] с
 /// `children: Vec<usize>` (индексы). Рекурсируем от узла с индексом 0
 /// (корень), формируя `{"key":..,"tag":..,"x":..,"y":..,"w":..,"h":..,
 /// "children":[...]}`. `tag` берётся из VDOM-дерева по ключу (если найден).
 pub fn serialize_layout(
-    layout: &crate::layout::Layout,
-    tree: Option<&crate::vdom::VElement>,
+    layout: &light_vdom::layout::Layout,
+    tree: Option<&light_vdom::VElement>,
 ) -> serde_json::Value {
     let nodes = layout.nodes();
     if nodes.is_empty() {
@@ -431,8 +431,8 @@ pub fn serialize_layout(
 }
 
 fn serialize_layout_node(
-    nodes: &[crate::layout::PlacedNode],
-    tree: Option<&crate::vdom::VElement>,
+    nodes: &[light_vdom::layout::PlacedNode],
+    tree: Option<&light_vdom::VElement>,
     index: usize,
     depth: usize,
 ) -> serde_json::Value {
@@ -476,8 +476,8 @@ fn serialize_layout_node(
 /// `{"key":..,"tag":..,"rect":{"x":..,"y":..,"w":..,"h":..}}` или `None`,
 /// если элемент не найден.
 pub fn find_element(
-    tree: &crate::vdom::VElement,
-    layout: Option<&crate::layout::Layout>,
+    tree: &light_vdom::VElement,
+    layout: Option<&light_vdom::layout::Layout>,
     query: &str,
 ) -> Option<serde_json::Value> {
     let q: serde_json::Value = serde_json::from_str(query).ok()?;
@@ -553,8 +553,8 @@ pub fn find_element(
 /// `content`, всё остальное — суммарный текст потомков (включая кнопки/поля,
 /// в отличие от [`VElement::collect_plain_text_public`], которая их
 /// пропускает). Это нужно, чтобы найти кнопку по её подписи.
-fn collect_match_text(el: &crate::vdom::VElement, out: &mut String) {
-    use crate::vdom::NodeKind;
+fn collect_match_text(el: &light_vdom::VElement, out: &mut String) {
+    use light_vdom::NodeKind;
     if let NodeKind::Text { content } = &el.kind {
         out.push_str(content);
         return;
@@ -574,8 +574,8 @@ mod tests {
     //! и кодирование `SHOT`.
 
     use super::*;
-    use crate::layout::{Layout, TextMetrics};
-    use crate::vdom::{ButtonType, NodeKind, VElement};
+    use light_vdom::layout::{Layout, TextMetrics};
+    use light_vdom::{ButtonType, NodeKind, VElement};
 
     /// Заглушка метрик текста: фиксированная ширина/высота (для тестов
     /// раскладки не важно — важны ключи и иерархия узлов).
@@ -625,7 +625,7 @@ mod tests {
             ],
         )
         .with_tag("window")
-        .with_window(crate::component::WindowConfig::default())
+        .with_window(light_vdom::component::WindowConfig::default())
     }
 
     /// `TREE`: текстовые узлы несут `text`, контейнеры — `tag` и пустой `text`.

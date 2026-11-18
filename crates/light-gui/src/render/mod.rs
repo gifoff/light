@@ -9,9 +9,12 @@
 //! использует `softbuffer`: он не тянет графический API и даёт меньший
 //! бинарник. `wgpu` остаётся доступен для сравнения и как запасной путь.
 
-use crate::Result;
-use crate::layout::{Point, Rect};
 use crate::window::paint::Canvas;
+use light_vdom::layout::{Point, Rect};
+
+/// Результат операций бэкенда рендеринга (обёртка над `crate::error::Result`),
+/// переиспользуемая во всех реализациях [`RendererBackend`].
+pub type Result<T = ()> = crate::error::Result<T>;
 
 /// Цвет в формате `0xRRGGBBAA`.
 pub type Color = u32;

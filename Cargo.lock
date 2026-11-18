@@ -2347,22 +2347,16 @@ dependencies = [
 name = "light-fw-core"
 version = "0.19.0"
 dependencies = [
- "ab_glyph",
  "accesskit",
- "accesskit_winit",
- "base64 0.22.1",
  "criterion",
- "futures",
- "futures-timer",
  "insta",
  "light-fw-html",
  "light-fw-macros",
+ "light-gui",
  "light-reactivity",
  "light-vdom",
  "linkme",
  "pixels",
- "png 0.17.16",
- "rfd",
  "serde",
  "serde_json",
  "softbuffer",
@@ -2408,7 +2402,21 @@ dependencies = [
 name = "light-gui"
 version = "0.20.0"
 dependencies = [
+ "ab_glyph",
+ "accesskit",
+ "accesskit_winit",
+ "base64 0.22.1",
+ "futures",
+ "futures-timer",
+ "light-reactivity",
  "light-vdom",
+ "pixels",
+ "png 0.17.16",
+ "rfd",
+ "serde",
+ "serde_json",
+ "softbuffer",
+ "thiserror 2.0.21",
  "winit",
 ]
 

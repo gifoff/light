@@ -37,7 +37,12 @@ pub use error::{Error, Result};
 #[cfg(feature = "image-support")]
 pub use vdom::ImageData;
 pub use vdom::VWindow;
+// `diff` + `ButtonType`/`Cursor` — нужно GUI-слою (light-gui) и core:
+// window/mod.rs применяет патчи diff-а, а render/paint использует ButtonType.
+pub use layout::coalesce_regions;
+pub use text_wrap::wrap_words;
 pub use vdom::{
-    Align, Edges, Event, KeyInfo, MouseButton, NodeKind, Offset, Overflow, Position, Resize,
-    SelectOption, Size, Style, VElement, VNode, WhiteSpace,
+    Align, ButtonType, Cursor, Edges, Event, KeyInfo, MouseButton, NodeKind, Offset, Overflow,
+    Position, Resize, SelectOption, Size, Style, VElement, VNode, WhiteSpace,
 };
+pub use vdom::{RequiredIndicator, diff};

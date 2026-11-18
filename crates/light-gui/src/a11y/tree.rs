@@ -14,7 +14,7 @@ use accesskit::{Invalid, Node, NodeId, Role, Toggled, TreeId, TreeInfo, TreeUpda
 use super::Politeness;
 use super::focus;
 use super::roles;
-use crate::vdom::{NodeKind, VElement};
+use light_vdom::{NodeKind, VElement};
 
 /// Стабильный [`NodeId`] для пути узла `key`.
 ///
@@ -315,8 +315,8 @@ fn should_derive_label_from_children(role: Role) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vdom::{NodeKind, VElement};
     use accesskit::{NodeId, Role};
+    use light_vdom::{NodeKind, VElement};
 
     fn text(key: &'static str, content: &str) -> VElement {
         VElement::leaf(
@@ -332,7 +332,7 @@ mod tests {
             key,
             NodeKind::Button {
                 disabled: false,
-                button_type: crate::vdom::ButtonType::Submit,
+                button_type: light_vdom::ButtonType::Submit,
             },
             vec![text("t", label)],
         )
@@ -390,7 +390,7 @@ mod tests {
                 placeholder: String::new(),
                 disabled: false,
                 multiline: false,
-                resize: crate::vdom::Resize::None,
+                resize: light_vdom::Resize::None,
                 masked: false,
             },
         )

@@ -32,14 +32,9 @@ use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, ResizeDirection, Window, WindowId};
 
 use crate::Error;
-use crate::component::{Component, WindowConfig};
-use crate::control::{
-    WindowCommand, WindowToken, set_active_window, set_command_sender, set_current_window_token,
-};
-use crate::layout::{
-    FIELD_MIN_H, Layout, PlacedNode, Point, Rect, TextMetrics, coalesce_regions, damage_regions,
-    snapshot_rects,
-};
+use light_vdom::component::{Component, WindowConfig};
+// Канал оконных операций живёт в `light_vdom::window_backend` (этап 3);
+// core реэкспортирует его как `light_fw_core::control` для обратной совместимости.
 #[cfg(not(any(feature = "wgpu-backend", feature = "softbuffer-backend")))]
 use crate::render::NullBackend;
 use crate::render::RendererBackend;
@@ -47,7 +42,14 @@ use crate::render::RendererBackend;
 use crate::render::SoftbufferBackend;
 #[cfg(all(feature = "wgpu-backend", not(feature = "softbuffer-backend")))]
 use crate::render::WgpuBackend;
-use crate::vdom::{
+use light_vdom::layout::{
+    FIELD_MIN_H, Layout, PlacedNode, Point, Rect, TextMetrics, coalesce_regions, damage_regions,
+    snapshot_rects,
+};
+use light_vdom::window_backend::{
+    WindowCommand, WindowToken, set_active_window, set_command_sender, set_current_window_token,
+};
+use light_vdom::{
     ButtonType, Cursor, Event as DomEvent, KeyInfo, MouseButton as DomButton, NodeKind, Resize,
     VElement, diff,
 };
@@ -246,7 +248,7 @@ struct WindowState {
     /// узла → экземпляр. Заполняется при рендере из thread-local реестра
     /// [`crate::runtime`], используется при доставке событий через
     /// `on_event` (см. [`dispatch_custom_event`](Self::dispatch_custom_event)).
-    custom_instances: HashMap<String, Box<dyn crate::plugins::CustomElement>>,
+    custom_instances: HashMap<String, Box<dyn light_vdom::plugins::CustomElement>>,
 }
 
 impl WindowState {
@@ -257,9 +259,9 @@ impl WindowState {
         if self.resize(size.width, size.height)? {
             self.full_redraw = true;
         }
-        crate::control::set_maximized(window.is_maximized());
+        light_vdom::window_backend::set_maximized(window.is_maximized());
         #[cfg(feature = "a11y-winit")]
-        if let Some(command) = crate::control::take_focus_command() {
+        if let Some(command) = light_vdom::window_backend::take_focus_command() {
             self.apply_focus_command(command);
         }
 
@@ -272,7 +274,7 @@ impl WindowState {
         // Сбрасываем записи предыдущего кадра: после рендера компонента в
         // thread-local реестре накопятся только те экземпляры, которые создались
         // в этом кадре (Plugin API, Этап 5 — доставка on_event).
-        crate::runtime::drain_custom_instances();
+        light_vdom::runtime::drain_custom_instances();
         let mut tree = self.component.render();
         apply_overrides(&mut tree, &self.resized);
         apply_validation(&mut tree, &self.validation);
@@ -291,7 +293,7 @@ impl WindowState {
         // Забираем свежие экземпляры кастомных элементов, созданных в этом
         // кадре, и передаём их в окно: теперь события можно доставлять им
         // через on_event.
-        self.custom_instances = crate::runtime::drain_custom_instances();
+        self.custom_instances = light_vdom::runtime::drain_custom_instances();
         let full = self.full_redraw;
         let mut damage = if full {
             vec![Rect::new(0.0, 0.0, self.width as f32, self.height as f32)]
@@ -316,7 +318,7 @@ impl WindowState {
             damage.append(&mut self.pending_damage);
         }
         let damage = coalesce_regions(damage);
-        crate::dom::set_tree(self.token, Arc::clone(&tree));
+        light_vdom::dom::set_tree(self.token, Arc::clone(&tree));
         self.tree = Some(tree);
         self.layout = Some(layout);
         self.full_redraw = false;
@@ -326,7 +328,7 @@ impl WindowState {
         #[cfg(feature = "a11y-winit")]
         {
             self.reconcile_a11y_focus();
-            crate::control::set_focused_key(self.a11y_focus.clone());
+            light_vdom::window_backend::set_focused_key(self.a11y_focus.clone());
             self.push_accessibility();
         }
         if damage.is_empty() {
@@ -530,7 +532,7 @@ impl WindowState {
                 let redraw: &dyn Fn() = &|| {
                     flag.set(true);
                 };
-                let mut ctx = crate::plugins::EventCtx { redraw };
+                let mut ctx = light_vdom::plugins::EventCtx { redraw };
                 inst.on_event(event, &mut ctx);
                 // Возвращаем экземпляр на место.
                 self.custom_instances.insert(cur.clone(), inst);
@@ -613,11 +615,11 @@ impl WindowState {
         if !is_submit {
             return false;
         }
-        let Some(form) = crate::validation::form_ancestor(&tree, key) else {
+        let Some(form) = light_vdom::validation::form_ancestor(&tree, key) else {
             return false;
         };
         let form_key = form.key;
-        let result = crate::validation::validate_form(form, self.component.as_ref(), form_key);
+        let result = light_vdom::validation::validate_form(form, self.component.as_ref(), form_key);
         self.validation.clear();
         if result.is_valid() {
             self.invalidate();
@@ -724,7 +726,7 @@ impl WindowState {
     /// Позиция каретки (в символах) по точке клика внутри поля.
     ///
     /// Учитывает многострочную раскладку и горизонтальную прокрутку.
-    fn caret_from_pointer(&self, node: &crate::layout::PlacedNode, point: Point) -> usize {
+    fn caret_from_pointer(&self, node: &light_vdom::layout::PlacedNode, point: Point) -> usize {
         let NodeKind::TextField {
             value, multiline, ..
         } = &node.kind
@@ -734,8 +736,12 @@ impl WindowState {
         let rect = node.rect;
         let scale = self.scale;
         let inset = node.style.inset().scaled(scale);
-        let pad_x = crate::layout::FIELD_PAD_X * scale;
-        let size = node.style.font_size.unwrap_or(crate::layout::FONT_SIZE) * scale;
+        let pad_x = light_vdom::layout::FIELD_PAD_X * scale;
+        let size = node
+            .style
+            .font_size
+            .unwrap_or(light_vdom::layout::FONT_SIZE)
+            * scale;
         let font = self.font.as_ref();
         let text_left = rect.x + inset.left + pad_x;
         let max_w = (rect.w - inset.horizontal() - 2.0 * pad_x).max(1.0);
@@ -1089,7 +1095,7 @@ impl WindowState {
         }
     }
 
-    fn focused_node(&self) -> Option<&crate::layout::PlacedNode> {
+    fn focused_node(&self) -> Option<&light_vdom::layout::PlacedNode> {
         let key = self.focused.as_deref()?;
         self.layout.as_ref()?.node(key)
     }
@@ -1302,8 +1308,12 @@ impl WindowState {
         };
         let scale = self.scale;
         let inset = node.style.inset().scaled(scale);
-        let pad_x = crate::layout::FIELD_PAD_X * scale;
-        let size = node.style.font_size.unwrap_or(crate::layout::FONT_SIZE) * scale;
+        let pad_x = light_vdom::layout::FIELD_PAD_X * scale;
+        let size = node
+            .style
+            .font_size
+            .unwrap_or(light_vdom::layout::FONT_SIZE)
+            * scale;
         let max_w = (node.rect.w - inset.horizontal() - 2.0 * pad_x).max(1.0);
         Some(text::layout(
             self.font.as_ref(),
@@ -1404,7 +1414,7 @@ impl WindowState {
         if !is_single_line {
             return false;
         }
-        let Some(button) = crate::validation::find_submit_button(&tree, &key) else {
+        let Some(button) = light_vdom::validation::find_submit_button(&tree, &key) else {
             return false;
         };
         let button_key = button.key.to_owned();
@@ -1644,12 +1654,12 @@ impl WindowState {
         }
     }
 
-    /// Применяет программный запрос фокуса (`crate::control::focus`/`blur`).
+    /// Применяет программный запрос фокуса (`light_vdom::window_backend::focus`/`blur`).
     #[cfg(feature = "a11y-winit")]
-    fn apply_focus_command(&mut self, command: crate::control::FocusCommand) {
+    fn apply_focus_command(&mut self, command: light_vdom::window_backend::FocusCommand) {
         match command {
-            crate::control::FocusCommand::Focus(key) => self.set_a11y_focus(Some(key)),
-            crate::control::FocusCommand::Blur => self.set_a11y_focus(None),
+            light_vdom::window_backend::FocusCommand::Focus(key) => self.set_a11y_focus(Some(key)),
+            light_vdom::window_backend::FocusCommand::Blur => self.set_a11y_focus(None),
         }
         self.invalidate();
     }
@@ -2086,7 +2096,7 @@ impl App {
             }
         });
         // Токен `0` зарезервирован под «окно по умолчанию» (см.
-        // [`crate::control::current_window_token`]: возвращается `None`).
+        // [`light_vdom::window_backend::current_window_token`]: возвращается `None`).
         // Поэтому нумерация реальных окон начинается с `1`.
         Self {
             windows: HashMap::new(),
@@ -2642,7 +2652,7 @@ impl App {
             let Some(child_id) = self.tokens.remove(&token) else {
                 continue;
             };
-            crate::dom::remove_tree(token);
+            light_vdom::dom::remove_tree(token);
             if let Some(state) = self.windows.remove(&child_id) {
                 state.window.set_visible(false);
             }
@@ -2747,7 +2757,7 @@ impl App {
     ///
     /// Клик по элементу (`Click`) вызывается через [`Component::dispatch`];
     /// изменение состояния (`SetState`) — через
-    /// [`Component::inject_state`](crate::component::Component::inject_state),
+    /// [`Component::inject_state`](light_vdom::component::Component::inject_state),
     /// восстановление значений из `.light/state.json` (команда `SAVE_STATE`)
     /// пишет файл состояния в UI-потоке. Результат обработки (`Click`/
     /// `SetState`) возвращается TCP-серверу по каналу `response_tx`; при
@@ -2759,7 +2769,11 @@ impl App {
             crate::devtools::DevToolsCommand::Click { key, response_tx } => {
                 // Активное окно — то, к которому адресуются команды; если его
                 // нет, клик некуда применить и отвечаем «не обработан».
-                let Some(id) = self.tokens.get(&crate::control::active_window()).copied() else {
+                let Some(id) = self
+                    .tokens
+                    .get(&light_vdom::window_backend::active_window())
+                    .copied()
+                else {
                     let _ = response_tx.send(false);
                     return;
                 };
@@ -2791,7 +2805,11 @@ impl App {
                 value,
                 response_tx,
             } => {
-                let Some(id) = self.tokens.get(&crate::control::active_window()).copied() else {
+                let Some(id) = self
+                    .tokens
+                    .get(&light_vdom::window_backend::active_window())
+                    .copied()
+                else {
                     let _ = response_tx.send(false);
                     return;
                 };
@@ -2815,7 +2833,7 @@ impl App {
                 // в dev-mode), фолбэкаем на первое корневое окно (parent = None).
                 let active_wid = self
                     .tokens
-                    .get(&crate::control::active_window())
+                    .get(&light_vdom::window_backend::active_window())
                     .copied()
                     .filter(|wid| self.windows.contains_key(wid));
                 let root_wid = active_wid.or_else(|| {
@@ -2842,7 +2860,7 @@ impl App {
             crate::devtools::DevToolsCommand::SaveAll { response_tx } => {
                 let active_wid = self
                     .tokens
-                    .get(&crate::control::active_window())
+                    .get(&light_vdom::window_backend::active_window())
                     .copied()
                     .filter(|wid| self.windows.contains_key(wid));
                 let root_wid = active_wid.or_else(|| {
@@ -2894,7 +2912,11 @@ impl App {
                 text,
                 response_tx,
             } => {
-                let Some(id) = self.tokens.get(&crate::control::active_window()).copied() else {
+                let Some(id) = self
+                    .tokens
+                    .get(&light_vdom::window_backend::active_window())
+                    .copied()
+                else {
                     let _ = response_tx.send(Some("error: no active window".to_owned()));
                     return;
                 };
@@ -2910,7 +2932,7 @@ impl App {
                     .is_some_and(|n| {
                         matches!(
                             &n.kind,
-                            crate::vdom::NodeKind::TextField {
+                            light_vdom::NodeKind::TextField {
                                 disabled: false,
                                 ..
                             }
@@ -2938,7 +2960,11 @@ impl App {
                 keyname,
                 response_tx,
             } => {
-                let Some(id) = self.tokens.get(&crate::control::active_window()).copied() else {
+                let Some(id) = self
+                    .tokens
+                    .get(&light_vdom::window_backend::active_window())
+                    .copied()
+                else {
                     let _ = response_tx.send(Some("error: no active window".to_owned()));
                     return;
                 };
@@ -2978,7 +3004,7 @@ impl App {
                             .is_some_and(|k| {
                                 matches!(
                                     k,
-                                    crate::vdom::NodeKind::TextField {
+                                    light_vdom::NodeKind::TextField {
                                         multiline: false,
                                         disabled: false,
                                         ..
@@ -2987,7 +3013,7 @@ impl App {
                             });
                     if single_line
                         && let Some(button) =
-                            crate::validation::find_submit_button(&tree, &focused_key)
+                            light_vdom::validation::find_submit_button(&tree, &focused_key)
                     {
                         let button_key = button.key.to_owned();
                         window.dispatch_checked(&button_key, DomEvent::Click);
@@ -3033,7 +3059,7 @@ impl App {
             crate::devtools::DevToolsCommand::Tree { response_tx } => {
                 let id = self
                     .tokens
-                    .get(&crate::control::active_window())
+                    .get(&light_vdom::window_backend::active_window())
                     .copied()
                     .filter(|wid| self.windows.contains_key(wid))
                     .or_else(|| {
@@ -3057,7 +3083,7 @@ impl App {
             crate::devtools::DevToolsCommand::LayoutCmd { response_tx } => {
                 let id = self
                     .tokens
-                    .get(&crate::control::active_window())
+                    .get(&light_vdom::window_backend::active_window())
                     .copied()
                     .filter(|wid| self.windows.contains_key(wid))
                     .or_else(|| {
@@ -3081,7 +3107,7 @@ impl App {
             crate::devtools::DevToolsCommand::Find { query, response_tx } => {
                 let id = self
                     .tokens
-                    .get(&crate::control::active_window())
+                    .get(&light_vdom::window_backend::active_window())
                     .copied()
                     .filter(|wid| self.windows.contains_key(wid))
                     .or_else(|| {
@@ -3108,7 +3134,7 @@ impl App {
             crate::devtools::DevToolsCommand::Shot { response_tx } => {
                 let id = self
                     .tokens
-                    .get(&crate::control::active_window())
+                    .get(&light_vdom::window_backend::active_window())
                     .copied()
                     .filter(|wid| self.windows.contains_key(wid))
                     .or_else(|| {
@@ -3757,8 +3783,8 @@ fn scrollbar_geometry(node: &PlacedNode, scale: f32, horizontal: bool) -> Option
 fn apply_overrides(tree: &mut VElement, resized: &HashMap<&'static str, (f32, f32)>) {
     for (&key, &(width, height)) in resized {
         if let Some(node) = tree.get_mut(key) {
-            node.style.width = crate::vdom::Size::Px(width);
-            node.style.height = crate::vdom::Size::Px(height);
+            node.style.width = light_vdom::Size::Px(width);
+            node.style.height = light_vdom::Size::Px(height);
         }
     }
 }
@@ -3936,9 +3962,9 @@ mod tests {
 
     #[test]
     fn scrollbar_strip_damage_covers_old_bar_when_content_shrinks() {
-        use crate::layout::TextMetrics;
-        use crate::vdom::{NodeKind, Overflow, Size, Style, VElement};
         use crate::window::paint as wp;
+        use light_vdom::layout::TextMetrics;
+        use light_vdom::{NodeKind, Overflow, Size, Style, VElement};
 
         struct M;
         impl TextMetrics for M {
@@ -3961,17 +3987,17 @@ mod tests {
             scroller.style = Style {
                 overflow_y: Overflow::Auto,
                 height: Size::Px(100.0),
-                padding: crate::vdom::Edges::all(16.0),
+                padding: light_vdom::Edges::all(16.0),
                 ..Style::default()
             };
             VElement::container("r", NodeKind::Column, vec![scroller])
         }
 
-        let old = crate::layout::Layout::build(&container(240.0), (400.0, 300.0), &M);
-        let new = crate::layout::Layout::build(&container(60.0), (400.0, 300.0), &M);
+        let old = light_vdom::layout::Layout::build(&container(240.0), (400.0, 300.0), &M);
+        let new = light_vdom::layout::Layout::build(&container(60.0), (400.0, 300.0), &M);
 
-        let base = crate::layout::damage_regions(
-            &crate::layout::snapshot_rects(&old),
+        let base = light_vdom::layout::damage_regions(
+            &light_vdom::layout::snapshot_rects(&old),
             &new,
             &std::collections::BTreeSet::new(),
         );
@@ -4001,8 +4027,8 @@ mod tests {
 
     #[test]
     fn prune_scroll_offsets_drops_offsets_for_containers_without_scroll() {
-        use crate::layout::{Layout, TextMetrics};
-        use crate::vdom::{NodeKind, Overflow, Size, Style, VElement};
+        use light_vdom::layout::{Layout, TextMetrics};
+        use light_vdom::{NodeKind, Overflow, Size, Style, VElement};
 
         struct M;
         impl TextMetrics for M {

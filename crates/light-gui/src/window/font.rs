@@ -10,7 +10,7 @@ use std::{cell::RefCell, collections::HashMap, path::PathBuf};
 use ab_glyph::{Font, FontVec, GlyphId, PxScale, ScaleFont};
 
 use crate::Error;
-use crate::layout::TextMetrics;
+use light_vdom::layout::TextMetrics;
 
 /// Шрифты, которые пробуются по порядку: сначала типовые для Windows,
 /// затем для Linux/Unix.

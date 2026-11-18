@@ -8,7 +8,7 @@
 use accesskit::ActionRequest;
 
 use super::roles::{is_focusable_by_role, role_for};
-use crate::vdom::{Event, NodeKind, VElement};
+use light_vdom::{Event, NodeKind, VElement};
 
 /// Действие доступности, адресованное конкретному узлу.
 #[derive(Debug, Clone, PartialEq)]
@@ -120,7 +120,7 @@ mod tests {
             "b",
             NodeKind::Button {
                 disabled: false,
-                button_type: crate::vdom::ButtonType::Submit,
+                button_type: light_vdom::ButtonType::Submit,
             },
         )
     }
@@ -133,7 +133,7 @@ mod tests {
                 placeholder: String::new(),
                 disabled: false,
                 multiline: false,
-                resize: crate::vdom::Resize::None,
+                resize: light_vdom::Resize::None,
                 masked: false,
             },
         )

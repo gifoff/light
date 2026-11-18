@@ -35,7 +35,7 @@ pub(crate) fn load(src: &str, data: &[u8]) -> Option<Arc<DecodedImage>> {
 }
 
 /// Возвращает runtime-изображение из кэша по его уникальному ключу.
-pub(crate) fn load_runtime(image: &crate::vdom::ImageData) -> Option<Arc<DecodedImage>> {
+pub(crate) fn load_runtime(image: &light_vdom::ImageData) -> Option<Arc<DecodedImage>> {
     load(&image.key, &image.bytes)
 }
 
