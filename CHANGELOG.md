@@ -34,6 +34,11 @@
   (машино-читаемый вывод), `--limit`, `--path`. Ранжирование: официальный →
   совпадение имени с запросом → загрузки. Официальность определяется по owners
   (аккаунт `gifoff`); `already_installed` — по `[dependencies]` в `Cargo.toml`.
+- **Modularity (0.20.0, этап 1):** пять новых скелетных крейтов для
+  декомпозиции `light-fw-core`: `light-reactivity`, `light-vdom`,
+  `light-gui`, `light-render-cpu`, `light-render-gpu`. Пока пусты;
+  перенос кода — следующие этапы. Workspace: новые члены + `tiny-skia 0.12`
+  и `wgpu 24` в `[workspace.dependencies]`.
 - **cli-core**: модуль `metadata` — извлечение и валидация метаданных из
   скачанного `.crate` (NoMetadata/IncompatibleCore — фатальные; EmptyProvides/
   Conflict — предупреждение с подтверждением).

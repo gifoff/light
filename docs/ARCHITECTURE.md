@@ -65,3 +65,26 @@ Component::render() → VElement (новое дерево)
 - **Binary Swap**: при изменении `.rs` пересобирает, отправляет `SAVE_ALL`, убивает старый процесс и запускает новый с `LIGHT_RESUME_FROM_SWAP=1`.
 
 Конфигурация проекта (включая запуск DevTools) читается из `light.config.json` через `light_fw::run_with_config()`.
+
+## Целевая структура 0.20.0 (Декомпозиция `light-fw-core`)
+
+Философия: ядро минимально. VDOM и HTML-парсер НЕ лежат в одном крейте
+с реактивностью и графикой. Если пользователь делает API-сервер, он не
+должен тянуть VDOM.
+
+```
+light-reactivity   # сигналы, состояние (из light-core/src/reactive/)
+light-html         # парсер HTML (уже существует, light-fw-html)
+light-vdom         # виртуальный DOM, layout, diff (из vdom.rs, layout.rs, dom.rs)
+light-gui          # окно winit, события, a11y (из window/, control.rs, a11y/)
+light-render-cpu   # программная отрисовка (из render/softbuffer.rs, window/paint.rs)
+light-render-gpu   # аппаратная отрисовка (из render/wgpu.rs)
+light-fw           # фасад (re-export, run(), run_with_config)
+```
+
+Этапы:
+1. **Скелет** (этап 1, этот коммит): 5 пустых крейтов + связи + workspace.
+2. **Перенос**: реальные переезды по одному слою за раз, каждый со своим
+   smoke-тестом и CI.
+3. **Фасад**: `light-fw` переключается на новые слои, `light-fw-core`
+   остаётся совместимым (re-export) до удаления.
