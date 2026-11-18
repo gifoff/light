@@ -135,17 +135,16 @@ pub mod component;
 pub mod control;
 #[cfg(feature = "devtools")]
 pub mod devtools;
-pub mod dom;
-pub mod error;
+// VDOM, layout, DOM, runtime, plugins, validation — перенесены в `light-vdom`
+// (0.20.0, этап 3 — Strangler Fig). Реэкспортируем под прежними именами для
+// обратной совместимости с 0.19.x.
 #[cfg(feature = "file-dialog")]
 pub mod file_dialog;
-pub mod layout;
-pub mod plugins;
+// `error` остаётся локальным: полный тип с 8 вариантами (VDOM + window-backend),
+// а `light_vdom::error` содержит упрощённый тип с 3 вариантами.
+pub mod error;
+pub use light_vdom::{dom, layout, plugins, runtime, text_wrap, validation, vdom};
 pub mod prelude;
-pub mod runtime;
-mod text_wrap;
-pub mod validation;
-pub mod vdom;
 
 #[cfg(feature = "async-runtime")]
 pub mod async_runtime;
@@ -168,7 +167,7 @@ pub use light_reactivity as reactivity;
 pub use component::{Component, WindowConfig};
 pub use control::{
     FocusCommand, WindowCommand, WindowToken, blur, current_window_token, focus, focused_key,
-    set_current_window_token,
+    is_maximized, set_current_window_token, set_maximized,
 };
 #[cfg(feature = "devtools")]
 pub use devtools::{

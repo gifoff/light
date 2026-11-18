@@ -1,4 +1,13 @@
 //! Типы ошибок библиотеки.
+//!
+//! Здесь живут **все** ошибки Light: VDM-слой (шрифт, кастомные элементы,
+//! изображения) и оконный бэкенд (`Window`, `CreateWindow`, `Surface`,
+//! `Texture`, `Softbuffer`).
+//!
+//! **Этап 3 (Strangler Fig):** VDM-слой ошибок дублируется из
+//! `light_vdom::error` для обратной совместимости. Внутренний код
+//! light-core продолжает использовать этот полный тип; `light-vdom`
+//! использует свой упрощённый `Error` с 3 вариантами.
 
 /// Результат операций библиотеки.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -44,4 +53,17 @@ pub enum Error {
     #[cfg(feature = "softbuffer-backend")]
     #[error("ошибка поверхности softbuffer: {0}")]
     Softbuffer(#[from] softbuffer::SoftBufferError),
+}
+
+impl From<light_vdom::error::Error> for Error {
+    fn from(err: light_vdom::error::Error) -> Self {
+        match err {
+            light_vdom::error::Error::Font(msg) => Error::Font(msg),
+            light_vdom::error::Error::UnregisteredCustomElement(msg) => {
+                Error::UnregisteredCustomElement(msg)
+            }
+            #[cfg(feature = "image-support")]
+            light_vdom::error::Error::Image(msg) => Error::Image(msg),
+        }
+    }
 }

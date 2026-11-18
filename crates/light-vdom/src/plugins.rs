@@ -95,15 +95,15 @@ pub trait CustomElement: Any {
 /// не нужен — плагин уже знает свой тип внутри `on_event` (через `&mut self`).
 ///
 /// ```rust
-/// use light_fw_core::plugins::{CustomElement, downcast_custom};
+/// use light_vdom::plugins::{CustomElement, downcast_custom};
 /// use std::cell::Cell;
 ///
 /// struct Counter { count: Cell<i32> }
 /// impl CustomElement for Counter {
 ///     fn tag(&self) -> &'static str { "counter" }
-///     fn render(&self, _: &[(&str, String)], _: &[light_fw_core::vdom::VElement]) -> light_fw_core::vdom::VElement { unimplemented!() }
-///     fn on_event(&mut self, e: &light_fw_core::vdom::Event, ctx: &mut light_fw_core::plugins::EventCtx) {
-///         if matches!(e, light_fw_core::vdom::Event::Click) {
+///     fn render(&self, _: &[(&str, String)], _: &[light_vdom::vdom::VElement]) -> light_vdom::vdom::VElement { unimplemented!() }
+///     fn on_event(&mut self, e: &light_vdom::vdom::Event, ctx: &mut light_vdom::plugins::EventCtx) {
+///         if matches!(e, light_vdom::vdom::Event::Click) {
 ///             self.count.set(self.count.get() + 1);
 ///             ctx.schedule_redraw();
 ///         }
@@ -126,7 +126,8 @@ pub fn downcast_custom<T: 'static>(elem: &dyn CustomElement) -> Option<&T> {
 /// ([`schedule_redraw`](Self::schedule_redraw)). Поле `redraw` скрыто
 /// (`pub(crate)`): плагин не имеет прямого доступа к компоненту.
 pub struct EventCtx<'a> {
-    pub(crate) redraw: &'a dyn Fn(),
+    /// Замыкание, вызываемое при перерисовке (внутреннее).
+    pub redraw: &'a dyn Fn(),
 }
 
 impl<'a> EventCtx<'a> {

@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use light_reactivity::Collection;
 
-use crate::control::{WindowToken, active_window};
 use crate::vdom::VElement;
+use crate::window_backend::{WindowToken, active_window};
 
 thread_local! {
     /// Деревья отрисованных окон: токен окна → виртуальное дерево.
@@ -20,7 +20,7 @@ thread_local! {
 
 /// Сохраняет дерево окна `token` (вызывается оконным бэкендом).
 #[cfg(feature = "window")]
-pub(crate) fn set_tree(token: WindowToken, tree: Arc<VElement>) {
+pub fn set_tree(token: WindowToken, tree: Arc<VElement>) {
     TREES.with(|trees| {
         trees.borrow_mut().insert(token, tree);
     });
@@ -28,7 +28,7 @@ pub(crate) fn set_tree(token: WindowToken, tree: Arc<VElement>) {
 
 /// Удаляет дерево закрытого окна.
 #[cfg(feature = "window")]
-pub(crate) fn remove_tree(token: WindowToken) {
+pub fn remove_tree(token: WindowToken) {
     TREES.with(|trees| {
         trees.borrow_mut().remove(&token);
     });

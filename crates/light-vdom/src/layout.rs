@@ -1639,7 +1639,7 @@ pub fn damage_regions(
 /// наложение областей (например, родитель и изменившийся потомок) заметно
 /// замедляет кадр. Объединение уменьшает число проходов, слегка расширяя
 /// повреждённую площадь.
-pub(crate) fn coalesce_regions(regions: Vec<Rect>) -> Vec<Rect> {
+pub fn coalesce_regions(regions: Vec<Rect>) -> Vec<Rect> {
     let mut merged = Vec::<Rect>::with_capacity(regions.len());
     for rect in regions {
         if rect.w <= 0.0 || rect.h <= 0.0 {

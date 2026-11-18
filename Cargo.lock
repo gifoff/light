@@ -2358,6 +2358,7 @@ dependencies = [
  "light-fw-html",
  "light-fw-macros",
  "light-reactivity",
+ "light-vdom",
  "linkme",
  "pixels",
  "png 0.17.16",
@@ -2440,8 +2441,17 @@ dependencies = [
 name = "light-vdom"
 version = "0.20.0"
 dependencies = [
+ "ab_glyph",
  "light-fw-html",
  "light-reactivity",
+ "linkme",
+ "pixels",
+ "png 0.17.16",
+ "serde",
+ "serde_json",
+ "softbuffer",
+ "thiserror 2.0.21",
+ "winit",
 ]
 
 [[package]]

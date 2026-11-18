@@ -10,8 +10,12 @@ use std::sync::{Mutex, OnceLock};
 
 use light_reactivity::Collection;
 
-use crate::component::WindowConfig;
-use crate::control::WindowCommand;
+/// Настройки системного окна и команды управления окном живут в этом крейте
+/// (этап 3 — Strangler Fig), чтобы `VWindow` не зависел от оконного бэкенда.
+/// `light-fw-core` реэкспортирует их под прежними именами.
+pub use crate::component::{DEFAULT_BACKGROUND, WindowConfig, background_rgba};
+#[cfg(feature = "window")]
+use crate::window_backend::WindowCommand;
 
 #[cfg(feature = "image-support")]
 use std::sync::{
@@ -862,13 +866,17 @@ static NEXT_IMAGE_ID: AtomicU64 = AtomicU64::new(1);
 #[cfg(feature = "image-support")]
 #[derive(Clone, PartialEq)]
 pub struct ImageData {
-    pub(crate) key: Arc<str>,
-    pub(crate) bytes: Arc<[u8]>,
-    pub(crate) width: u32,
-    pub(crate) height: u32,
+    /// Уникальный ключ изображения (путь или идентификатор).
+    pub key: Arc<str>,
+    /// Сырые байты PNG-файла.
+    pub bytes: Arc<[u8]>,
+    /// Ширина изображения в пикселях.
+    pub width: u32,
+    /// Высота изображения в пикселях.
+    pub height: u32,
 }
 
-#[cfg(all(feature = "image-support", feature = "devtools"))]
+#[cfg(feature = "image-support")]
 impl serde::Serialize for ImageData {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         // Сериализуем только метаданные (размеры), не сырые байты PNG —
@@ -1517,15 +1525,18 @@ pub trait VNode {
 
     /// Отправляет действие оконному бэкенду для окна, событие которого
     /// обрабатывается в данный момент.
+    #[cfg(feature = "window")]
     fn act(&self, command: WindowCommand) {
-        crate::control::request(command);
+        crate::window_backend::request(command);
     }
 }
 
 /// Операции над окном — расширение интерфейса узла [`VNode`].
 ///
 /// Реализуется корневым узлом [`NodeKind::Window`]; методы отправляют команду
-/// активному окну (см. [`crate::control`]).
+/// активному окну (см. [`crate::window_backend`]). Без фичи `window` трейт
+/// не содержит методов управления окном.
+#[cfg(feature = "window")]
 pub trait VWindow: VNode {
     /// Настройки системного окна, если узел — окно.
     fn config(&self) -> Option<&WindowConfig>;
@@ -1597,7 +1608,7 @@ pub trait VWindow: VNode {
 
     /// Развёрнуто ли окно в данный момент.
     fn is_maximized(&self) -> bool {
-        crate::control::is_maximized()
+        crate::window_backend::is_maximized()
     }
 }
 
@@ -1635,6 +1646,7 @@ impl VNode for VElement {
     }
 }
 
+#[cfg(feature = "window")]
 impl VWindow for VElement {
     fn config(&self) -> Option<&WindowConfig> {
         self.window.as_ref()

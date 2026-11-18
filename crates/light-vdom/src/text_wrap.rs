@@ -4,11 +4,7 @@
 /// `max_width`. Длинные слова без пробелов делятся по символам.
 ///
 /// Возвращает строки вместе с их шириной.
-pub(crate) fn wrap_words_with_widths<F>(
-    text: &str,
-    max_width: f32,
-    mut measure: F,
-) -> Vec<(String, f32)>
+pub fn wrap_words_with_widths<F>(text: &str, max_width: f32, mut measure: F) -> Vec<(String, f32)>
 where
     F: FnMut(&str) -> f32,
 {
@@ -74,7 +70,7 @@ where
 
 #[cfg(feature = "window")]
 /// Переносит `text` по словам и возвращает только строки.
-pub(crate) fn wrap_words<F>(text: &str, max_width: f32, measure: F) -> Vec<String>
+pub fn wrap_words<F>(text: &str, max_width: f32, measure: F) -> Vec<String>
 where
     F: FnMut(&str) -> f32,
 {

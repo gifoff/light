@@ -427,7 +427,7 @@ fn build_custom_element<C: Component + ?Sized>(
 /// по ключу родительского узла.
 ///
 /// Рендер выполняется в UI-потоке; после полного рендера окна
-/// [`crate::window::WindowState::redraw`] выносит все записи через
+/// [`light_fw_core::window::WindowState::redraw`] выносит все записи через
 /// [`drain_custom_instances`] и передаёт их оконному бэкенду для доставки
 /// событий через [`CustomElement::on_event`](crate::plugins::CustomElement::on_event).
 /// Каждый следующий рендер создаёт новые экземпляры (статический код макроса
@@ -457,7 +457,7 @@ pub fn store_custom_instance(key: &str, instance: Box<dyn plugins::CustomElement
 
 /// Выносит все накопленные экземпляры кастомных элементов (очищая карту).
 ///
-/// Вызывается из [`crate::window::WindowState::redraw`] один раз перед
+/// Вызывается из [`light_fw_core::window::WindowState::redraw`] один раз перед
 /// рендером компонента (чтобы сбросить записи предыдущего кадра), а затем
 /// повторно после `component.render()` — чтобы забрать свежие экземпляры,
 /// созданные в этом кадре. Возвращает пустую map, если карта пуста.

@@ -16,6 +16,10 @@ name = "light_fw_core"
 # переехали в `light-reactivity` (0.20.0, этап 2 — Strangler Fig). Ядро
 # реэкспортирует оба модуля для обратной совместимости с 0.19.x.
 light-reactivity.workspace = true
+# VDOM, layout, DOM, runtime, plugins, validation — перенесены в `light-vdom`
+# (0.20.0, этап 3 — Strangler Fig). Ядро реэкспортирует все эти модули под
+# прежними именами для обратной совместимости с 0.19.x.
+light-vdom = { workspace = true }
 futures = { version = "0.3", optional = true }
 futures-timer = { version = "3.0", optional = true }
 # Регистрация плагин-компонентов через distributed slice (Plugin API, Этап 3):
@@ -47,15 +51,15 @@ default = ["elements-basic", "window", "softbuffer-backend", "a11y-winit"]
 
 # --- Элементы разметки -------------------------------------------------
 # `<div>`, `<span>`, `<h1>`–`<h5>`, `<titlebar>`, `<text>` и `<button>`.
-elements-basic = ["light-fw-macros/elements-basic"]
+elements-basic = ["light-fw-macros/elements-basic", "light-vdom/elements-basic"]
 # Пароль (`<password>`), многострочное поле (`textarea`) и маркер изменения размера.
 elements-input = ["light-fw-macros/elements-input", "resize-grip"]
 # Флажок (`<checkbox>`).
-elements-checkbox = ["light-fw-macros/elements-checkbox"]
+elements-checkbox = ["light-fw-macros/elements-checkbox", "light-vdom/elements-checkbox"]
 # Переключатель (`<radio>`).
-elements-radio = ["light-fw-macros/elements-radio"]
+elements-radio = ["light-fw-macros/elements-radio", "light-vdom/elements-radio"]
 # Выпадающий список (`<select>`/`<option>`).
-elements-select = ["light-fw-macros/elements-select"]
+elements-select = ["light-fw-macros/elements-select", "light-vdom/elements-select"]
 # Компонент `light-fw-element-form`: флажок, переключатель и список.
 elements-form = ["elements-input", "elements-checkbox", "elements-radio", "elements-select"]
 # Маркер изменения размера текстового поля (`resize`).
@@ -81,18 +85,19 @@ min-max-size = ["light-fw-macros/min-max-size"]
 
 # --- Изображения -------------------------------------------------------
 # `<image>` и PNG-иконки окон: декодирование PNG и вывод RGBA.
-image-support = ["light-fw-macros/image-support", "dep:png"]
+image-support = ["light-fw-macros/image-support", "dep:png", "light-vdom/image-support"]
 # Нативный диалог выбора файла (крейт `rfd`).
 file-dialog = ["dep:rfd"]
 
 # --- Окно --------------------------------------------------------------
 # Базовое окно на winit с программной отрисовкой.
-window = ["dep:winit", "dep:ab_glyph", "light-fw-macros/template-window"]
+# Проводим в `light-vdom`: VDOM-слой знает, когда нужно создать окно.
+window = ["dep:winit", "dep:ab_glyph", "light-vdom/window", "light-fw-macros/template-window"]
 # Показ кадра через `softbuffer` (без wgpu/naga). По умолчанию включён.
-softbuffer-backend = ["window", "dep:softbuffer"]
+softbuffer-backend = ["window", "dep:softbuffer", "light-vdom/softbuffer-backend"]
 # Показ кадра через `pixels` (wgpu/naga). Альтернативный бэкенд.
 # Если включены обе фичи, используется `softbuffer-backend`.
-wgpu-backend = ["window", "dep:pixels"]
+wgpu-backend = ["window", "dep:pixels", "light-vdom/wgpu-backend"]
 # Прозрачность окна (per-pixel alpha).
 window-transparent = ["window"]
 # Модальные окна (`modal`).
@@ -130,7 +135,7 @@ include = ["light-fw-macros/include"]
 devtools = ["async-runtime", "dep:png"]
 # Шаблоны во время выполнения: `render()` читает HTML с диска (mtime-кэш),
 # поэтому правка разметки в dev-режиме видна без пересборки.
-runtime-templates = ["window", "elements-checkbox", "elements-radio", "elements-select"]
+runtime-templates = ["window", "elements-checkbox", "elements-radio", "elements-select", "light-vdom/runtime-templates"]
 
 [dev-dependencies]
 criterion = "0.5"
