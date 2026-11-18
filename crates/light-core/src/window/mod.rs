@@ -21,6 +21,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use light_reactivity::set_repaint_requester;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
@@ -39,7 +40,6 @@ use crate::layout::{
     FIELD_MIN_H, Layout, PlacedNode, Point, Rect, TextMetrics, coalesce_regions, damage_regions,
     snapshot_rects,
 };
-use crate::reactive::set_repaint_requester;
 #[cfg(not(any(feature = "wgpu-backend", feature = "softbuffer-backend")))]
 use crate::render::NullBackend;
 use crate::render::RendererBackend;

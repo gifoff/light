@@ -37,23 +37,21 @@ impl Drop for Watcher {
 /// Создаёт наблюдателя (аналог `watchEffect` в Vue): выполняет `f` один раз,
 /// запоминает прочитанные свойства и повторяет `f` при их изменении.
 ///
-/// ```no_run
-/// # extern crate light_fw_core as light_fw;
-/// use light_fw::prelude::*;
+/// Пример с `Property`:
 ///
-/// #[proxy]
-/// struct Counter {
-///     count: i64,
-/// }
+/// ```
+/// use light_reactivity::{Property, watch};
 ///
-/// fn main() {
-///     let counter = Counter::new();
-///     let _watcher = watch({
-///         let counter = counter.clone();
-///         move || println!("count = {}", counter.count())
-///     });
-///     counter.set_count(1);
-/// }
+/// let prop = Property::new(0i64);
+/// let mut watcher = watch({
+///     let prop = prop.clone();
+///     move || {
+///         // любое чтение внутри обработчика фиксируется как зависимость
+///         let _ = prop.get();
+///     }
+/// });
+/// assert_eq!(prop.get(), 0);
+/// watcher.stop();
 /// ```
 pub fn watch(f: impl Fn() + 'static) -> Watcher {
     let callback: Rc<dyn Fn()> = Rc::new(f);

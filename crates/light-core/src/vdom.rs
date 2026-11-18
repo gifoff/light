@@ -6,11 +6,12 @@
 //! именно это обеспечивает перерисовку только изменившихся элементов.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::{Mutex, OnceLock};
 
-use crate::collection::Collection;
+use light_reactivity::Collection;
+
 use crate::component::WindowConfig;
 use crate::control::WindowCommand;
-use std::sync::{Mutex, OnceLock};
 
 #[cfg(feature = "image-support")]
 use std::sync::{

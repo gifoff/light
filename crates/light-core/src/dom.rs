@@ -8,7 +8,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::collection::Collection;
+use light_reactivity::Collection;
+
 use crate::control::{WindowToken, active_window};
 use crate::vdom::VElement;
 

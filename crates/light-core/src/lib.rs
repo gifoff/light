@@ -131,7 +131,6 @@ pub use serde;
 pub use serde_json;
 
 pub mod a11y;
-pub mod collection;
 pub mod component;
 pub mod control;
 #[cfg(feature = "devtools")]
@@ -143,7 +142,6 @@ pub mod file_dialog;
 pub mod layout;
 pub mod plugins;
 pub mod prelude;
-pub mod reactive;
 pub mod runtime;
 mod text_wrap;
 pub mod validation;
@@ -163,7 +161,10 @@ pub use async_runtime::{
     TaskContext, TaskError, TaskHandle, UserEvent, apply_action, post_to_ui, post_update,
     post_update_to, spawn,
 };
-pub use collection::Collection;
+pub use light_reactivity as reactivity;
+// Обратная совместимость 0.20.0: реактивное ядро и коллекция перебазированы
+// в `light-reactivity`; реэкспортируем оба модуля под прежними именами, чтобы
+// `light_fw_core::reactive` / `light_fw_core::collection` работали без изменений.
 pub use component::{Component, WindowConfig};
 pub use control::{
     FocusCommand, WindowCommand, WindowToken, blur, current_window_token, focus, focused_key,
@@ -177,7 +178,9 @@ pub use devtools::{
 pub use dom::Dom;
 pub use error::{Error, Result};
 pub use light_fw_macros::{component, proxy, template};
-pub use reactive::{Property, Proxy, ProxyState, Watcher, watch};
+pub use light_reactivity::{collection, reactive};
+// Реэкспорт конкретных типов — обратная совместимость с 0.19.x.
+pub use light_reactivity::{Collection, Property, Proxy, ProxyState, Watcher, watch};
 #[cfg(feature = "window")]
 pub use render::RendererBackend;
 #[cfg(feature = "wgpu-backend")]

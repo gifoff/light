@@ -12,6 +12,10 @@ description = "Ядро Light: виртуальный DOM, реактивнос�
 name = "light_fw_core"
 
 [dependencies]
+# Реактивное ядро (Property, Proxy, Observer, Watcher, watch) и коллекция
+# переехали в `light-reactivity` (0.20.0, этап 2 — Strangler Fig). Ядро
+# реэкспортирует оба модуля для обратной совместимости с 0.19.x.
+light-reactivity.workspace = true
 futures = { version = "0.3", optional = true }
 futures-timer = { version = "3.0", optional = true }
 # Регистрация плагин-компонентов через distributed slice (Plugin API, Этап 3):
