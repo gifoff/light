@@ -79,7 +79,7 @@ pub(super) struct MenuItem {
 }
 
 /// Всплывающее меню поля ввода.
-pub(super) struct ContextMenu {
+pub(crate) struct ContextMenu {
     pub(super) x: f32,
     pub(super) y: f32,
     pub(super) items: Vec<MenuItem>,
