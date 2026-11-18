@@ -25,6 +25,12 @@
 
 ### Added
 
+- **Modularity (0.20.0, этап 4):** GUI-модули (`window/`, `render/`, `a11y/`,
+  `devtools/`, `file_dialog.rs`, `async_runtime.rs`) перебазианы из `light-fw-core`
+  в новый крейт `light-gui`. Публичный API 0.19.x сохранён через реэкспорт
+  (`extern crate self as light_fw;` + `pub use light_gui::*`).
+  Headless-режим: `cargo check -p light-fw-core --no-default-features`
+  не тянет winit/softbuffer/pixels/rfd/accesskit/futures.
 - **cli / cli-core**: Настраиваемый реестр (`registry` в `light.config.json`:
   `url`, `download_url`, `docs_url`; дефолты — crates.io). Новые файлы
   `registry_config.rs`, `metadata.rs`; расширен trait `RemoteRegistry`

@@ -7,7 +7,8 @@
 
 | Крейт | Роль |
 | --- | --- |
-| `light-fw-core` | Ядро: виртуальный DOM, реактивность, layout, paint, окно, a11y, валидация. |
+| `light-fw-core` | Ядро: валидация, фасад 0.19.x. GUI-слой (окно, paint, a11y) вынесен в `light-gui` в 0.20.0. |
+| `light-gui` | GUI-слой: окно на `winit`, события ввода, а11y-мост AccessKit, рендер-бэкенды (`softbuffer`/`pixels`), асинхронный рантайм, DevTools. Добавлен в 0.20.0 (Этап 4). |
 | `light-fw-html` | Парсер HTML-шаблонов: теги, атрибуты, директивы, `{{ … }}`, `<include>`. |
 | `light-fw-macros` | Процедурные макросы `#[template]` и `#[proxy]`. |
 | `light-fw` | Мета-крейт: реэкспортирует ядро, макросы и подключённые компоненты. |
@@ -46,10 +47,14 @@ Component::render() → VElement (новое дерево)
 - **`vdom`** — `VElement`, `NodeKind`, стили, события и `diff`. Ключи узлов стабильны между отрисовками.
 - **`reactive`** — свойства `Proxy`, наблюдатели и запрос перерисовки.
 - **`layout`** — вычисление `Rect` для каждого узла.
-- **`window`** — цикл `winit`, управление окнами. Подмодуль `devtools` (фича `devtools`) — TCP-сервер на 127.0.0.1:9229.
-- **`window::paint`** — программная растеризация.
-- **`a11y`** — построение дерева AccessKit.
-- **`validation`** — `required`, пользовательские валидаторы.
+- **`light-gui::window`** — цикл `winit`, управление окнами. Подмодуль `devtools` (фича `devtools`) — TCP-сервер на 127.0.0.1:9229.
+- **`light-gui::window::paint`** — программная растеризация.
+- **`light-gui::a11y`** — построение дерева AccessKit.
+- **`light-fw-core::validation`** — `required`, пользовательские валидаторы.
+
+Публичный API 0.19.x сохранён через реэкспорт: `light_fw_core::window`,
+`light_fw_core::a11y`, `light_fw_core::async_runtime` и т.д. указывают на
+соответствующие модули `light-gui`.
 
 События приходят из `winit`, преобразуются в `vdom::Event` и передаются компоненту.
 
@@ -76,15 +81,24 @@ Component::render() → VElement (новое дерево)
 light-reactivity   # сигналы, состояние (из light-core/src/reactive/)
 light-html         # парсер HTML (уже существует, light-fw-html)
 light-vdom         # виртуальный DOM, layout, diff (из vdom.rs, layout.rs, dom.rs)
-light-gui          # окно winit, события, a11y (из window/, control.rs, a11y/)
+light-gui          # окно winit, события, a11y, рендер-бэкенды, async-runtime (из window/, render/, a11y/, async_runtime.rs, devtools/, file_dialog.rs)
 light-render-cpu   # программная отрисовка (из render/softbuffer.rs, window/paint.rs)
 light-render-gpu   # аппаратная отрисовка (из render/wgpu.rs)
 light-fw           # фасад (re-export, run(), run_with_config)
 ```
 
+Зависимости направлены внутрь: `light-fw-core → {light-gui, light-vdom, light-reactivity, …}`,
+`light-gui → {light-vdom, light-reactivity, base64, thiserror, serde, serde_json}` + опциональные
+(winit, ab_glyph, png, rfd, softbuffer, pixels, futures, accesskit).
+`light-vdom` не имеет прямой зависимости от `light-fw-core`.
+
 Этапы:
-1. **Скелет** (этап 1, этот коммит): 5 пустых крейтов + связи + workspace.
-2. **Перенос**: реальные переезды по одному слою за раз, каждый со своим
-   smoke-тестом и CI.
-3. **Фасад**: `light-fw` переключается на новые слои, `light-fw-core`
+1. **Скелет** (этап 1): 5 пустых крейтов + связи + workspace. ✅
+2. **Перенос VDOM** (этап 2–3): `vdom.rs`, `layout.rs`, `dom.rs`, `text_wrap.rs` → `light-vdom`;
+   `window_backend` (канал `WindowCommand`/`WindowToken`) тоже в `light-vdom`. ✅
+3. **Перенос GUI** (этап 4): `window/`, `render/`, `a11y/`, `devtools/`, `file_dialog.rs`,
+   `async_runtime.rs` → `light-gui`. Публичный API 0.19.x сохранён через реэкспорт.
+   Headless-режим (`cargo check -p light-fw-core --no-default-features`) не тянет
+   winit/softbuffer/pixels/rfd/accesskit/futures. ✅
+4. **Фасад**: `light-fw` переключается на новые слои, `light-fw-core`
    остаётся совместимым (re-export) до удаления.

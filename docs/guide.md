@@ -167,7 +167,8 @@ light-fw = "0.17" # default = ["elements-basic", "window", "softbuffer-backend",
 
 | Крейт                       | Роль                                                                 | Как подключается |
 | --------------------------- | -------------------------------------------------------------------- | ---------------- |
-| `light-fw-core`                | Ядро: vdom, реактивность, раскладка, paint, окно, доступность        | фичи крейта      |
+| `light-fw-core`                | Ядро: валидация, фасад 0.19.x (GUI вынесен в `light-gui`)           | фичи крейта      |
+| `light-gui`                   | GUI-слой: окно на winit, события, a11y, рендер-бэкенды, async-runtime | фичи крейта (window, softbuffer-backend, a11y-winit, …) |
 | `light-fw`                    | Мета-крейт: реэкспортирует ядро, макросы и подключённые компоненты  | обычная зависимость |
 | `light-fw-element-form`        | Компонент-элемент: `<checkbox>`, `<radio>`, `<select>`/`<option>`    | фича `elements-form` или прямая зависимость |
 | `light-fw-behavior-validation` | Компонент-поведение: `required`, `:validator`, `@validate`           | фича `validation` или прямая зависимость |
