@@ -1406,7 +1406,7 @@ fn draw_grip(canvas: &mut Canvas, rect: Rect, scale: f32) {
 /// Рисует контекстное меню поверх остального интерфейса.
 pub(super) fn draw_context_menu(
     canvas: &mut Canvas,
-    menu: &super::ContextMenu,
+    menu: &crate::window::state::ContextMenu,
     font: &super::font::FontMetrics,
     scale: f32,
 ) {
