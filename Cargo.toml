@@ -35,6 +35,10 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/gifoff/light"
 rust-version = "1.95"
 
+[workspace.lints.cargo]
+# light, light-render-cpu, light-render-gpu будут использованы на этапах 4+.
+unused_workspace_dependencies = "allow"
+
 [workspace.dependencies]
 winit = "0.30"
 pixels = "0.17"

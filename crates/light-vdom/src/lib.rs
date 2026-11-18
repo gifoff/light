@@ -36,7 +36,6 @@ pub use dom::Dom;
 pub use error::{Error, Result};
 #[cfg(feature = "image-support")]
 pub use vdom::ImageData;
-#[cfg(feature = "window")]
 pub use vdom::VWindow;
 pub use vdom::{
     Align, Edges, Event, KeyInfo, MouseButton, NodeKind, Offset, Overflow, Position, Resize,

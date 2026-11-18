@@ -1612,6 +1612,14 @@ pub trait VWindow: VNode {
     }
 }
 
+/// Пустая заглушка трейта [`VWindow`] без фичи `window`.
+///
+/// Макрос `#[template]` генерирует `use VWindow as _` безусловно,
+/// поэтому тип должен существовать всегда. Без фичи `window`
+/// методов управления окном нет — трейт пустой.
+#[cfg(not(feature = "window"))]
+pub trait VWindow: VNode {}
+
 impl VNode for VElement {
     fn key(&self) -> &'static str {
         self.key
