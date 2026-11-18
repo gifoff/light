@@ -10,5 +10,5 @@ description = "Light Render (GPU): аппаратная отрисовка че�
 [dependencies]
 # Окно/поверхность, в которую рисуем кадр.
 light-gui = { workspace = true }
-# GPU-рендеринг.
-wgpu = { workspace = true }
+# GPU-рендеринг (через `pixels`, как в light-fw-core: единый wgpu в графе).
+pixels = { workspace = true }

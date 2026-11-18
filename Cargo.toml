@@ -42,9 +42,10 @@ softbuffer = "0.4"
 ab_glyph = "0.2"
 png = "0.17"
 rfd = "0.14"
-# 0.20.0 (этап 1): новые слои декомпозиции core.
+# 0.20.0 (этап 1): новый слой декомпозиции core.
+# (`wgpu` сознательно не поднят: GPU-бэкенд идёт через `pixels`, как в
+# light-fw-core, чтобы не дублировать версии wgpu в графе зависимостей.)
 tiny-skia = "0.12"
-wgpu = "24"
 
 light = { path = "crates/light", version = "0.19.0" }
 light-fw = { path = "crates/light-fw", version = "0.19.0" }
