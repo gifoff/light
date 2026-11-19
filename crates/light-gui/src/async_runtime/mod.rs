@@ -27,13 +27,13 @@
 //! # }
 //! ```
 
-/// Типы данных: [`UserEvent`], [`TaskError`], [`TaskContext`], [`TaskHandle`].
-pub mod types;
 /// Потоки и доставка: [`spawn`], [`spawn_async`], [`post_to_ui`],
 /// [`post_update`], [`post_update_to`], [`apply_action`].
 pub mod tasks;
 #[cfg(test)]
 mod tests;
+/// Типы данных: [`UserEvent`], [`TaskError`], [`TaskContext`], [`TaskHandle`].
+pub mod types;
 
 pub use tasks::*;
 pub use types::*;

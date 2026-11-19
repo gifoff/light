@@ -1,14 +1,13 @@
 use std::any::{Any, TypeId};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 #[cfg(feature = "async-await")]
 use std::future::Future;
 
-use light_vdom::component::Component;
 use light_vdom::window_backend::WindowToken;
 
-use super::types::{TaskContext, TaskHandle, UserEvent, TaskError, UpdateFn, UI_PROXY};
+use super::types::{TaskContext, TaskError, TaskHandle, UI_PROXY, UpdateFn, UserEvent};
 
 /// Запускает замыкание в отдельном потоке.
 ///
@@ -213,4 +212,3 @@ pub fn post_update_to<C: Component + 'static>(
 ) -> Result<(), TaskError> {
     post_update_impl(Some(token), f)
 }
-

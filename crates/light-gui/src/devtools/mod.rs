@@ -16,8 +16,6 @@ use std::sync::OnceLock;
 #[cfg(all(feature = "async-runtime", feature = "window"))]
 use winit::event_loop::EventLoopProxy;
 
-use light_vdom::component::Component;
-
 /// Прокси цикла событий для доставки команд DevTools в UI-поток.
 ///
 /// Устанавливается один раз в [`crate::window::run`] (при включённых
