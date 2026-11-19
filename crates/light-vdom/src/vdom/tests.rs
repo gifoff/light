@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::vdom::diff::{diff_kind, kind_compatible};
     use crate::vdom::events::Align;

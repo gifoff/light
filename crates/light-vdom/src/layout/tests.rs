@@ -1,3 +1,4 @@
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::layout::base::Rect;
     use crate::layout::coalesce_regions;
