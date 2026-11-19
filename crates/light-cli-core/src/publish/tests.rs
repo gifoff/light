@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::process::{CommandOutput, CommandRunner};
     use std::collections::{BTreeMap, BTreeSet, VecDeque};

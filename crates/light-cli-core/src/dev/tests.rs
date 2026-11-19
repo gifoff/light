@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::dev::args::parse_dev_command;
     use crate::dev::build::{
