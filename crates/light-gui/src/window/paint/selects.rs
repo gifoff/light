@@ -1,9 +1,9 @@
 //! Отрисовка выпающих списков и элементов выбора.
 
 use super::canvas::Canvas;
-use light_vdom::layout::{CHECKBOX_BOX, CHECKBOX_GAP, FIELD_PAD_X, Rect};
 #[cfg(feature = "elements-select")]
 use light_vdom::layout::SELECT_PAD_X;
+use light_vdom::layout::{CHECKBOX_BOX, CHECKBOX_GAP, FIELD_PAD_X, Rect};
 
 use super::*;
 
@@ -255,7 +255,8 @@ pub(crate) fn draw_selection(
     if from >= to {
         return;
     }
-    let x0 = text_left + crate::window::text::prefix_width(font, &line.text, size, from - line.start);
+    let x0 =
+        text_left + crate::window::text::prefix_width(font, &line.text, size, from - line.start);
     let x1 = text_left + crate::window::text::prefix_width(font, &line.text, size, to - line.start);
     canvas.fill_rect(SELECTION_BG, Rect::new(x0, y, x1 - x0, height));
 }

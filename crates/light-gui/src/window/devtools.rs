@@ -1,5 +1,5 @@
-use light_vdom::{Event as DomEvent, KeyInfo};
 use super::app::App;
+use light_vdom::{Event as DomEvent, KeyInfo};
 
 impl App {
     pub(super) fn on_access_event(&mut self, event: accesskit_winit::Event) {
@@ -420,6 +420,3 @@ impl App {
         }
     }
 }
-
-
-

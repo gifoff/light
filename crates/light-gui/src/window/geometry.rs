@@ -101,6 +101,3 @@ impl serde::Serialize for WindowGeometry {
         state.end()
     }
 }
-
-
-

@@ -1,10 +1,10 @@
+use super::app::{App, UserEvent};
+use super::geometry::WindowGeometry;
 use light_vdom::window_backend::{WindowCommand, set_active_window, set_current_window_token};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
-use super::app::{App, UserEvent};
-use super::geometry::WindowGeometry;
 
 impl ApplicationHandler<UserEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -290,5 +290,3 @@ impl ApplicationHandler<UserEvent> for App {
         }
     }
 }
-
-

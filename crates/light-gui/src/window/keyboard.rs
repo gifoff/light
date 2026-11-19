@@ -4,15 +4,14 @@
 use winit::event::{ElementState, KeyEvent};
 use winit::keyboard::{Key, NamedKey};
 
-use light_vdom::{Event as DomEvent, NodeKind};
 #[allow(unused_imports)]
 use super::text;
+use light_vdom::{Event as DomEvent, NodeKind};
 
 use super::keys::{control_letter, key_info};
 use super::state::WindowState;
 
 impl WindowState {
-
     /// Отправляет форму по `Enter` из однострочного поля ввода.
     ///
     /// Срабатывает, только если фокус — на включённом однострочном `<text>`
@@ -252,7 +251,11 @@ impl WindowState {
     }
 
     /// Перерисовывает только области старой и новой кнопки под курсором.
-    pub(super) fn invalidate_hover(&mut self, previous: Option<&'static str>, current: Option<&'static str>) {
+    pub(super) fn invalidate_hover(
+        &mut self,
+        previous: Option<&'static str>,
+        current: Option<&'static str>,
+    ) {
         let Some(layout) = self.layout.as_ref() else {
             self.invalidate();
             return;
@@ -288,14 +291,16 @@ impl WindowState {
 
     /// Применяет программный запрос фокуса (`light_vdom::window_backend::focus`/`blur`).
     #[cfg(feature = "a11y-winit")]
-    pub(super) fn apply_focus_command(&mut self, command: light_vdom::window_backend::FocusCommand) {
+    pub(super) fn apply_focus_command(
+        &mut self,
+        command: light_vdom::window_backend::FocusCommand,
+    ) {
         match command {
             light_vdom::window_backend::FocusCommand::Focus(key) => self.set_a11y_focus(Some(key)),
             light_vdom::window_backend::FocusCommand::Blur => self.set_a11y_focus(None),
         }
         self.invalidate();
     }
-
 
     pub(super) fn multiline_focused(&self) -> bool {
         matches!(
@@ -306,7 +311,6 @@ impl WindowState {
             })
         )
     }
-
 
     fn field_lines(&self) -> Option<Vec<text::Line>> {
         let node = self.focused_node()?;
@@ -331,7 +335,6 @@ impl WindowState {
         ))
     }
 
-
     fn move_caret(&mut self, to: usize, extend: bool) {
         let len = self.editing.chars().count();
         if extend {
@@ -343,7 +346,6 @@ impl WindowState {
         }
         self.caret = to.min(len);
     }
-
 
     fn move_caret_home(&mut self, extend: bool) {
         let index = self
@@ -357,7 +359,6 @@ impl WindowState {
         self.move_caret(to, extend);
     }
 
-
     fn move_caret_end(&mut self, extend: bool) {
         let Some(lines) = self.field_lines() else {
             let len = self.editing.chars().count();
@@ -369,7 +370,6 @@ impl WindowState {
         let to = line.start + line.text.chars().count();
         self.move_caret(to, extend);
     }
-
 
     fn move_caret_vertical(&mut self, delta: i32, extend: bool) {
         let Some(lines) = self.field_lines() else {
@@ -391,5 +391,4 @@ impl WindowState {
         let to = lines[target as usize].start + column;
         self.move_caret(to, extend);
     }
-
 }

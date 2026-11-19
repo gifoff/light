@@ -1,15 +1,15 @@
 //! Интеграция с AccessKit: дерево доступности, действия диктора и клавиатура.
 
 #[cfg(feature = "a11y-winit")]
-use winit::event::KeyEvent;
+use light_vdom::Event as DomEvent;
 #[cfg(feature = "a11y-winit")]
 use light_vdom::NodeKind;
 #[cfg(feature = "a11y-winit")]
-use light_vdom::Event as DomEvent;
+use winit::event::KeyEvent;
 
+use super::keys::key_info;
 #[cfg(feature = "a11y-winit")]
 use super::state::WindowState;
-use super::keys::key_info;
 
 impl WindowState {
     /// Отправляет текущее дерево доступности адаптеру (если тот активен).

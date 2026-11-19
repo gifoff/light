@@ -10,20 +10,20 @@ pub(super) const DOUBLE_CLICK: std::time::Duration = std::time::Duration::from_m
 
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 
-use light_vdom::layout::{Layout, Point, Rect, coalesce_regions, damage_regions, snapshot_rects};
-use light_vdom::{Event as DomEvent, NodeKind, VElement, diff};
-use std::sync::Arc;
 #[allow(unused_imports)]
 use super::paint::Canvas;
 #[allow(unused_imports)]
 use super::state::ScaledMetrics;
+use light_vdom::layout::{Layout, Point, Rect, coalesce_regions, damage_regions, snapshot_rects};
+use light_vdom::{Event as DomEvent, NodeKind, VElement, diff};
+use std::sync::Arc;
 
+use super::keys::map_button;
 #[allow(unused_imports)]
 use super::paint;
-use super::keys::map_button;
 use super::scrollbar::{prune_scroll_offsets, scrollbar_strip_damage};
-use std::time::Instant;
 use super::state::WindowState;
+use std::time::Instant;
 
 impl WindowState {
     /// Снимает фокус при потере активности окна.

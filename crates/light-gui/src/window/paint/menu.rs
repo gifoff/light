@@ -46,7 +46,12 @@ pub(crate) fn draw_context_menu(
 }
 
 /// Обрезает строку по ширине и добавляет `…`, если она не помещается.
-pub(crate) fn ellipsized(font: &crate::window::font::FontMetrics, text: &str, size: f32, max_width: f32) -> String {
+pub(crate) fn ellipsized(
+    font: &crate::window::font::FontMetrics,
+    text: &str,
+    size: f32,
+    max_width: f32,
+) -> String {
     let primary = font.font();
     if measure(primary, text, size).0 <= max_width {
         return text.to_owned();
@@ -73,8 +78,8 @@ pub(crate) fn ellipsized(font: &crate::window::font::FontMetrics, text: &str, si
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::window::font::measure;
     use crate::window::paint::forms::draw_focus_ring;
-use crate::window::font::measure;
 
     pub(crate) fn pixel(pixels: &[u8], width: u32, x: u32, y: u32) -> u32 {
         let i = ((y * width + x) * 4) as usize;

@@ -92,8 +92,8 @@ pub fn resolve_cursor(layout: &Layout, tree: &VElement, point: Point) -> Cursor 
 #[cfg(test)]
 mod tests {
     use crate::window::keys::keycode_letter;
-    use crate::window::scrollbar::{prune_scroll_offsets, scrollbar_strip_damage};
     use crate::window::render_loop::word_range;
+    use crate::window::scrollbar::{prune_scroll_offsets, scrollbar_strip_damage};
     use light_vdom::layout::{Point, Rect};
     use winit::keyboard::KeyCode;
 
@@ -232,4 +232,3 @@ mod tests {
         );
     }
 }
-

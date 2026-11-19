@@ -3,7 +3,10 @@
 use super::canvas::Canvas;
 use light_vdom::layout::{CHECKBOX_BOX, CHECKBOX_GAP, PlacedNode, Rect};
 
-use super::{COLOR_MUTED, COLOR_TEXT, FIELD_BORDER, FOCUS_RING, FOCUS_RING_OFFSET, FOCUS_RING_WIDTH, FORM_ACCENT, FORM_BG, MENU_ROW_H, REQUIRED_COLOR};
+use super::{
+    COLOR_MUTED, COLOR_TEXT, FIELD_BORDER, FOCUS_RING, FOCUS_RING_OFFSET, FOCUS_RING_WIDTH,
+    FORM_ACCENT, FORM_BG, MENU_ROW_H, REQUIRED_COLOR,
+};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Interaction<'a> {
@@ -36,7 +39,12 @@ pub(crate) fn select_popup(rect: Rect, count: usize, scale: f32) -> Rect {
 
 /// Помечает узлы, находящиеся внутри заблокированной кнопки, чтобы их текст
 /// рисовался приглушённым цветом.
-pub(crate) fn mark_disabled_text(nodes: &[PlacedNode], index: usize, inherited: bool, out: &mut [bool]) {
+pub(crate) fn mark_disabled_text(
+    nodes: &[PlacedNode],
+    index: usize,
+    inherited: bool,
+    out: &mut [bool],
+) {
     let disabled = inherited
         || matches!(
             nodes[index].kind,

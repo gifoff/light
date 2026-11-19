@@ -69,5 +69,4 @@ impl App {
             WindowCommand::Hide => window.set_visible(false),
         }
     }
-
 }

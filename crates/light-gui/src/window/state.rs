@@ -18,25 +18,16 @@ use crate::render::RendererBackend;
 #[cfg(all(feature = "wgpu-backend", not(feature = "softbuffer-backend")))]
 use crate::render::WgpuBackend;
 use light_vdom::component::{Component, WindowConfig};
-use light_vdom::layout::{
-    Layout, Point, Rect, TextMetrics,
-};
-use light_vdom::window_backend::{
-    WindowToken, set_active_window, set_current_window_token,
-};
-use light_vdom::{
-ButtonType, Event as DomEvent, NodeKind,
-    VElement,
-};
+use light_vdom::layout::{Layout, Point, Rect, TextMetrics};
+use light_vdom::window_backend::{WindowToken, set_active_window, set_current_window_token};
+use light_vdom::{ButtonType, Event as DomEvent, NodeKind, VElement};
 
 use super::font::FontMetrics;
 #[allow(unused_imports)]
 use super::paint;
+use super::render_loop::word_range;
 #[allow(unused_imports)]
 use super::text;
-use super::render_loop::{
-    word_range,
-};
 
 pub(super) struct ScaledMetrics<'a> {
     pub(super) inner: &'a FontMetrics,
@@ -390,7 +381,11 @@ impl WindowState {
     /// Позиция каретки (в символах) по точке клика внутри поля.
     ///
     /// Учитывает многострочную раскладку и горизонтальную прокрутку.
-    pub(super) fn caret_from_pointer(&self, node: &light_vdom::layout::PlacedNode, point: Point) -> usize {
+    pub(super) fn caret_from_pointer(
+        &self,
+        node: &light_vdom::layout::PlacedNode,
+        point: Point,
+    ) -> usize {
         let NodeKind::TextField {
             value, multiline, ..
         } = &node.kind

@@ -12,24 +12,22 @@
 mod a11y_bridge;
 mod app;
 mod cursor;
+mod devtools;
+mod events;
 pub mod font;
+mod geometry;
 mod icon;
-mod interaction;
-mod keys;
-mod keyboard;
 #[cfg(feature = "image-support")]
 mod image;
+mod interaction;
+mod keyboard;
+mod keys;
+mod open_windows;
 pub(crate) mod paint;
 mod render_loop;
 mod scrollbar;
 mod state;
 mod text;
 mod windows;
-mod open_windows;
-mod devtools;
-mod events;
-mod geometry;
 
 pub use app::run;
-
-

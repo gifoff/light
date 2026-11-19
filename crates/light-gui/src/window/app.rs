@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 use light_reactivity::set_repaint_requester;
 use light_vdom::component::Component;
 use light_vdom::window_backend::{WindowToken, set_command_sender};
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::window::{Window, WindowId};
 
@@ -256,6 +256,3 @@ impl App {
         }
     }
 }
-
-
-

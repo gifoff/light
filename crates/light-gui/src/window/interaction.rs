@@ -9,12 +9,10 @@ use light_vdom::{Cursor, Event as DomEvent, NodeKind, Resize};
 use super::cursor::{cursor_icon, resolve_cursor};
 #[allow(unused_imports)]
 use super::paint;
+use super::render_loop::RESIZE_BORDER;
+use super::state::{ClickAction, ContextMenu, MenuAction, MenuItem, WindowState};
 #[allow(unused_imports)]
 use super::text;
-use super::render_loop::RESIZE_BORDER;
-use super::state::{
-    ClickAction, ContextMenu, MenuItem, MenuAction, WindowState,
-};
 
 impl WindowState {
     pub(super) fn on_click(&mut self) {

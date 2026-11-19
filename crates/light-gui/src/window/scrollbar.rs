@@ -5,18 +5,15 @@ use std::collections::HashMap;
 
 use light_vdom::layout::{Layout, PlacedNode, Point, Rect};
 
-
+#[allow(unused_imports)]
+use super::paint;
 #[allow(unused_imports)]
 use super::paint::Canvas;
 #[allow(unused_imports)]
 use super::state::ScaledMetrics;
-#[allow(unused_imports)]
-use super::paint;
-use super::state::{ScrollbarHit, ScrollDrag, WindowState};
+use super::state::{ScrollDrag, ScrollbarHit, WindowState};
 
 impl WindowState {
-
-
     /// Обрабатывает нажатие кнопки мыши на скроллбаре. Возвращает `true`,
     /// если нажатие было перехвачено (и обычные клики не нужны).
     pub(super) fn handle_scrollbar_press(&mut self) -> bool {
@@ -52,7 +49,6 @@ impl WindowState {
         self.scroll_page(hit);
         true
     }
-
 
     /// Прокрутка на страницу (высоту окна контейнера) при клике по дорожке.
     fn scroll_page(&mut self, hit: ScrollbarHit) {
@@ -103,7 +99,6 @@ impl WindowState {
             self.invalidate();
         }
     }
-
 
     /// Смещает прокрутку во время перетаскивания бегунка вслед за курсором.
     pub(super) fn apply_scroll_drag(&mut self) {
@@ -156,7 +151,6 @@ impl WindowState {
         }
     }
 
-
     /// Скроллбар под точкой: верхний (самый вложенный) контейнер, чья дорожка
     /// содержит точку.
     fn scrollbar_at(&self, point: Point) -> Option<ScrollbarHit> {
@@ -178,10 +172,6 @@ impl WindowState {
     }
 }
 
-
-
-
-
 pub(super) fn prune_scroll_offsets(scroll: &mut HashMap<&'static str, Point>, layout: &Layout) {
     scroll.retain(|key, _| {
         layout
@@ -189,7 +179,6 @@ pub(super) fn prune_scroll_offsets(scroll: &mut HashMap<&'static str, Point>, la
             .is_some_and(|node| node.max_scroll_x() > 0.5 || node.max_scroll_y() > 0.5)
     });
 }
-
 
 /// Полосы скроллбаров всех прокручиваемых контейнеров в старой и новой
 /// раскладке.
@@ -226,10 +215,13 @@ pub(super) fn scrollbar_strip_damage(old: &Layout, new: &Layout, scale: f32) -> 
     rects
 }
 
-
 /// Возвращает геометрию скроллбара узла по выбранной оси: дорожку и бегунок.
 /// Возвращает `None`, если по этой оси нет прокрутки или узел не прокручивается.
-pub(super) fn scrollbar_geometry(node: &PlacedNode, scale: f32, horizontal: bool) -> Option<(Rect, Rect)> {
+pub(super) fn scrollbar_geometry(
+    node: &PlacedNode,
+    scale: f32,
+    horizontal: bool,
+) -> Option<(Rect, Rect)> {
     if horizontal {
         if !(node.overflow_x.scrollable() && node.max_scroll_x() > 0.5) {
             return None;

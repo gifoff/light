@@ -1,7 +1,10 @@
 //! Главный цикл отрисовки: проходим по дереву узлов и вызываем рисовальщики.
 
 use super::canvas::Canvas;
-use super::forms::{Interaction, draw_checkbox, draw_field_required, draw_focus_ring, draw_inline_required, draw_radio, mark_disabled_text, select_popup};
+use super::forms::{
+    Interaction, draw_checkbox, draw_field_required, draw_focus_ring, draw_inline_required,
+    draw_radio, mark_disabled_text, select_popup,
+};
 use super::menu::ellipsized;
 use super::selects::{draw_grip, draw_select, draw_select_popup, render_field};
 use light_vdom::layout::{CHECKBOX_BOX, CHECKBOX_GAP, FONT_SIZE, Layout, Rect};

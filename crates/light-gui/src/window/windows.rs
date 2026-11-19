@@ -21,8 +21,6 @@ use super::icon;
 use super::keys::is_resume_from_swap;
 use super::state::WindowState;
 
-
-
 impl App {
     pub(super) fn create_window(
         &mut self,
