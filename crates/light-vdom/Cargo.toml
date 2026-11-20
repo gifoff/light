@@ -25,16 +25,11 @@ light-fw-html = { workspace = true }
 # В light-fw-core они остаются как feature-зависимости до этапа 4.
 png = { workspace = true, optional = true }
 winit = { workspace = true, optional = true }
-pixels = { workspace = true, optional = true }
-softbuffer = { workspace = true, optional = true }
-ab_glyph = { workspace = true, optional = true }
 
 [features]
 default = []
-window = ["dep:winit", "dep:ab_glyph"]
+window = ["dep:winit"]
 image-support = ["dep:png"]
-wgpu-backend = ["dep:pixels"]
-softbuffer-backend = ["dep:softbuffer", "window"]
 async-runtime = []
 runtime-templates = []
 file-dialog = []

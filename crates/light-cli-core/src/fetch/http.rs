@@ -1,5 +1,6 @@
-use super::types::{CrateSearchResult, RemoteRegistry, ResolvedComponent};
-use crate::error::{Error, Result};
+use super::types::CrateSearchResult;
+use crate::error::Result;
+/// Быстрая проверка доступности crates.io (HEAD-запрос с таймаутом 5 с).
 pub fn ping_crates_io() -> bool {
     use std::time::Duration;
     let client = match reqwest::blocking::Client::builder()
@@ -135,7 +136,7 @@ pub fn fetch_crates_io(
 /// пустой вектор — вызывающий интерпретирует как «неизвестно» и не
 /// ставит бейдж official.
 #[cfg(feature = "network")]
-fn fetch_owners(
+pub fn fetch_owners(
     name: &str,
     config: &crate::registry_config::RegistryConfig,
 ) -> Result<Vec<String>> {
@@ -173,7 +174,7 @@ fn fetch_owners(
 
 /// Скачивает `.crate`-архив: `GET <download_url>/<name>/<version>/download`.
 #[cfg(feature = "network")]
-fn fetch_crate_archive(
+pub fn fetch_crate_archive(
     name: &str,
     version: &str,
     config: &crate::registry_config::RegistryConfig,

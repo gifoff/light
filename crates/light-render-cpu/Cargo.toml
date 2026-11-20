@@ -14,3 +14,6 @@ light-gui = { workspace = true }
 softbuffer = { workspace = true }
 # 2D-растровая отрисовка (прямые линии, текст, прямоугольники).
 tiny-skia = { workspace = true }
+
+[lints]
+workspace = true

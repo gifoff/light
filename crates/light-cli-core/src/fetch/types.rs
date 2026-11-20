@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "network")]
+use super::http::{fetch_crate_archive, fetch_crates_io, fetch_crates_io_search, fetch_owners};
 use crate::error::{Error, Result};
 use crate::manifest::Provides;
 #[cfg(feature = "network")]
