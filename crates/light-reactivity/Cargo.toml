@@ -1,8 +1,7 @@
 [package]
 name = "light-reactivity"
-# Пока 0.20.0-скелет: версия закреплена в workspace-зависимости, а не
-# наследуется от workspace.package (там 0.19.0 — общий bump будет отдельным
-# коммитом перед релизом).
+# 0.20.0 (Этап 6): версия закреплена в workspace-зависимости (см. [workspace.dependencies]
+# в корне воркспейса) и совпадает с общим bump `workspace.package` до 0.20.0.
 version = "0.20.0"
 edition.workspace = true
 license.workspace = true

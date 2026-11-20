@@ -6,7 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 readme = "../../README.md"
-description = "Ядро Light: VDOM, реактивность, раскладка (0.20.0: GUI-модули вынесены в light-gui)"
+description = "Ядро Light: VDOM, реактивность, раскладка (0.20.0: Headless by default; GUI — в light-gui/light-fw)"
 
 [lib]
 name = "light_fw_core"
@@ -22,9 +22,10 @@ light-reactivity.workspace = true
 light-vdom = { workspace = true }
 # 0.20.0 этап 4: GUI-слой (window, a11y, file_dialog, async_runtime, render,
 # devtools) вынесен в `light-gui`. Зависимость НЕ опциональная: headless-режим
-# (`--no-default-features`) тянет только stub'ы крейта без winit/softbuffer
-# (фичи light-gui по умолчанию выключены, поэтому дерево не содержит ни winit,
-# ни softbuffer). Ядро реэкспортирует все эти модули под прежними именами.
+# (`--no-default-features`) тянет только stub'ы крейта — фичи `light-gui` по
+# умолчанию выключены (`default = []`), поэтому дерево не содержит ни winit, ни
+# softbuffer (0.20.0, Этап 6: Headless by default). Ядро реэкспортирует все
+# эти модули под прежними именами.
 light-gui = { workspace = true }
 # 0.20.0 этап 5: рендер-бэкенды вынесены из `light-gui` в отдельные крейты.
 # Опциональные: включаются фичами `softbuffer-backend`/`wgpu-backend`, чтобы
@@ -45,19 +46,14 @@ light-fw-macros.workspace = true
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2"
-# Ошибки оконного бэкенда (варианты `Window`/`CreateWindow`/`Surface`/`Texture`/
-# `Softbuffer`) остаются в типе `light_fw_core::error::Error` для обратной
-# совместимости 0.19.x — реализация этих операций живёт в `light-gui`, но
-# тип данных ядра ссылается на их payload'ы (`winit::error::*`,
-# `pixels::*`, `softbuffer::SoftBufferError`). Поэтому эти зависимости
-# остаются опциональными и пробрасываются теми же фичами, что раньше.
-winit = { workspace = true, optional = true }
-pixels = { workspace = true, optional = true }
-softbuffer = { workspace = true, optional = true }
+
 
 [features]
-# Набор по умолчанию: базовые элементы + окно + показ через softbuffer + a11y.
-default = ["elements-basic", "window", "softbuffer-backend", "a11y-winit"]
+# 0.20.0 (Этап 6): ядро **Headless по умолчанию** — только реактивность и
+# VDOM без окон, winit, softbuffer/pixels и а11y. GUI (окно + рендер-бэкенд)
+# включается фичами `window`/`softbuffer-backend`/`wgpu-backend`; фасад
+# `light-fw` включает их по умолчанию — см. `crates/light-fw/Cargo.toml`.
+default = ["elements-basic"]
 
 # --- Элементы разметки -------------------------------------------------
 # `<div>`, `<span>`, `<h1>`–`<h5>`, `<titlebar>`, `<text>` и `<button>`.
@@ -115,32 +111,28 @@ image-support = [
 file-dialog = ["light-gui/file-dialog"]
 
 # --- Окно --------------------------------------------------------------
-# Базовое окно на winit с программной отрисовкой. Реализация — в `light-gui`
-# (этап 4), но сам тип ошибок ядра (`Error::Window`/`CreateWindow`) всё ещё
-# содержит payload'ы `winit`, поэтому `dep:winit` остаётся здесь.
+# Базовое окно на winit с программной отрисовкой. Реализация и типы `winit`
+# живут в `light-gui` (этап 4); ядро не зависит от `winit` напрямую
+# (0.20.0, Этап 6: Headless by default, payload'ы ошибок — `String`).
 window = [
-    "dep:winit",
     "light-gui/window",
     "light-fw-macros/template-window",
     "light-vdom/window",
 ]
-# Показ кадра через `softbuffer` (без wgpu/naga). По умолчанию включён.
+# Показ кадра через `softbuffer` (без wgpu/naga).
 # 0.20.0 этап 5: реализация живёт в `light-render-cpu`; ядро выбирает её по
 # этой фиче в `run()` и передаёт фабрику в `light_gui::run_with_backend`.
-# (`dep:softbuffer` остаётся только ради типа ошибки `Error::Softbuffer`.)
 softbuffer-backend = [
     "window",
-    "dep:softbuffer",
     "dep:light-render-cpu",
     "light-render-cpu/window",
     "light-gui/softbuffer-backend",
 ]
 # Показ кадра через `pixels` (wgpu/naga). Альтернативный бэкенд.
 # Если включены обе фичи, используется `softbuffer-backend`.
-# 0.20.0 этап 5: реализация живёт в `light-render-gpu` (см. above).
+# 0.20.0 этап 5: реализация живёт в `light-render-gpu` (см. выше).
 wgpu-backend = [
     "window",
-    "dep:pixels",
     "dep:light-render-gpu",
     "light-render-gpu/window",
     "light-gui/wgpu-backend",

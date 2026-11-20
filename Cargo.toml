@@ -29,7 +29,8 @@ members = [
 ]
 
 [workspace.package]
-version = "0.19.0"
+# 0.20.0 (Этап 6): общий bump всех крейтов воркспейса (см. CHANGELOG.md).
+version = "0.20.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/gifoff/light"
@@ -51,15 +52,15 @@ rfd = "0.14"
 # light-fw-core, чтобы не дублировать версии wgpu в графе зависимостей.)
 tiny-skia = "0.12"
 
-light = { path = "crates/light", version = "0.19.0" }
-light-fw = { path = "crates/light-fw", version = "0.19.0" }
-light-fw-core = { path = "crates/light-core", version = "0.19.0" }
-light-fw-element-form = { path = "crates/light-element-form", version = "0.19.0" }
-light-fw-behavior-validation = { path = "crates/light-behavior-validation", version = "0.19.0" }
-light-fw-macros = { path = "crates/light-macros", version = "0.19.0" }
-light-fw-html = { path = "crates/light-html", version = "0.19.0" }
-light-fw-cli-core = { path = "crates/light-cli-core", version = "0.19.0" }
-light-fw-devtools-web = { path = "crates/light-devtools-web", version = "0.19.0" }
+light = { path = "crates/light", version = "0.20.0" }
+light-fw = { path = "crates/light-fw", version = "0.20.0" }
+light-fw-core = { path = "crates/light-core", version = "0.20.0" }
+light-fw-element-form = { path = "crates/light-element-form", version = "0.20.0" }
+light-fw-behavior-validation = { path = "crates/light-behavior-validation", version = "0.20.0" }
+light-fw-macros = { path = "crates/light-macros", version = "0.20.0" }
+light-fw-html = { path = "crates/light-html", version = "0.20.0" }
+light-fw-cli-core = { path = "crates/light-cli-core", version = "0.20.0" }
+light-fw-devtools-web = { path = "crates/light-devtools-web", version = "0.20.0" }
 # 0.20.0 (этап 1): скелетные крейты декомпозиции `light-fw-core`.
 # Пока пусты (перенос кода — этапы 2+); версии зафиксированы для стабильности.
 light-reactivity = { path = "crates/light-reactivity", version = "0.20.0" }

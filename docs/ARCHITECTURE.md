@@ -7,11 +7,15 @@
 
 | Крейт | Роль |
 | --- | --- |
-| `light-fw-core` | Ядро: валидация, фасад 0.19.x. GUI-слой (окно, paint, a11y) вынесен в `light-gui` в 0.20.0. |
-| `light-gui` | GUI-слой: окно на `winit`, события ввода, а11y-мост AccessKit, рендер-бэкенды (`softbuffer`/`pixels`), асинхронный рантайм, DevTools. Добавлен в 0.20.0 (Этап 4). |
+| `light-fw-core` | Ядро: фасад 0.19.x + **headless by default** (0.20.0). Реэкспорт всех слоёв (`reactive`, `vdom`, `window`, `a11y`, `validation`). Без окон/рендера/a11y в default-фичах. |
+| `light-reactivity` | Сигналы: `Property`, `Proxy`, `Observer`, `Watcher`, `watch`. Вынесен из `light-fw-core` (0.20.0, этап 2). |
+| `light-vdom` | VDOM, layout, DOM, runtime, plugins, validation. Вынесен из `light-fw-core` (0.20.0, этапы 2–3). |
+| `light-gui` | GUI-слой: окно на `winit`, a11y-мост AccessKit, `file_dialog`, `async_runtime`, devtools-инфраструктура, render-абстракция. Вынесен из `light-fw-core` (0.20.0, этап 4). |
+| `light-render-cpu` | Программная отрисовка через `softbuffer` (CPU-бэкенд). Вынесен из `light-gui` (0.20.0, этап 5). |
+| `light-render-gpu` | Аппаратная отрисовка через `pixels` (wgpu/naga). Вынесен из `light-gui` (0.20.0, этап 5). |
 | `light-fw-html` | Парсер HTML-шаблонов: теги, атрибуты, директивы, `{{ … }}`, `<include>`. |
 | `light-fw-macros` | Процедурные макросы `#[template]` и `#[proxy]`. |
-| `light-fw` | Мета-крейт: реэкспортирует ядро, макросы и подключённые компоненты. |
+| `light-fw` | Фасад **GUI-first**: реэкспортирует ядро, макросы и подключённые компоненты. Default-фичи: `elements-basic`, `window`, `softbuffer-backend`, `a11y-winit`. |
 | `light-fw-element-form` | Компонент-элемент: `<checkbox>`, `<radio>`, `<select>`, `<option>`. |
 | `light-fw-behavior-validation` | Компонент-поведение: `required`, `:validator`, `@validate`. |
 | `light` | Бинарник `light`: команды `build`, `dev`, `check`, `add`, `search`, `publish`. |
@@ -20,7 +24,8 @@
 | `light-demo` | Демонстрационное приложение и примеры. |
 
 Зависимости направлены внутрь: компоненты и CLI зависят от ядра, ядро не знает
-о прикладном коде.
+о прикладном коде. GUI-приложения идут через фасад `light-fw` (GUI-first), а
+headless-код — напрямую через `light-fw-core` с `default-features = false`.
 
 ## Компиляция шаблона
 
@@ -42,19 +47,26 @@ Component::render() → VElement (новое дерево)
    набор операций (Op) → Dom → layout (размеры и позиции) → paint (Canvas → RGBA) → RendererBackend::present()
 ```
 
-Основные слои `light-fw-core`:
+Основные слои `light-fw-core` (реэкспорт под прежними именами 0.19.x):
 
-- **`vdom`** — `VElement`, `NodeKind`, стили, события и `diff`. Ключи узлов стабильны между отрисовками.
-- **`reactive`** — свойства `Proxy`, наблюдатели и запрос перерисовки.
-- **`layout`** — вычисление `Rect` для каждого узла.
-- **`light-gui::window`** — цикл `winit`, управление окнами. Подмодуль `devtools` (фича `devtools`) — TCP-сервер на 127.0.0.1:9229.
-- **`light-gui::window::paint`** — программная растеризация.
-- **`light-gui::a11y`** — построение дерева AccessKit.
-- **`light-fw-core::validation`** — `required`, пользовательские валидаторы.
+- **`reactive`** (`light-reactivity`) — свойства `Property`/`Proxy`, наблюдатели и запрос перерисовки.
+- **`vdom`** (`light-vdom`) — `VElement`, `NodeKind`, стили, события и `diff`. Ключи узлов стабильны между отрисовками.
+- **`layout`** (`light-vdom`) — вычисление `Rect` для каждого узла.
+- **`window`** (`light-gui`) — цикл `winit`, управление окнами. Подмодуль `devtools` (фича `devtools`) — TCP-сервер на 127.0.0.1:9229.
+- **`window::paint`** (`light-render-cpu` / `light-render-gpu`) — программная либо аппаратная растеризация.
+- **`a11y`** (`light-gui`) — построение дерева AccessKit.
+- **`validation`** — `required`, пользовательские валидаторы.
 
 Публичный API 0.19.x сохранён через реэкспорт: `light_fw_core::window`,
 `light_fw_core::a11y`, `light_fw_core::async_runtime` и т.д. указывают на
-соответствующие модули `light-gui`.
+соответствующие модули `light-gui`/`light-render-*`.
+
+**Headless by default (0.20.0):** default-фичи `light-fw-core` =
+`["elements-basic"]`. В headless-сборке (`--no-default-features` или
+`default-features = false` у потребителя) отсутствуют: `winit`,
+`softbuffer`/`pixels`/`wgpu`, `accesskit*`, `rfd`, `futures` (async).
+Дерево зависимостей E2E-тестом подтверждено чистым (см. `docs/guide.md`, раздел
+«API/CLI без GUI»).
 
 События приходят из `winit`, преобразуются в `vdom::Event` и передаются компоненту.
 
@@ -81,16 +93,23 @@ Component::render() → VElement (новое дерево)
 light-reactivity   # сигналы, состояние (из light-core/src/reactive/)
 light-html         # парсер HTML (уже существует, light-fw-html)
 light-vdom         # виртуальный DOM, layout, diff (из vdom.rs, layout.rs, dom.rs)
-light-gui          # окно winit, события, a11y, рендер-бэкенды, async-runtime (из window/, render/, a11y/, async_runtime.rs, devtools/, file_dialog.rs)
+light-gui          # окно winit, события, a11y, async-runtime (из window/, a11y/, async_runtime.rs, devtools/, file_dialog.rs)
 light-render-cpu   # программная отрисовка (из render/softbuffer.rs, window/paint.rs)
 light-render-gpu   # аппаратная отрисовка (из render/wgpu.rs)
-light-fw           # фасад (re-export, run(), run_with_config)
+light-fw           # фасад GUI-first: re-export, run(), run_with_config()
+                   # (default-фичи: elements-basic, window, softbuffer-backend, a11y-winit)
 ```
 
 Зависимости направлены внутрь: `light-fw-core → {light-gui, light-vdom, light-reactivity, …}`,
 `light-gui → {light-vdom, light-reactivity, base64, thiserror, serde, serde_json}` + опциональные
-(winit, ab_glyph, png, rfd, softbuffer, pixels, futures, accesskit).
+(winit, ab_glyph, png, rfd, futures, accesskit). Рендер-бэкенды вынесены:
+`light-render-cpu` (`softbuffer`, фича `window`), `light-render-gpu` (`pixels`/wgpu/naga, фича `wgpu`).
 `light-vdom` не имеет прямой зависимости от `light-fw-core`.
+
+**Ключевой принцип 0.20.0 — Headless by default:** `light-fw-core` по умолчанию
+не тянет ни окон, ни рендера, ни a11y. GUI включается точечными фичами
+(`window`, `softbuffer-backend`, `wgpu-backend`, `a11y-winit`), а фасад
+`light-fw` остаётся GUI-first для `light init`/`light dev`.
 
 Этапы:
 1. **Скелет** (этап 1): 5 пустых крейтов + связи + workspace. ✅
@@ -100,5 +119,10 @@ light-fw           # фасад (re-export, run(), run_with_config)
    `async_runtime.rs` → `light-gui`. Публичный API 0.19.x сохранён через реэкспорт.
    Headless-режим (`cargo check -p light-fw-core --no-default-features`) не тянет
    winit/softbuffer/pixels/rfd/accesskit/futures. ✅
-4. **Фасад**: `light-fw` переключается на новые слои, `light-fw-core`
-   остаётся совместимым (re-export) до удаления.
+4. **Перенос рендера** (этап 5): `render/softbuffer.rs`, `window/paint.rs` → `light-render-cpu`;
+   `render/wgpu.rs` → `light-render-gpu`. ✅
+5. **Headless by default** (этап 6, 0.20.0): default-фичи `light-fw-core`
+   сокращены до `["elements-basic"]`; breaking change в payload'ах
+   `light_fw_core::error::Error` (String вместо типизированных `winit`/`pixels`/
+   `softbuffer` ошибок). Fасад `light-fw` без изменений (GUI-first). E2E-тест
+   headless-сборки подтверждает чистое дерево зависимостей. ✅
