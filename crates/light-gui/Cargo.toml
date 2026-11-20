@@ -63,8 +63,10 @@ file-dialog = ["dep:rfd"]
 # Включение модуля DevTools-сервера (TCP-команды для `light devtools`, SHOT: png).
 devtools = ["dep:png"]
 # `<image>`: декодирование PNG-изображений (window::image) + варианты
-# NodeKind::Image/`RuntimeImage` в light-vdom.
-image-support = ["window", "dep:png"]
+# NodeKind::Image/`RuntimeImage` в light-vdom. Проксим `image-support`
+# в light-vdom, чтобы `ImageData` и варианты NodeKind были доступны
+# (аналогично `elements-*`).
+image-support = ["window", "dep:png", "light-vdom/image-support"]
 # Прозрачность окна (per-pixel alpha).
 window-transparent = ["window"]
 # Модальные окна (`modal`).
