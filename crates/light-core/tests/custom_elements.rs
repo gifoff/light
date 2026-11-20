@@ -74,7 +74,7 @@ impl CustomElement for FakeDatepicker {
 static FAKE_DATEPICKER_ENTRY: light_fw::plugins::CustomElementFactory =
     light_fw::plugins::CustomElementFactory {
         tag: "datepicker",
-        core_version_req: "^0.19",
+        core_version_req: "^0.20",
         crate_name: "fake-datepicker-test",
         provides: &["datepicker"],
         factory: || Box::new(FakeDatepicker),
@@ -91,7 +91,7 @@ fn lookup_finds_fake_datepicker() {
     assert_eq!(factory.tag, "datepicker");
     assert_eq!(factory.crate_name, "fake-datepicker-test");
     assert_eq!(factory.provides, &["datepicker"]);
-    assert_eq!(factory.core_version_req, "^0.19");
+    assert_eq!(factory.core_version_req, "^0.20");
 }
 
 /// Незарегистрированный тег → None.
@@ -246,7 +246,7 @@ impl CustomElement for ClickCounter {
 static CLICK_COUNTER_ENTRY: light_fw::plugins::CustomElementFactory =
     light_fw::plugins::CustomElementFactory {
         tag: "click-counter",
-        core_version_req: "^0.19",
+        core_version_req: "^0.20",
         crate_name: "click-counter-test",
         provides: &["click-counter"],
         factory: || Box::new(ClickCounter::new()),

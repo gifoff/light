@@ -333,7 +333,7 @@ mod tests {
             available: vec![AvailableComponent {
                 tag: "datepicker".into(),
                 crate_name: "light-widget-datepicker".into(),
-                requirement: "light-widget-datepicker ^0.19".into(),
+                requirement: "light-widget-datepicker ^0.20".into(),
             }],
             unknown: vec!["custom-el".into()],
             unused: Vec::new(),
@@ -346,7 +346,7 @@ mod tests {
         assert!(text.contains("🟢 Установлено"));
         assert!(text.contains("light-fw-element-form"));
         assert!(text.contains("🟡 Доступно (установить)"));
-        assert!(text.contains("light-widget-datepicker ^0.19"));
+        assert!(text.contains("light-widget-datepicker ^0.20"));
         assert!(text.contains("🔴 Неизвестно"));
         assert!(text.contains("custom-el"));
         assert!(text.contains("⚠️ Конфликты"));

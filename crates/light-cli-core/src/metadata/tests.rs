@@ -14,7 +14,7 @@ mod tests {
         let mut builder = Builder::new(Vec::new());
         let mut header = tar::Header::new_gnu();
         header
-            .set_path("light-widget-datepicker-0.19.0/Cargo.toml")
+            .set_path("light-widget-datepicker-0.20.0/Cargo.toml")
             .expect("set path");
         header.set_size(cargo_toml.len() as u64);
         header.set_mode(0o644);
@@ -32,13 +32,13 @@ mod tests {
     const VALID_MANIFEST: &str = r#"
 [package]
 name = "light-widget-datepicker"
-version = "0.19.0"
+version = "0.20.0"
 edition = "2021"
 
 [package.metadata.light]
 kind = "widget"
 display-name = "Date Picker"
-core = "^0.19"
+core = "^0.20"
 [package.metadata.light.provides]
 elements = ["datepicker"]
 "#;
@@ -83,7 +83,7 @@ edition = "2021"
         let json = serde_json::to_string(&serde_json::json!({
             "packages": [
                 { "name": "my-app", "version": "0.1.0", "manifest_path": path("app") },
-                { "name": "light-widget-datepicker", "version": "0.19.0", "manifest_path": path("light-widget-datepicker") },
+                { "name": "light-widget-datepicker", "version": "0.20.0", "manifest_path": path("light-widget-datepicker") },
                 { "name": "serde", "version": "1.0.0", "manifest_path": path("serde") }
             ]
         }))
@@ -97,7 +97,7 @@ edition = "2021"
         );
         let meta = &installed[0];
         assert_eq!(meta.crate_name, "light-widget-datepicker");
-        assert_eq!(meta.version, "0.19.0");
+        assert_eq!(meta.version, "0.20.0");
         assert_eq!(meta.kind.as_deref(), Some("widget"));
         assert_eq!(meta.provides_elements, vec!["datepicker".to_string()]);
         let _ = std::fs::remove_dir_all(&dir);
@@ -109,9 +109,9 @@ edition = "2021"
         match result {
             ValidationResult::Ok(meta) => {
                 assert_eq!(meta.crate_name, "light-widget-datepicker");
-                assert_eq!(meta.version, "0.19.0");
+                assert_eq!(meta.version, "0.20.0");
                 assert_eq!(meta.kind.as_deref(), Some("widget"));
-                assert_eq!(meta.core_version_req.as_deref(), Some("^0.19"));
+                assert_eq!(meta.core_version_req.as_deref(), Some("^0.20"));
                 assert_eq!(meta.provides_elements, vec!["datepicker"]);
                 assert!(meta.provides_attributes.is_empty());
                 assert!(meta.requires_components.is_empty());
@@ -141,14 +141,14 @@ edition = "2021"
 [package.metadata.light]
 kind = "behavior"
 display-name = "Focus"
-core = "^0.20"
+core = "^0.19"
 [package.metadata.light.provides]
 attributes = ["data-focus"]
 "#;
         let result = validate_metadata(toml, "light-behavior-focus");
         match result {
             ValidationResult::Fatal(ValidationError::IncompatibleCore { required, current }) => {
-                assert_eq!(required, "^0.20");
+                assert_eq!(required, "^0.19");
                 assert_eq!(current, LIGHT_CORE_VERSION);
             }
             other => panic!("ожидался IncompatibleCore, получен {other:?}"),
@@ -166,7 +166,7 @@ edition = "2021"
 [package.metadata.light]
 kind = "subsystem"
 display-name = "A11y"
-core = "^0.19"
+core = "^0.20"
 "#;
         let result = validate_metadata(toml, "light-subsystem-a11y");
         match result {

@@ -245,7 +245,7 @@ edition = "2021"
 [package.metadata.light]
 kind = "widget"
 display-name = "Datepicker"
-core = "^0.19"
+core = "^0.20"
 
 [package.metadata.light.provides]
 elements = ["datepicker"]
