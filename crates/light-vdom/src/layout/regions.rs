@@ -3,7 +3,9 @@ use std::collections::{BTreeSet, HashMap};
 #[cfg(debug_assertions)]
 use std::env;
 
-use super::base::{FlowContext, Layout, Rect};
+#[cfg(debug_assertions)]
+use super::base::FlowContext;
+use super::base::{Layout, Rect};
 use crate::vdom::{Align, NodeKind, Offset, VElement};
 
 /// Заблокирован ли узел директивой `:disabled`.

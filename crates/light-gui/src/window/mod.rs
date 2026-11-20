@@ -31,3 +31,6 @@ mod text;
 mod windows;
 
 pub use app::run;
+// Курсоры: тесты light-core/tests/cursor.rs и публичный API
+// `light_fw::window::{cursor_for, default_cursor_for, resolve_cursor}`.
+pub use cursor::{cursor_for, default_cursor_for, resolve_cursor};

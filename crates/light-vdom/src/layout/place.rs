@@ -1,5 +1,7 @@
 use super::base::*;
-use super::regions::{debug_trace, flex_weight};
+#[cfg(debug_assertions)]
+use super::regions::debug_trace;
+use super::regions::flex_weight;
 use crate::vdom::{Align, NodeKind, Position, Size, VElement, WhiteSpace};
 
 impl super::base::Layout {
