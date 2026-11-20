@@ -68,12 +68,23 @@ pub mod devtools;
 pub mod error;
 #[cfg(feature = "file-dialog")]
 pub mod file_dialog;
-// Рендер-бэкенды (`softbuffer`/`pixels`) и окно на `winit`: существуют только
-// при фиче `window` (иначе нет ни winit, ни softbuffer).
+// Рендер-интерфейс (`RendererBackend`), заглушка (`NullBackend`) и окно на
+// `winit`: существуют только при фиче `window` (иначе нет winit). Конкретные
+// реализации вынесены в `light-render-cpu` (`softbuffer`) и
+// `light-render-gpu` (`pixels`) — Этап 5.
 #[cfg(feature = "window")]
 pub mod render;
 #[cfg(feature = "window")]
 pub mod window;
+
+/// Запускает цикл событий с указанным рендер-бэкендом (0.20.0, Этап 5).
+///
+/// Бэкенд передаётся фабрикой `Fn(width, height, Arc<Window>) -> Result<Box<dyn RendererBackend>>`:
+/// она вызывается для каждого окна (главного и дочерних). Выбор конкретной
+/// реализации делает фасад [`light-fw`](../light_fw/index.html) (функция
+/// `run`), который знает активную фичу сборки.
+#[cfg(feature = "window")]
+pub use window::run_with_backend;
 
 // Этап 4: все `crate::`-пути к vdom/layout/component/control в перенесённом
 // коде переписаны на прямые пути `light_vdom::...` (точечно, скриптами в

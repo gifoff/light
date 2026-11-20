@@ -10,7 +10,7 @@
 //! возвращает замыкание в цикл событий UI-потока, где оно выполняется,
 //! и после выполнения на всех окнах запрашивается перерисовка.
 //!
-//! Прокси устанавливается один раз в [`crate::window::run`] через
+//! Прокси устанавливается один раз в [`crate::window::run_with_backend`] через
 //! [`install_proxy`] и живёт в статике [`UI_PROXY`].
 //!
 //! ```rust
@@ -210,12 +210,12 @@ impl TaskHandle {
     }
 }
 
-/// Прокси UI-цикла, установленный один раз в [`crate::window::run`].
+/// Прокси UI-цикла, установленный один раз в [`crate::window::run_with_backend`].
 pub(crate) static UI_PROXY: OnceLock<EventLoopProxy<UserEvent>> = OnceLock::new();
 
 /// Устанавливает прокси UI-цикла (однократно).
 ///
-/// Вызывается в [`crate::window::run`] сразу после создания `EventLoop`.
+/// Вызывается в [`crate::window::run_with_backend`] сразу после создания `EventLoop`.
 /// Повторный вызов возвращает [`TaskError::AlreadyInstalled`].
 pub(crate) fn install_proxy(proxy: EventLoopProxy<UserEvent>) -> Result<(), TaskError> {
     UI_PROXY.set(proxy).map_err(|_| TaskError::AlreadyInstalled)

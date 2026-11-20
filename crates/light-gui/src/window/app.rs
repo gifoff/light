@@ -36,11 +36,44 @@ impl From<accesskit_winit::Event> for UserEvent {
     }
 }
 
-/// Запускает цикл событий для компонента.
+/// Фабрика рендер-бэкенда (0.20.0, Этап 5): создаёт бэкенд под конкретное окно.
+///
+/// Передаётся через [`crate::run_with_backend`]: сам `light-gui` НЕ знает о
+/// конкретных реализациях (`softbuffer`/`pixels`) — они живут в `light-render-cpu`
+/// / `light-render-gpu` и выбираются фасадом `light-fw`. Поле хранит замыкание
+/// `Arc<dyn Fn…>` (см. комментарий в [`App::backend_factory`]), чтобы один бэкенд
+/// делился между главным окном и дочерними модальными.
+pub(super) type BackendFactory = std::sync::Arc<
+    dyn Fn(
+            u32,
+            u32,
+            std::sync::Arc<crate::window::Window>,
+        ) -> crate::Result<Box<dyn crate::render::RendererBackend>>
+        + Send
+        + Sync,
+>;
+
+/// Запускает цикл событий для компонента с **указанным** бэкендом отрисовки.
+///
+/// Бэкенд передаётся фабрикой [`BackendFactory`]: она вызывается для каждого
+/// окна (главного и дочерних) с его размером и `Arc<Window>`. Выбор конкретной
+/// реализации (`softbuffer`/`pixels`/заглушка) делает вызывающий код — фасад
+/// `light-fw` (функция `run`), который знает активную фичу сборки.
 ///
 /// Если [`Component::window_config`] возвращает `None`, цикл событий не запускается
 /// и функция сразу завершается успешно.
-pub fn run(component: impl Component + 'static) -> crate::Result<()> {
+pub fn run_with_backend(
+    component: impl Component + 'static,
+    backend: Box<
+        dyn Fn(
+                u32,
+                u32,
+                std::sync::Arc<crate::window::Window>,
+            ) -> crate::Result<Box<dyn crate::render::RendererBackend>>
+            + Send
+            + Sync,
+    >,
+) -> crate::Result<()> {
     if component.window_config().is_none() {
         return Ok(());
     }
@@ -52,7 +85,7 @@ pub fn run(component: impl Component + 'static) -> crate::Result<()> {
     set_command_sender(move |token, command| {
         let _ = sender.send_event(UserEvent::Command { token, command });
     });
-    let mut app = App::new(Box::new(component), font);
+    let mut app = App::new(Box::new(component), font, backend);
     #[cfg(feature = "a11y-winit")]
     {
         app.proxy = Some(proxy.clone());
@@ -126,10 +159,26 @@ pub(super) struct App {
     /// Прокси цикла событий для доставки событий AccessKit.
     #[cfg(feature = "a11y-winit")]
     pub(super) proxy: Option<EventLoopProxy<UserEvent>>,
+    /// Фабрика рендер-бэкенда (0.20.0, Этап 5): создаёт бэкенд под окно.
+    /// Замыкание обёрнуто в `Arc` и пересоздаётся для каждого дочернего окна
+    /// (`create_window`), поэтому оно `Send + Sync`.
+    pub(super) backend_factory: BackendFactory,
 }
 
 impl App {
-    pub(super) fn new(root: Box<dyn Component>, font: Rc<FontMetrics>) -> Self {
+    pub(super) fn new(
+        root: Box<dyn Component>,
+        font: Rc<FontMetrics>,
+        backend_factory: Box<
+            dyn Fn(
+                    u32,
+                    u32,
+                    std::sync::Arc<crate::window::Window>,
+                ) -> crate::Result<Box<dyn crate::render::RendererBackend>>
+                + Send
+                + Sync,
+        >,
+    ) -> Self {
         let redraw: Arc<Mutex<Vec<Arc<Window>>>> = Arc::new(Mutex::new(Vec::new()));
         let repaint = Arc::clone(&redraw);
         set_repaint_requester(move || {
@@ -161,6 +210,7 @@ impl App {
             last_applied_geometry: None,
             #[cfg(feature = "a11y-winit")]
             proxy: None,
+            backend_factory: Arc::new(backend_factory),
         }
     }
 

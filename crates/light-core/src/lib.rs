@@ -139,6 +139,11 @@ pub use serde_json;
 // реэкспорта (`post_to_ui`, `TaskHandle`, …) для макросного кода.
 /// GUI-слой: окно, события ввода, a11y — перебазиан в `light-gui` (этап 4).
 pub use light_gui::a11y;
+// 0.20.0 (Этап 5): фасад `light-fw::run` ссылается на `light_gui::run_with_backend`
+// и `light_gui::render::null::NullBackend`. Реэкспортируем `light-gui` как
+// `light_gui` под прежним именем, чтобы путь `light_fw_core::light_gui::…`
+// работал через glob-реэкспорт `pub use light_fw_core::*;` в `light-fw/src/lib.rs`.
+pub use light_gui;
 // Этап 4 (Strangler Fig): `accesskit` живёт в `light-gui`. Для интеграционных
 // тестов ядра (`tests/a11y_*.rs`) реэкспортируем его под прежним именем,
 // чтобы не добавлять прямую зависимость `accesskit` на уровне `[dev-dependencies]`
@@ -220,8 +225,13 @@ pub use light_reactivity::{collection, reactive};
 pub use light_reactivity::{Collection, Property, Proxy, ProxyState, Watcher, watch};
 #[cfg(feature = "window")]
 pub use render::RendererBackend;
-#[cfg(feature = "wgpu-backend")]
-pub use render::WgpuBackend;
+// 0.20.0 этап 5: конкретные реализации бэкендов вынесены из `light-gui`
+// в отдельные крейты. Реэкспортируем их под прежними именами для обратной
+// совместимости 0.19.x (публичный API приложения не меняется).
+#[cfg(feature = "softbuffer-backend")]
+pub use light_render_cpu::SoftbufferBackend;
+#[cfg(all(feature = "wgpu-backend", not(feature = "softbuffer-backend")))]
+pub use light_render_gpu::WgpuBackend;
 #[cfg(feature = "image-support")]
 pub use vdom::ImageData;
 pub use vdom::{
@@ -231,10 +241,48 @@ pub use vdom::{
 
 /// Открывает окно с интерфейсом компонента и запускает цикл событий.
 ///
-/// Возвращает только при закрытии окна или ошибке.
+/// 0.20.0 (Этап 5): бэкенд отрисовки выбирается по фиче сборки:
+/// * `softbuffer-backend` → программная отрисовка через `softbuffer`
+///   ([`light-render-cpu`](https://crates.io/crates/light-render-cpu));
+/// * `wgpu-backend` (без softbuffer) → аппаратный показ через `pixels`
+///   ([`light-render-gpu`](https://crates.io/crates/light-render-gpu));
+/// * без обоих → заглушка [`light_gui::render::null::NullBackend`] (headless).
+///
+/// Конкретная реализация создаётся фабрикой, которую [`run`] передаёт в
+/// [`light_gui::run_with_backend`]; сам `light-gui` не знает о `softbuffer`/
+/// `pixels`. Возвращает только при закрытии окна или ошибке.
 #[cfg(feature = "window")]
 pub fn run(component: impl Component + 'static) -> crate::error::Result<()> {
-    window::run(component).map_err(crate::error::Error::from)
+    // Фабрика создаёт бэкенд под конкретное окно (главное или дочернее).
+    // Замыкание `Send + Sync`: оно пересоздаётся для каждого окна в `App`.
+    // `light_gui::window::Window` — публичный re-экспорт `winit::window::Window`
+    // (сигнатура `run_with_backend` использует именно его).
+    type Win = crate::window::Window;
+    let factory = Box::new(|width: u32, height: u32, window: std::sync::Arc<Win>| {
+        #[cfg(feature = "softbuffer-backend")]
+        {
+            Ok(Box::new(light_render_cpu::SoftbufferBackend::new(
+                width, height, window,
+            )?)
+                as Box<dyn light_gui::render::RendererBackend>)
+        }
+        #[cfg(all(feature = "wgpu-backend", not(feature = "softbuffer-backend")))]
+        {
+            Ok(
+                Box::new(light_render_gpu::WgpuBackend::new(width, height, window)?)
+                    as Box<dyn light_gui::render::RendererBackend>,
+            )
+        }
+        #[cfg(not(any(feature = "softbuffer-backend", feature = "wgpu-backend")))]
+        {
+            let _ = window;
+            Ok(
+                Box::new(light_gui::render::null::NullBackend::new(width, height))
+                    as Box<dyn light_gui::render::RendererBackend>,
+            )
+        }
+    });
+    light_gui::run_with_backend(component, factory).map_err(crate::error::Error::from)
 }
 
 /// Запускает TCP-сервер DevTools на `127.0.0.1:port`.

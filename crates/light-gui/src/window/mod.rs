@@ -30,7 +30,12 @@ mod state;
 mod text;
 mod windows;
 
-pub use app::run;
+// 0.20.0 (Этап 5): `run` заменён на `run_with_backend` — бэкенд передаётся
+// фабрикой из фасада `light-fw`. Сигнатура фабрики использует `crate::window::Window`
+// (re-экспорт winit), чтобы вызывающий код (`light-core`) не зависел от `winit`.
+pub use app::run_with_backend;
+#[cfg(feature = "window")]
+pub use winit::window::Window;
 // Курсоры: тесты light-core/tests/cursor.rs и публичный API
 // `light_fw::window::{cursor_for, default_cursor_for, resolve_cursor}`.
 pub use cursor::{cursor_for, default_cursor_for, resolve_cursor};

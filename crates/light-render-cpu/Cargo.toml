@@ -5,15 +5,20 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Light Render (CPU): программная отрисовка через tiny-skia + softbuffer (из light-fw-core)"
+description = "Light Render (CPU): программная отрисовка через softbuffer (вынесено из light-gui, 0.20.0 этап 5)"
+
+[features]
+# Включает окно winit в `light-gui`, необходимое для `SoftbufferBackend`
+# (создаёт `softbuffer::Surface` поверх `winit::window::Window`).
+window = ["light-gui/window"]
 
 [dependencies]
-# Окно/поверхность, в которую рисуем кадр.
+# Окно/поверхность, в которую рисуем кадр; трейт `RendererBackend`.
 light-gui = { workspace = true }
+# Тип окна (`Window`) для сигнатуры `SoftbufferBackend::new`.
+winit = { workspace = true }
 # Копирование кадра в native surface (без wgpu/naga).
 softbuffer = { workspace = true }
-# 2D-растровая отрисовка (прямые линии, текст, прямоугольники).
-tiny-skia = { workspace = true }
 
 [lints]
 workspace = true

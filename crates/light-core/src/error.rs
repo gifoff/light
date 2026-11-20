@@ -84,16 +84,53 @@ impl From<light_gui::error::Error> for Error {
             light_gui::error::Error::Window(e) => Error::Window(e),
             #[cfg(feature = "window")]
             light_gui::error::Error::CreateWindow(e) => Error::CreateWindow(e),
-            #[cfg(feature = "wgpu-backend")]
-            light_gui::error::Error::Surface(e) => Error::Surface(e),
-            #[cfg(feature = "wgpu-backend")]
-            light_gui::error::Error::Texture(e) => Error::Texture(e),
+            // 0.20.0 (Этап 5): рендер-крейты (`light-render-cpu` / `-gpu`)
+            // мапят свои типизированные ошибки на общий текстовый `Backend`.
+            // Здесь он раскладывается обратно по фиче сборки, чтобы публичный
+            // `Error` сохранил свои варианты (обратная совместимость 0.19.x).
+            //
+            // Приоритет: softbuffer > wgpu > (нет бэкендов). Совпадает с
+            // приоритетом выбора бэкенда в `light_fw::run` / `light_core::run`
+            // (см. `#[cfg(all(feature = "wgpu-backend", not(feature = "softbuffer-backend")))]`).
             #[cfg(feature = "softbuffer-backend")]
-            light_gui::error::Error::Softbuffer(e) => Error::Softbuffer(e),
+            light_gui::error::Error::Backend(msg) => {
+                Error::Softbuffer(softbuffer_error_from_str(&msg))
+            }
+            #[cfg(all(feature = "wgpu-backend", not(feature = "softbuffer-backend")))]
+            light_gui::error::Error::Backend(msg) => {
+                // `pixels::Error` (0.17) — non-exhaustive, но имеет вариант
+                // `UserDefined(Box<dyn Error + Send + Sync>)`. Сохраняем
+                // текст через `std::io::Error::new(Other, msg)` (реализует
+                // `Display`, `Error`, `Send + Sync`). Обратная совместимость
+                // 0.19.x: вариант `Surface(pixels::Error)` сохранён.
+                let io_err = std::io::Error::new(std::io::ErrorKind::Other, String::from(msg));
+                Error::Surface(pixels::Error::UserDefined(Box::new(io_err)))
+            }
+            #[cfg(all(not(feature = "softbuffer-backend"), not(feature = "wgpu-backend")))]
+            // Ни одного бэкенда — `Backend` на практике не создаётся, но
+            // закрываем матч (вариант все равно существует в `light_gui::Error`).
+            light_gui::error::Error::Backend(msg) => Error::Image(msg),
             #[cfg(feature = "image-support")]
             light_gui::error::Error::Image(msg) => Error::Image(msg),
             #[cfg(feature = "window")]
             light_gui::error::Error::Font(msg) => Error::Font(msg),
         }
     }
+}
+
+/// Возвращает `softbuffer::SoftBufferError` из строки общего варианта `Backend`.
+///
+/// Строки от `light-render-cpu` выглядят как
+/// `"ошибка поверхности softbuffer: <detail>"`. Мы не можем сконструировать
+/// произвольный `SoftBufferError` (его варианты закрыты), поэтому маппим на
+/// первый доступный вариант — `NotYetSupported`, с detail в комментарии.
+/// Обратная совместимость 0.19.x сохраняется на уровне текста (`Display`).
+#[cfg(feature = "softbuffer-backend")]
+fn softbuffer_error_from_str(msg: &str) -> softbuffer::SoftBufferError {
+    // `softbuffer::SoftBufferError` — `#[non_exhaustive]`-enum (0.4) с
+    // публичным вариантом `PlatformError(Option<String>, Option<Box<dyn Error + Send + Sync>>)`.
+    // Сохраняем текст в `Option<String>`; текст ошибки виден через `Display`
+    // (`"Platform error: <msg>"`). Обратная совместимость 0.19.x: вариант
+    // `Softbuffer(SoftBufferError)` сохранён, тип — тот же.
+    softbuffer::SoftBufferError::PlatformError(Some(String::from(msg)), None)
 }

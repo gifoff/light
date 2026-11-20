@@ -12,11 +12,7 @@ use winit::window::{CursorIcon, Window};
 
 use winit::keyboard::ModifiersState;
 
-#[cfg(not(any(feature = "wgpu-backend", feature = "softbuffer-backend")))]
-use crate::render::NullBackend;
 use crate::render::RendererBackend;
-#[cfg(all(feature = "wgpu-backend", not(feature = "softbuffer-backend")))]
-use crate::render::WgpuBackend;
 use light_vdom::component::{Component, WindowConfig};
 use light_vdom::layout::{Layout, Point, Rect, TextMetrics};
 use light_vdom::window_backend::{WindowToken, set_active_window, set_current_window_token};

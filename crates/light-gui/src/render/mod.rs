@@ -2,18 +2,26 @@
 //!
 //! Интерфейс уже рисуется программно: модуль `window::paint` растеризует
 //! прямоугольники и текст (через `ab_glyph`) прямо в RGBA-буфер. Бэкенд
-//! отвечает только за владение этим буфером и его показ в окне, поэтому
-//! `wgpu`/`naga` (через `pixels`) и `softbuffer` взаимозаменяемы.
+//! отвечает только за владение этим буфером и его показ в окне.
 //!
-//! Если включены обе фичи, `softbuffer-backend` и `wgpu-backend`, окно
-//! использует `softbuffer`: он не тянет графический API и даёт меньший
-//! бинарник. `wgpu` остаётся доступен для сравнения и как запасной путь.
+//! Конкретные реализации вынесены из `light-gui` в 0.20.0 (Этап 5):
+//! * `softbuffer` — [`light-render-cpu`](https://crates.io/crates/light-render-cpu);
+//! * `pixels`/wgpu — [`light-render-gpu`](https://crates.io/crates/light-render-gpu).
+//!
+//! Этот модуль содержит только **интерфейс** ([`RendererBackend`]), тип
+//! результата ([`Result`]) и заглушку [`NullBackend`] для headless-режима.
+//! Выбор конкретной реализации делает фасад `light-fw` (функция `run`),
+//! который передаёт готовый бэкенд в [`crate::run_with_backend`].
+
+pub mod null;
 
 use crate::window::paint::Canvas;
 use light_vdom::layout::{Point, Rect};
 
 /// Результат операций бэкенда рендеринга (обёртка над `crate::error::Result`),
-/// переиспользуемая во всех реализациях [`RendererBackend`].
+/// переиспользуемая во всех реализациях [`RendererBackend`] и во внешних
+/// крейтах (`light-render-cpu`/`light-render-gpu`), которые не зависят
+/// от ошибок GUI-слоя напрямую.
 pub type Result<T = ()> = crate::error::Result<T>;
 
 /// Цвет в формате `0xRRGGBBAA`.
@@ -78,60 +86,6 @@ pub trait RendererBackend {
         canvas.draw_text(font, text, pos.x, pos.y, color, size);
     }
 }
-
-/// Бэкенд-заглушка: хранит кадр в памяти и ничего не показывает.
-///
-/// Используется, когда окно собрано без графического бэкенда: ввод и
-/// раскладка работают, а кадр остаётся недоступным для просмотра.
-#[cfg(not(any(feature = "wgpu-backend", feature = "softbuffer-backend")))]
-pub(crate) struct NullBackend {
-    width: u32,
-    height: u32,
-    frame: Vec<u8>,
-}
-
-#[cfg(not(any(feature = "wgpu-backend", feature = "softbuffer-backend")))]
-impl NullBackend {
-    pub(crate) fn new(width: u32, height: u32) -> Self {
-        Self {
-            width,
-            height,
-            frame: vec![0; (width * height * 4) as usize],
-        }
-    }
-}
-
-#[cfg(not(any(feature = "wgpu-backend", feature = "softbuffer-backend")))]
-impl RendererBackend for NullBackend {
-    fn resize(&mut self, width: u32, height: u32) -> Result<()> {
-        self.width = width;
-        self.height = height;
-        self.frame = vec![0; (width * height * 4) as usize];
-        Ok(())
-    }
-
-    fn size(&self) -> (u32, u32) {
-        (self.width, self.height)
-    }
-
-    fn frame_mut(&mut self) -> &mut [u8] {
-        &mut self.frame
-    }
-
-    fn present(&mut self) -> Result<()> {
-        Ok(())
-    }
-}
-
-#[cfg(feature = "wgpu-backend")]
-mod wgpu;
-#[cfg(feature = "wgpu-backend")]
-pub use wgpu::WgpuBackend;
-
-#[cfg(feature = "softbuffer-backend")]
-mod softbuffer;
-#[cfg(feature = "softbuffer-backend")]
-pub use softbuffer::SoftbufferBackend;
 
 #[cfg(test)]
 mod tests {

@@ -6,8 +6,8 @@ use std::sync::Arc;
 use softbuffer::{Context, Surface};
 use winit::window::Window;
 
-use super::RendererBackend;
-use crate::Result;
+use light_gui::Result;
+use light_gui::render::RendererBackend;
 
 /// Бэкенд, который отдаёт RGBA-кадр в `softbuffer`.
 ///
@@ -25,9 +25,12 @@ pub struct SoftbufferBackend {
 
 impl SoftbufferBackend {
     /// Создаёт поверхность для окна `window` размером `width`×`height`.
+    ///
+    /// Ошибки `softbuffer` маппятся на [`light_gui::Error::Backend`] (0.20.0,
+    /// Этап 5: типизированные payload'ы вынесены из `light-gui`).
     pub fn new(width: u32, height: u32, window: Arc<Window>) -> Result<Self> {
-        let context = Context::new(Arc::clone(&window))?;
-        let mut surface = Surface::new(&context, window)?;
+        let context = Context::new(Arc::clone(&window)).map_err(map_softbuffer)?;
+        let mut surface = Surface::new(&context, window).map_err(map_softbuffer)?;
         resize_surface(&mut surface, width, height)?;
         Ok(Self {
             surface,
@@ -63,9 +66,9 @@ impl RendererBackend for SoftbufferBackend {
         if self.width == 0 || self.height == 0 {
             return Ok(());
         }
-        let mut buffer = self.surface.buffer_mut()?;
+        let mut buffer = self.surface.buffer_mut().map_err(map_softbuffer)?;
         pack_rgb(&self.frame, &mut buffer);
-        buffer.present()?;
+        buffer.present().map_err(map_softbuffer)?;
         Ok(())
     }
 }
@@ -82,9 +85,14 @@ fn resize_surface(
     height: u32,
 ) -> Result<()> {
     if let (Some(width), Some(height)) = (NonZeroU32::new(width), NonZeroU32::new(height)) {
-        surface.resize(width, height)?;
+        surface.resize(width, height).map_err(map_softbuffer)?;
     }
     Ok(())
+}
+
+/// Маппит ошибку `softbuffer` на общий `light_gui::Error::Backend` (0.20.0, Этап 5).
+fn map_softbuffer(e: softbuffer::SoftBufferError) -> light_gui::Error {
+    light_gui::Error::Backend(format!("ошибка поверхности softbuffer: {e}"))
 }
 
 /// Перекладывает RGBA8 в `0x00RRGGBB`, который ожидает `softbuffer`.

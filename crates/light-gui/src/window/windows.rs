@@ -10,12 +10,6 @@ use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::ModifiersState;
 use winit::window::{Window, WindowId};
 
-#[cfg(not(any(feature = "wgpu-backend", feature = "softbuffer-backend")))]
-use crate::render::NullBackend;
-use crate::render::RendererBackend;
-#[cfg(feature = "softbuffer-backend")]
-use crate::render::SoftbufferBackend;
-
 #[allow(unused_imports)]
 use super::app::{App, UserEvent};
 use super::geometry::WindowGeometry;
@@ -155,14 +149,10 @@ impl App {
         let size = window.inner_size();
         let width = size.width.max(1);
         let height = size.height.max(1);
-        #[cfg(feature = "softbuffer-backend")]
-        let surface: Box<dyn RendererBackend> =
-            Box::new(SoftbufferBackend::new(width, height, Arc::clone(&window))?);
-        #[cfg(all(feature = "wgpu-backend", not(feature = "softbuffer-backend")))]
-        let surface: Box<dyn RendererBackend> =
-            Box::new(WgpuBackend::new(width, height, Arc::clone(&window))?);
-        #[cfg(not(any(feature = "wgpu-backend", feature = "softbuffer-backend")))]
-        let surface: Box<dyn RendererBackend> = Box::new(NullBackend::new(width, height));
+        // 0.20.0 (Этап 5): бэкенд создаёт фабрика, переданная через
+        // `run_with_backend` — конкретная реализация (`softbuffer`/`pixels`/
+        // заглушка) выбирается фасадом `light-fw`, а не здесь.
+        let surface = (self.backend_factory)(width, height, Arc::clone(&window))?;
 
         #[cfg(feature = "a11y-winit")]
         let adapter = match self.proxy.clone() {

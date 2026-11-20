@@ -1,17 +1,18 @@
 //! Ошибки GUI-слоя Light (0.20.0, Этап 4).
 //!
 //! Сюда переехали оконные/бэкенд-варианты `light_fw_core::error::Error`
-//! (`Window`, `CreateWindow`, `Surface`, `Texture`, `Softbuffer`) и `Image`,
-//! которые раньше жили в `light-fw-core`. Остальные варианты
-//! (`Font`, `UnregisteredCustomElement`) остаются в `light_vdom::error::Error`
-//! и `light_fw_core::error::Error` — световое ядро их реэкспортирует для
-//! обратной совместимости, а `light-fw-core` реализует `From<light_gui::Error>`
-//! для своих пользователей.
+//! (`Window`, `CreateWindow`, …) и `Image`. В 0.20.0 (Этап 5) бэкенды
+//! (`softbuffer`, `pixels`) вынесены из `light-gui` в `light-render-cpu` /
+//! `light-render-gpu`, поэтому их типизированные payload'ы (`Surface`,
+//! `Texture`, `Softbuffer`) больше НЕ нужны здесь: конкретные реализации сами
+//! маппят свои ошибки на [`Error::Backend`] (общий текстовый вариант), а
+//! публичный тип ошибок приложения (`light-fw-core::Error`) сохраняет
+//! типизированные варианты для обратной совместимости 0.19.x.
 
 /// Результат операций GUI-слоя.
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Ошибка GUI-слоя Light (окно, бэкенды отрисовки, изображения, диалоги).
+/// Ошибка GUI-слоя Light (окно, отрисовка, изображения, диалоги).
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Системная ошибка цикла событий или окна.
@@ -24,20 +25,12 @@ pub enum Error {
     #[error("не удалось создать окно: {0}")]
     CreateWindow(#[from] winit::error::OsError),
 
-    /// Ошибка поверхности отрисовки.
-    #[cfg(feature = "wgpu-backend")]
-    #[error("ошибка поверхности отрисовки: {0}")]
-    Surface(#[from] pixels::Error),
-
-    /// Ошибка буфера отрисовки (например, при изменении размера).
-    #[cfg(feature = "wgpu-backend")]
-    #[error("ошибка буфера отрисовки: {0}")]
-    Texture(#[from] pixels::TextureError),
-
-    /// Ошибка поверхности `softbuffer`.
-    #[cfg(feature = "softbuffer-backend")]
-    #[error("ошибка поверхности softbuffer: {0}")]
-    Softbuffer(#[from] softbuffer::SoftBufferError),
+    /// Ошибка рендер-бэкенда (поверхность / буфер). Общий текстовый вариант:
+    /// 0.20.0 (Этап 5) конкретные payload'ы (`softbuffer::SoftBufferError`,
+    /// `pixels::Error`) живут в `light-render-cpu` / `light-render-gpu`,
+    /// которые мапят их сюда.
+    #[error("{0}")]
+    Backend(String),
 
     /// Не удалось декодировать PNG-изображение.
     #[cfg(feature = "image-support")]

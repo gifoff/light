@@ -28,8 +28,6 @@ png = { workspace = true, optional = true }
 rfd = { workspace = true, optional = true }
 accesskit = { version = "0.25", optional = true, features = ["serde"] }
 accesskit_winit = { version = "0.34", optional = true }
-softbuffer = { workspace = true, optional = true }
-pixels = { workspace = true, optional = true }
 futures = { version = "0.3", optional = true }
 
 thiserror = "2"
@@ -41,10 +39,12 @@ default = []
 
 # Базовое окно на winit: цикл событий, шрифт (ab_glyph), PNG (иконки/SHOT).
 window = ["dep:winit", "dep:ab_glyph", "dep:png"]
-# Показ кадра через `softbuffer` (без wgpu/naga).
-softbuffer-backend = ["window", "dep:softbuffer"]
-# Показ кадра через `pixels` (wgpu/naga).
-wgpu-backend = ["window", "dep:pixels"]
+# Фичи бэкендов (0.20.0, Этап 5): сами реализации переехали в отдельные крейты
+# — `light-render-cpu` (softbuffer) и `light-render-gpu` (pixels/wgpu). В этом
+# крейте они сохраняются только как «метки» (не тянут ни softbuffer, ни pixels):
+# фасад `light-fw` по ним выбирает, какую реализацию передать в `run_with_backend`.
+softbuffer-backend = ["window"]
+wgpu-backend = ["window"]
 # Фоновые задачи и доставка сообщений в UI-поток (`spawn`/`post_to_ui`).
 async-runtime = ["window"]
 # Асинхронные замыкания (фьючи) через `futures::executor::block_on`.
