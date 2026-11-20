@@ -2,6 +2,8 @@
 #[allow(clippy::module_inception)]
 mod tests {
     use crate::error::Error;
+    #[cfg(feature = "network")]
+    use crate::fetch::http::parse_search_response;
     use crate::fetch::{Catalog, DependencyEntry, RemoteRegistry, SourceKind};
     use crate::registry::ComponentRegistry;
     use std::fs;

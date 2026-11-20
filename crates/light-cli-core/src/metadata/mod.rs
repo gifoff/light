@@ -12,7 +12,7 @@ pub mod types;
 /// Валидация: validate_metadata().
 pub mod validate;
 
-pub use installed::{load_installed, load_installed_from_json};
+pub use installed::{extract_cargo_toml, load_installed, load_installed_from_json};
 pub use types::*;
 pub use validate::validate_metadata;
 

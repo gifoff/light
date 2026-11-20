@@ -19,7 +19,7 @@ pub fn ping_crates_io() -> bool {
 
 /// Разбирает ответ `GET /api/v1/crates?q=...`.
 #[cfg(feature = "network")]
-fn parse_search_response(
+pub fn parse_search_response(
     body: &str,
     config: &crate::registry_config::RegistryConfig,
 ) -> Result<Vec<CrateSearchResult>> {
