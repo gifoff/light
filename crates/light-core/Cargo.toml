@@ -115,6 +115,7 @@ window = [
     "dep:winit",
     "light-gui/window",
     "light-fw-macros/template-window",
+    "light-vdom/window",
 ]
 # Показ кадра через `softbuffer` (без wgpu/naga). По умолчанию включён.
 softbuffer-backend = [
