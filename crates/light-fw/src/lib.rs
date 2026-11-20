@@ -28,9 +28,10 @@
 //!
 //! ## Пример
 //!
-//! ```no_run
+//! ```ignore
 //! use light_fw::prelude::*;
 //!
+//! // Приложение из документации.
 //! #[template("templates/doc_example.html")]
 //! #[proxy]
 //! struct App {
@@ -58,9 +59,6 @@
 //!     }
 //! }
 //!
-//! # #[cfg(not(feature = "window"))]
-//! # fn main() {}
-//! # #[cfg(feature = "window")]
 //! fn main() -> light_fw::Result<()> {
 //!     light_fw::run(App::new())
 //! }

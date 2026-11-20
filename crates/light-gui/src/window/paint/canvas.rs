@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+#[allow(unused_imports)]
 use ab_glyph::{Font, FontVec, PxScale, ScaleFont, point};
 
 use light_vdom::layout::Rect;
@@ -204,11 +205,6 @@ impl<'a> Canvas<'a> {
     }
 
     /// Заливает круг (с обрезкой по области холста).
-    #[cfg(any(
-        feature = "elements-checkbox",
-        feature = "elements-radio",
-        feature = "elements-select"
-    ))]
     pub fn fill_circle(&mut self, color: u32, cx: f32, cy: f32, radius: f32) {
         if radius <= 0.0 {
             return;
@@ -231,11 +227,6 @@ impl<'a> Canvas<'a> {
     }
 
     /// Рисует отрезок толщиной `thickness` (с обрезкой по области холста).
-    #[cfg(any(
-        feature = "elements-checkbox",
-        feature = "elements-radio",
-        feature = "elements-select"
-    ))]
     pub fn draw_line(&mut self, color: u32, from: (f32, f32), to: (f32, f32), thickness: f32) {
         let (x0, y0) = from;
         let (x1, y1) = to;

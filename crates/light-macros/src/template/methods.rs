@@ -39,7 +39,7 @@ pub(super) fn build_methods(
         .iter()
         .map(|(handler_name, (call_tokens, _))| {
             quote! { #handler_name => {
-                #call_tokens;
+                #call_tokens();
                 true
             } }
         })

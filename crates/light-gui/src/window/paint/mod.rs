@@ -42,14 +42,8 @@ pub const SELECTION_BG: u32 = rgb(0xB6, 0xD4, 0xFE);
 /// Индикатор изменения размера поля.
 pub const RESIZE_GRIP: u32 = rgb(0x9A, 0xA2, 0xAE);
 /// Заливка флажка/переключателя.
-#[cfg(any(feature = "elements-checkbox", feature = "elements-radio"))]
 pub const FORM_BG: u32 = rgb(0xFF, 0xFF, 0xFF);
 /// Акцент флажка/переключателя/списка.
-#[cfg(any(
-    feature = "elements-checkbox",
-    feature = "elements-radio",
-    feature = "elements-select"
-))]
 pub const FORM_ACCENT: u32 = rgb(0x3B, 0x82, 0xF6);
 /// Рамка поля, не прошедшего валидацию.
 pub const FIELD_INVALID: u32 = rgb(0xD9, 0x53, 0x4F);
@@ -87,6 +81,8 @@ const MENU_TEXT: u32 = rgb(0x1F, 0x24, 0x2B);
 /// Заблокированный пункт меню.
 const MENU_TEXT_DISABLED: u32 = rgb(0xA6, 0xAD, 0xB8);
 
+pub(crate) use crate::window::font::measure;
+
 mod canvas;
 mod forms;
 mod menu;
@@ -95,6 +91,7 @@ mod selects;
 
 pub(crate) use canvas::Canvas;
 pub use forms::Interaction;
+#[cfg(feature = "elements-select")]
 pub(crate) use forms::select_popup;
 pub(crate) use menu::draw_context_menu;
 pub use render::render;

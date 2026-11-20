@@ -4,6 +4,7 @@ use crate::{
 };
 
 use super::parse::parse_fail;
+#[allow(unused_imports)]
 use super::style::{
     attr_value, eval_bool, eval_simple, parse_resize_value, resolve_disabled, text_content,
 };

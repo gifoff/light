@@ -7,10 +7,12 @@ use light_vdom::NodeKind;
 #[cfg(feature = "a11y-winit")]
 use winit::event::KeyEvent;
 
+#[cfg(feature = "a11y-winit")]
 use super::keys::key_info;
 #[cfg(feature = "a11y-winit")]
 use super::state::WindowState;
 
+#[cfg(feature = "a11y-winit")]
 impl WindowState {
     /// Отправляет текущее дерево доступности адаптеру (если тот активен).
     pub(super) fn push_accessibility(&mut self) {

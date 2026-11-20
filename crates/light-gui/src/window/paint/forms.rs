@@ -5,7 +5,7 @@ use light_vdom::layout::{CHECKBOX_BOX, CHECKBOX_GAP, PlacedNode, Rect};
 
 use super::{
     COLOR_MUTED, COLOR_TEXT, FIELD_BORDER, FOCUS_RING, FOCUS_RING_OFFSET, FOCUS_RING_WIDTH,
-    FORM_ACCENT, FORM_BG, MENU_ROW_H, REQUIRED_COLOR,
+    FORM_ACCENT, FORM_BG, MENU_ROW_H, REQUIRED_COLOR, measure,
 };
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -184,7 +184,6 @@ pub(crate) fn draw_checkbox(
 /// Рисует переключатель с подписью.
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "elements-radio")]
-use crate::window::font::measure;
 pub(crate) fn draw_radio(
     canvas: &mut Canvas,
     font: &crate::window::font::FontMetrics,

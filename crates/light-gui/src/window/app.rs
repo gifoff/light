@@ -9,10 +9,14 @@ use winit::window::{Window, WindowId};
 
 use crate::Error;
 
+#[cfg(not(feature = "async-runtime"))]
+use light_vdom::window_backend::WindowCommand;
+
 use super::font::FontMetrics;
 use super::geometry::WindowGeometry;
 use super::state::WindowState;
 
+#[cfg(feature = "async-runtime")]
 pub(crate) type UserEvent = crate::async_runtime::UserEvent;
 #[cfg(not(feature = "async-runtime"))]
 pub(crate) enum UserEvent {
@@ -26,7 +30,8 @@ pub(crate) enum UserEvent {
 
 #[cfg(all(not(feature = "async-runtime"), feature = "a11y-winit"))]
 impl From<accesskit_winit::Event> for UserEvent {
-    pub(super) fn from(event: accesskit_winit::Event) -> Self {
+    #[allow(clippy::from_over_into)]
+    fn from(event: accesskit_winit::Event) -> Self {
         Self::Access(event)
     }
 }

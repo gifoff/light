@@ -12,8 +12,11 @@ use winit::window::{Window, WindowId};
 
 #[cfg(not(any(feature = "wgpu-backend", feature = "softbuffer-backend")))]
 use crate::render::NullBackend;
-use crate::render::{RendererBackend, SoftbufferBackend};
+use crate::render::RendererBackend;
+#[cfg(feature = "softbuffer-backend")]
+use crate::render::SoftbufferBackend;
 
+#[allow(unused_imports)]
 use super::app::{App, UserEvent};
 use super::geometry::WindowGeometry;
 #[allow(unused_imports)]

@@ -397,7 +397,7 @@ pub(super) fn upsert_attr(node: &mut VElement, name: &'static str, value: String
 /// кликом. Слово — непрерывная последовательность букв, цифр и `_`. Если под
 /// позицией стоит несловесный символ (пробел, знак пунктуации), выделяется
 /// только он; позиция сразу после слова «прилипает» к этому слову.
-pub(super) fn word_range(text: &str, index: usize) -> (usize, usize) {
+pub(crate) fn word_range(text: &str, index: usize) -> (usize, usize) {
     let chars: Vec<char> = text.chars().collect();
     let len = chars.len();
     if len == 0 {

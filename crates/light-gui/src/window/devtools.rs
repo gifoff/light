@@ -1,4 +1,5 @@
 use super::app::App;
+#[allow(unused_imports)]
 use light_vdom::{Event as DomEvent, KeyInfo};
 
 impl App {

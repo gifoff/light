@@ -1,10 +1,12 @@
 use std::any::{Any, TypeId};
 use std::sync::Arc;
+#[allow(unused_imports)]
 use std::sync::atomic::AtomicBool;
 
 #[cfg(feature = "async-await")]
 use std::future::Future;
 
+use light_vdom::component::Component;
 use light_vdom::window_backend::WindowToken;
 
 use super::types::{TaskContext, TaskError, TaskHandle, UI_PROXY, UpdateFn, UserEvent};

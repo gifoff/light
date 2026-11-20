@@ -1,7 +1,7 @@
 //! Отрисовка выпающих списков и элементов выбора.
 
 use super::canvas::Canvas;
-#[cfg(feature = "elements-select")]
+#[allow(unused_imports)]
 use light_vdom::layout::SELECT_PAD_X;
 use light_vdom::layout::{CHECKBOX_BOX, CHECKBOX_GAP, FIELD_PAD_X, Rect};
 
