@@ -17,6 +17,12 @@ name = "light_fw"
 light-fw-core = { workspace = true, default-features = false }
 light-fw-element-form = { workspace = true, optional = true }
 light-fw-behavior-validation = { workspace = true, optional = true }
+# 0.20.0 (Этап 5): рендер-бэкенды. Прямые опциональные зависимости — фасад
+# `light-fw::run` выбирает бэкенд по фиче сборки и строит фабрику для
+# `light_gui::run_with_backend`. `light-fw-core` тянет их косвенно; прямые
+# зависимости нужны, чтобы код фасада (`cfg` по фиче) ссылался на крейты явно.
+light-render-cpu = { workspace = true, optional = true, default-features = false }
+light-render-gpu = { workspace = true, optional = true, default-features = false }
 # Сериализация конфигурации `light.config.json` для `run_with_config`.
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -69,10 +75,20 @@ file-dialog = ["light-fw-core/file-dialog"]
 # Базовое окно на winit с программной отрисовкой.
 window = ["light-fw-core/window"]
 # Показ кадра через `softbuffer` (без wgpu/naga). По умолчанию включён.
-softbuffer-backend = ["light-fw-core/softbuffer-backend"]
+# 0.20.0 (Этап 5): рендер-бэкенды вынесены из `light-gui` в отдельные крейты;
+# фасад `light-fw::run` выбирает бэкенд по фиче и строит фабрику.
+softbuffer-backend = [
+    "light-fw-core/softbuffer-backend",
+    "dep:light-render-cpu",
+    "light-render-cpu/window",
+]
 # Показ кадра через `pixels` (wgpu/naga). Альтернативный бэкенд.
 # Если включены обе фичи, используется `softbuffer-backend`.
-wgpu-backend = ["light-fw-core/wgpu-backend"]
+wgpu-backend = [
+    "light-fw-core/wgpu-backend",
+    "dep:light-render-gpu",
+    "light-render-gpu/window",
+]
 # Прозрачность окна (per-pixel alpha).
 window-transparent = ["light-fw-core/window-transparent"]
 # Модальные окна (`modal`).
@@ -119,3 +135,6 @@ dev-mode = [
 
 [dev-dependencies]
 serde_json = "1"
+
+[lints]
+workspace = true

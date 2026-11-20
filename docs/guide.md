@@ -23,6 +23,7 @@ Light — декларативный реактивный GUI-фреймворк
 - [Компоновка через `<include>`](#компоновка-через-include)
 - [Реактивность](#реактивность)
 - [Коллекции](#коллекции)
+- [API/CLI без GUI (headless-режим, 0.20.0)](#apicli-без-gui-headless-режим-0200)
 - [Доступ к виртуальному DOM](#доступ-к-виртуальному-dom)
 - [Компиляция шаблонов](#компиляция-шаблонов)
 - [Асинхронные обновления интерфейса](#асинхронные-обновления-интерфейса)
@@ -167,7 +168,8 @@ light-fw = "0.17" # default = ["elements-basic", "window", "softbuffer-backend",
 
 | Крейт                       | Роль                                                                 | Как подключается |
 | --------------------------- | -------------------------------------------------------------------- | ---------------- |
-| `light-fw-core`                | Ядро: vdom, реактивность, раскладка, paint, окно, доступность        | фичи крейта      |
+| `light-fw-core`                | Ядро: валидация, фасад 0.19.x (GUI вынесен в `light-gui`)           | фичи крейта      |
+| `light-gui`                   | GUI-слой: окно на winit, события, a11y, рендер-бэкенды, async-runtime | фичи крейта (window, softbuffer-backend, a11y-winit, …) |
 | `light-fw`                    | Мета-крейт: реэкспортирует ядро, макросы и подключённые компоненты  | обычная зависимость |
 | `light-fw-element-form`        | Компонент-элемент: `<checkbox>`, `<radio>`, `<select>`/`<option>`    | фича `elements-form` или прямая зависимость |
 | `light-fw-behavior-validation` | Компонент-поведение: `required`, `:validator`, `@validate`           | фича `validation` или прямая зависимость |
@@ -1313,7 +1315,70 @@ items.each(|item| println!("{item}"));
 
 Коллекции можно использовать в `v-for`: движок принимает любой `IntoIterator`, а ключи повторяющихся узлов генерируются автоматически и уникальны, что позволяет diff'у корректно сопоставлять старые и новые элементы.
 
-## Доступ к виртуальному DOM
+## API/CLI без GUI (headless-режим, 0.20.0)
+
+С версии **0.20.0** ядро `light-fw-core` собирается **без окон и GUI-зависимостей по умолчанию** (`default = ["elements-basic"]`). Это означает, что крейт можно использовать из headless-кода — CLI, бэкенд-сервиса, тестов — без `winit`, `softbuffer`/`pixels` (wgpu), `accesskit*` и `rfd` в дереве зависимостей.
+
+Правило разделения:
+
+- **GUI-приложения** (окна, `light dev`) — зависят от фасада `light-fw` с его default-фичами (`window`, `softbuffer-backend`, `a11y-winit`);
+- **Headless-код** — зависит от `light-fw-core` с `default-features = false`.
+
+Минимальный пример (совпадает с E2E-тестом `C:\Temp\light-plugin-e2e\stage8-headless`):
+
+```rust
+// Cargo.toml
+// [dependencies]
+// light-fw-core = { path = "…", default-features = false }
+// (для crates.io-версии: light-fw-core = { version = "0.20", default-features = false })
+
+use light_fw_core::reactive::Property;
+use light_fw_core::watch;
+
+fn main() {
+    let counter = Property::new(0);
+    let c2 = counter.clone();
+
+    // Наблюдатель: вызывается при каждом изменении `counter`.
+    let _watcher = watch(move || println!("Counter changed: {}", c2.get()));
+
+    counter.set(1);   // → Counter changed: 1
+    counter.set(2);   // → Counter changed: 2
+}
+```
+
+Ожидаемый вывод:
+
+```text
+Counter changed: 0
+Counter changed: 1
+Counter changed: 2
+```
+
+Проверка чистоты дерева зависимостей:
+
+```powershell
+cargo tree # не должно содержать winit / softbuffer / pixels / wgpu / accesskit*
+```
+
+Что доступен в headless-режиме:
+
+- реактивность: `Property`, `Proxy`, `Observer`, `Watcher`, `watch`;
+- VDOM/layout: `VNode`, `diff`, `Collection`;
+- валидация: `required`, `:validator` (если включена фича `required-fields`/`validation`);
+- HTML-шаблоны и макросы `#[template]`/`#[proxy]` (не требуют окна).
+
+Что **недоступно** без явного включения фич:
+
+- `run()` / `run_with_config()` (фича `window`);
+- показ кадра (фичи `softbuffer-backend` / `wgpu-backend`);
+- a11y (фичи `a11y` / `a11y-winit`);
+- файл-диалог (фича `file-dialog`);
+- devtools (фича `devtools`).
+
+Для CLI-инструментов, которым нужен только реактивный слой + VDOM, достаточно `default-features = false` без дополнительных фич. Если нужны только отдельные подсистемы — включайте их точечно (например, `features = ["elements-select", "min-max-size"]`).
+
+
 
 `light_fw::Dom` даёт глобальный доступ к виртуальному дереву активного окна (внутренний аналог `document` в браузере):
 

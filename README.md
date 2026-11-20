@@ -8,6 +8,8 @@ Light — декларативный реактивный GUI-фреймворк
 
 Окна создаются на `winit`, а программно нарисованный кадр показывается через `softbuffer`; `wgpu` доступен отдельной фичей. Light даёт привычный DX (как в Vue.js), но с производительностью и надёжностью нативного Rust.
 
+Начиная с **0.20.0** ядро (`light-fw-core`) не тянет GUI-зависимости: GUI-модули (окно, paint, a11y, рендер-бэкенды) вынесены в отдельный крейт `light-gui`. Для headless-приложений (API-серверы, тесты без окна) используйте `light-fw-core` без фичи `window` — бинарник не будет содержать winit/softbuffer/pixels/rfd/accesskit.
+
 ## Зачем использовать Light?
 
 - **CLI для всего.** `light init`, `light dev`, `light build` — вам не нужно вручную настраивать сборку и зависимости.
@@ -42,9 +44,24 @@ light init my-app --template counter
 
 ## Статус
 
-Текущая версия — **0.19.0**. Проект в стадии **пре-1.0**: публичный API ещё не стабилен и может меняться между минорными версиями. Мы следуем семверу.
+Текущая версия — **0.20.0**. Проект в стадии **пре-1.0**: публичный API ещё не стабилен и может меняться между минорными версиями. Мы следуем семверу.
 
-**Plugin API** (новое в 0.19.0): плагины могут добавлять собственные HTML-теги через макрос `#[component(tag = "...")]` (крейт `light-fw-macros`). Кастомные теги автоматически обнаруживаются `light dev` и предлагаются к установке.
+**Модульность (новое в 0.20.0):** `light-fw-core` декомпозирован на 5 слоёв
+(`light-reactivity`, `light-vdom`, `light-gui`, `light-render-cpu`,
+`light-render-gpu`) и теперь **headless by default** — по умолчанию ядро не
+тянет ни `winit`, ни `softbuffer`/`pixels`/`wgpu`, ни `accesskit*`, ни `rfd`.
+GUI включается точечными фичами; фасад `light-fw` остаётся GUI-first для
+`light init` / `light dev`. Headless-режим: `light-fw-core` с
+`default-features = false` — см. [docs/guide.md](docs/guide.md#apicli-без-gui-headless-режим-0200).
+
+**Breaking change (0.20.0):** payload'ы ошибок
+`light_fw_core::error::Error` (`Window`, `CreateWindow`, `Surface`, `Texture`,
+`Softbuffer`) теперь хранят текст ошибки (`String`), а не типизированные
+`winit`/`pixels`/`softbuffer` ошибки. Обратная совместимость на уровне
+`Display` сохраняется. Допустимо для 0.20.0 в силу масштабной перестройки
+модульности.
+
+**Plugin API** (0.19.0): плагины могут добавлять собственные HTML-теги через макрос `#[component(tag = "...")]` (крейт `light-fw-macros`). Кастомные теги автоматически обнаруживаются `light dev` и предлагаются к установке.
 
 ## Ручная сборка (без CLI)
 
@@ -169,13 +186,32 @@ Light разделён на крейты, чтобы вы подключали �
 | Крейт | Назначение |
 | --- | --- |
 | **`light`** | CLI-утилита (`cargo install light`): dev-сервер, сборка, менеджер компонентов. |
-| **`light-fw`** | Мета-крейт (библиотека): реэкспортирует ядро, макросы и подключённые компоненты. |
-| **`light-fw-core`** | Ядро: VDOM, реактивность, раскладка, отрисовка, окно. |
+| **`light-fw`** | Фасад **GUI-first**: реэкспортирует ядро, макросы и подключённые компоненты (default-фичи: `elements-basic`, `window`, `softbuffer-backend`, `a11y-winit`). |
+| **`light-fw-core`** | Ядро **headless by default** (0.20.0): фасад 0.19.x + re-export всех слоёв. Без окон/рендера/a11y в default-фичах. |
+| **`light-reactivity`** | Сигналы: `Property`, `Proxy`, `Observer`, `Watcher`, `watch`. Вынесен из `light-fw-core` (0.20.0). |
+| **`light-vdom`** | VDOM, layout, DOM, runtime, plugins, validation. Вынесен из `light-fw-core` (0.20.0). |
+| **`light-gui`** | GUI-слой: окно на `winit`, a11y-мост AccessKit, `file_dialog`, `async_runtime`, devtools-инфраструктура. Вынесен из `light-fw-core` (0.20.0). |
+| **`light-render-cpu`** | Программная отрисовка через `softbuffer` (CPU-бэкенд). Вынесен из `light-gui` (0.20.0). |
+| **`light-render-gpu`** | Аппаратная отрисовка через `pixels` (wgpu/naga). Вынесен из `light-gui` (0.20.0). |
 | **`light-fw-macros`** | Процедурные макросы `#[template]` и `#[proxy]`. |
 | **`light-fw-html`** | Разбор HTML-шаблонов. |
 | **`light-fw-element-form`** | Компонент-элемент: `<checkbox>`, `<radio>`, `<select>`. |
 | **`light-fw-behavior-validation`** | Валидация: `required`, `:validator`, `@validate`. |
 | **`light-fw-cli-core`** | Внутренняя логика CLI. |
+| **`light-fw-devtools-web`** | Web UI DevTools (внутренний, публикуется как зависимость `light`). |
+
+### Cargo-фичи (0.20.0)
+
+| Крейт | Default-фичи | Ключевые фичи |
+| --- | --- | --- |
+| `light-fw-core` | `elements-basic` | `window`, `softbuffer-backend`, `wgpu-backend`, `a11y`, `a11y-winit`, `file-dialog`, `async-runtime`, `devtools`, `min-max-size`, `elements-*` |
+| `light-fw` | `elements-basic`, `window`, `softbuffer-backend`, `a11y-winit` | те же, что у ядра + `dev-mode`, `hot-reload`, `runtime-templates`, `devtools` |
+| `light-gui` | *(none)* | `window`, `a11y`, `file-dialog`, `async-runtime`, `devtools` |
+| `light-render-cpu` | *(none)* | `window` |
+| `light-render-gpu` | *(none)* | `window` |
+
+Headless-режим: `light-fw-core` с `default-features = false` (см.
+[docs/guide.md](docs/guide.md#apicli-без-gui-headless-режим-0200)).
 
 ## Документация
 

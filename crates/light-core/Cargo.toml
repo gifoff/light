@@ -6,14 +6,34 @@ license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 readme = "../../README.md"
-description = "Ядро Light: виртуальный DOM, реактивность, раскладка, отрисовка и окно"
+description = "Ядро Light: VDOM, реактивность, раскладка (0.20.0: Headless by default; GUI — в light-gui/light-fw)"
 
 [lib]
 name = "light_fw_core"
 
 [dependencies]
-futures = { version = "0.3", optional = true }
-futures-timer = { version = "3.0", optional = true }
+# Реактивное ядро (Property, Proxy, Observer, Watcher, watch) и коллекция
+# переехали в `light-reactivity` (0.20.0, этап 2 — Strangler Fig). Ядро
+# реэкспортирует оба модуля для обратной совместимости с 0.19.x.
+light-reactivity.workspace = true
+# VDOM, layout, DOM, runtime, plugins, validation — перенесены в `light-vdom`
+# (0.20.0, этап 3 — Strangler Fig). Ядро реэкспортирует все эти модули под
+# прежними именами для обратной совместимости с 0.19.x.
+light-vdom = { workspace = true }
+# 0.20.0 этап 4: GUI-слой (window, a11y, file_dialog, async_runtime, render,
+# devtools) вынесен в `light-gui`. Зависимость НЕ опциональная: headless-режим
+# (`--no-default-features`) тянет только stub'ы крейта — фичи `light-gui` по
+# умолчанию выключены (`default = []`), поэтому дерево не содержит ни winit, ни
+# softbuffer (0.20.0, Этап 6: Headless by default). Ядро реэкспортирует все
+# эти модули под прежними именами.
+light-gui = { workspace = true }
+# 0.20.0 этап 5: рендер-бэкенды вынесены из `light-gui` в отдельные крейты.
+# Опциональные: включаются фичами `softbuffer-backend`/`wgpu-backend`, чтобы
+# headless-сборка (`--no-default-features`) не тянула ни softbuffer, ни pixels.
+# Ядро выбирает бэкенд по фиче в `run()` и передаёт фабрику в
+# `light_gui::run_with_backend` — см. `src/lib.rs`.
+light-render-cpu = { workspace = true, optional = true }
+light-render-gpu = { workspace = true, optional = true }
 # Регистрация плагин-компонентов через distributed slice (Plugin API, Этап 3):
 # каждый плагин кладёт фабрику в `[CustomElementFactory; ..]`, сборка склеивает
 # слайсы всех крейтов бинарника. Не опциональна: слайс пуст, если плагины не
@@ -26,32 +46,38 @@ light-fw-macros.workspace = true
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2"
-winit = { workspace = true, optional = true }
-pixels = { workspace = true, optional = true }
-softbuffer = { workspace = true, optional = true }
-ab_glyph = { workspace = true, optional = true }
-png = { workspace = true, optional = true }
-rfd = { workspace = true, optional = true }
-accesskit = { version = "0.25", optional = true, features = ["serde"] }
-accesskit_winit = { version = "0.34", optional = true }
-# для кодирования PNG в SHOT
-base64 = "0.22"
+
 
 [features]
-# Набор по умолчанию: базовые элементы + окно + показ через softbuffer + a11y.
-default = ["elements-basic", "window", "softbuffer-backend", "a11y-winit"]
+# 0.20.0 (Этап 6): ядро **Headless по умолчанию** — только реактивность и
+# VDOM без окон, winit, softbuffer/pixels и а11y. GUI (окно + рендер-бэкенд)
+# включается фичами `window`/`softbuffer-backend`/`wgpu-backend`; фасад
+# `light-fw` включает их по умолчанию — см. `crates/light-fw/Cargo.toml`.
+default = ["elements-basic"]
 
 # --- Элементы разметки -------------------------------------------------
 # `<div>`, `<span>`, `<h1>`–`<h5>`, `<titlebar>`, `<text>` и `<button>`.
-elements-basic = ["light-fw-macros/elements-basic"]
+elements-basic = ["light-fw-macros/elements-basic", "light-vdom/elements-basic"]
 # Пароль (`<password>`), многострочное поле (`textarea`) и маркер изменения размера.
 elements-input = ["light-fw-macros/elements-input", "resize-grip"]
 # Флажок (`<checkbox>`).
-elements-checkbox = ["light-fw-macros/elements-checkbox"]
+elements-checkbox = [
+    "light-fw-macros/elements-checkbox",
+    "light-vdom/elements-checkbox",
+    "light-gui/elements-checkbox",
+]
 # Переключатель (`<radio>`).
-elements-radio = ["light-fw-macros/elements-radio"]
+elements-radio = [
+    "light-fw-macros/elements-radio",
+    "light-vdom/elements-radio",
+    "light-gui/elements-radio",
+]
 # Выпадающий список (`<select>`/`<option>`).
-elements-select = ["light-fw-macros/elements-select"]
+elements-select = [
+    "light-fw-macros/elements-select",
+    "light-vdom/elements-select",
+    "light-gui/elements-select",
+]
 # Компонент `light-fw-element-form`: флажок, переключатель и список.
 elements-form = ["elements-input", "elements-checkbox", "elements-radio", "elements-select"]
 # Маркер изменения размера текстового поля (`resize`).
@@ -76,59 +102,98 @@ validation = ["light-fw-macros/validation"]
 min-max-size = ["light-fw-macros/min-max-size"]
 
 # --- Изображения -------------------------------------------------------
-# `<image>` и PNG-иконки окон: декодирование PNG и вывод RGBA.
-image-support = ["light-fw-macros/image-support", "dep:png"]
-# Нативный диалог выбора файла (крейт `rfd`).
-file-dialog = ["dep:rfd"]
+# `<image>` и PNG-иконки окон: декодирование PNG живёт в light-gui (window::image).
+image-support = [
+    "light-fw-macros/image-support",
+    "light-gui/image-support",
+]
+# Нативный диалог выбора файла (крейт `rfd` в light-gui).
+file-dialog = ["light-gui/file-dialog"]
 
 # --- Окно --------------------------------------------------------------
-# Базовое окно на winit с программной отрисовкой.
-window = ["dep:winit", "dep:ab_glyph", "light-fw-macros/template-window"]
-# Показ кадра через `softbuffer` (без wgpu/naga). По умолчанию включён.
-softbuffer-backend = ["window", "dep:softbuffer"]
+# Базовое окно на winit с программной отрисовкой. Реализация и типы `winit`
+# живут в `light-gui` (этап 4); ядро не зависит от `winit` напрямую
+# (0.20.0, Этап 6: Headless by default, payload'ы ошибок — `String`).
+window = [
+    "light-gui/window",
+    "light-fw-macros/template-window",
+    "light-vdom/window",
+]
+# Показ кадра через `softbuffer` (без wgpu/naga).
+# 0.20.0 этап 5: реализация живёт в `light-render-cpu`; ядро выбирает её по
+# этой фиче в `run()` и передаёт фабрику в `light_gui::run_with_backend`.
+softbuffer-backend = [
+    "window",
+    "dep:light-render-cpu",
+    "light-render-cpu/window",
+    "light-gui/softbuffer-backend",
+]
 # Показ кадра через `pixels` (wgpu/naga). Альтернативный бэкенд.
 # Если включены обе фичи, используется `softbuffer-backend`.
-wgpu-backend = ["window", "dep:pixels"]
+# 0.20.0 этап 5: реализация живёт в `light-render-gpu` (см. выше).
+wgpu-backend = [
+    "window",
+    "dep:light-render-gpu",
+    "light-render-gpu/window",
+    "light-gui/wgpu-backend",
+]
 # Прозрачность окна (per-pixel alpha).
-window-transparent = ["window"]
+window-transparent = ["window", "light-gui/window-transparent"]
 # Модальные окна (`modal`).
-window-modal = ["window"]
+window-modal = ["window", "light-gui/window-modal"]
 # Несколько окон (`open_window`).
-window-multi = ["window"]
+window-multi = ["window", "light-gui/window-multi"]
 # Адресация окон по идентификатору (`open("id")`).
-window-by-id = ["window"]
+window-by-id = ["window", "light-gui/window-by-id"]
 # Изменение размера окна (`resizable`).
-window-resize = ["window"]
+window-resize = ["window", "light-gui/window-resize"]
 # Фоновые задачи и доставка сообщений в UI-поток (`spawn`/`post_to_ui`).
-async-runtime = ["window"]
+# Требует `window`: EventLoopProxy существует только при этой фиче.
+async-runtime = ["window", "light-gui/async-runtime"]
 # Асинхронные замыкания (фьючи) через `futures::executor::block_on`.
-async-await = ["dep:futures", "dep:futures-timer", "async-runtime"]
+async-await = ["light-gui/async-await", "async-runtime"]
 
 # --- Доступность -------------------------------------------------------
 # Построение дерева доступности AccessKit.
-a11y = ["dep:accesskit"]
+a11y = ["light-gui/a11y"]
 # Интеграция с `accesskit_winit` (включает полный набор подсистем a11y).
-a11y-winit = ["a11y", "a11y-live", "a11y-keyboard", "window", "dep:accesskit_winit"]
+a11y-winit = [
+    "a11y",
+    "a11y-live",
+    "a11y-keyboard",
+    "window",
+    "light-gui/a11y-winit",
+]
 # Живые регионы (`aria-live`).
-a11y-live = ["a11y"]
+a11y-live = ["a11y", "light-gui/a11y-live"]
 # Программный фокус и кольцо фокуса.
-a11y-focus = ["a11y"]
+a11y-focus = ["a11y", "light-gui/a11y-focus"]
 # Клавиатурная навигация (`Tab`/`Enter`/`Space`/`Escape`).
-a11y-keyboard = ["a11y"]
+a11y-keyboard = ["a11y", "light-gui/a11y-keyboard"]
 
 # --- Прочее ------------------------------------------------------------
 # Включение шаблонов `<include src="...">`.
 include = ["light-fw-macros/include"]
 # Инспекция состояния: JSON-снимок VDOM и реактивных свойств (DevTools).
-# Требует `async-runtime`: TCP-команды доставляются в UI-поток через
-# EventLoopProxy, который существует только при этой фиче.
-# `png` нужен для команды SHOT (кодирование кадра в PNG).
-devtools = ["async-runtime", "dep:png"]
+# Модуль и сервер — в `light-gui`; требует `async-runtime` (TCP-команды
+# доставляются в UI-поток через EventLoopProxy) и `png` для SHOT.
+devtools = ["async-runtime", "light-gui/devtools"]
 # Шаблоны во время выполнения: `render()` читает HTML с диска (mtime-кэш),
 # поэтому правка разметки в dev-режиме видна без пересборки.
-runtime-templates = ["window", "elements-checkbox", "elements-radio", "elements-select"]
+runtime-templates = [
+    "window",
+    "elements-checkbox",
+    "elements-radio",
+    "elements-select",
+    "light-vdom/runtime-templates",
+    "light-gui/runtime-templates",
+]
 
 [dev-dependencies]
+# Этап 4 (Strangler Fig): интеграционные тесты a11y_*.rs используют типы
+# `accesskit::{Role, NodeId, TreeUpdate}` напрямую — добавляем в dev-deps
+# с той же версией, что и в `light-gui` (там это уже опциональная зависимость).
+accesskit = { version = "0.25", features = ["serde"] }
 criterion = "0.5"
 insta = { version = "1", features = ["json"] }
 serde_json = "1"
@@ -138,3 +203,6 @@ trybuild = "1"
 name = "performance"
 harness = false
 required-features = ["window"]
+
+[lints]
+workspace = true

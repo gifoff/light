@@ -12,3 +12,6 @@ dev-mode = ["light-fw/dev-mode"]
 
 [dependencies]
 light-fw = { workspace = true }
+
+[lints]
+workspace = true

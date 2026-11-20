@@ -130,6 +130,14 @@ DevTools TCP-порт (`127.0.0.1`, по умолчанию 9229; все при�
 - **API для рендеринга**: Публичный метод для получения VDOM в виде строки (для SSR) или JSON (для тестов/агентов).
 - **Вынос графики**: `softbuffer` / `wgpu` в отдельный крейт `light-fw-gui`. Ядро не знает о GUI.
 - **Тестирование без окон**: Возможность запускать UI-компоненты в headless-режиме через `light test`.
+- [x] Этап 1: скелет 5 новых крейтов (light-reactivity, light-vdom,
+      light-gui, light-render-cpu, light-render-gpu) + workspace + зависимости.
+- [ ] Этап 2: перенос реактивности (src/reactive/ → light-reactivity).
+- [ ] Этап 3: перенос VDOM + layout (vdom.rs, layout.rs, dom.rs → light-vdom).
+- [ ] Этап 4: перенос окна + a11y (window/, control.rs, a11y/ → light-gui).
+- [ ] Этап 5: перенос CPU-рендера (render/softbuffer.rs, window/paint.rs → light-render-cpu).
+- [ ] Этап 6: перенос GPU-рендера (render/wgpu.rs → light-render-gpu).
+- [ ] Этап 7: `light-fw` становится фасадом, `light-fw-core` помечен deprecated.
 
 ---
 

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use light_fw::prelude::*;
+use light_fw::vdom::VWindow;
 
 #[template("templates/counter.html")]
 #[proxy]
@@ -36,6 +37,20 @@ impl Counter {
         } else {
             format!("Отрицательное значение: {}", self.count())
         }
+    }
+
+    fn minimize(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.minimize();
+        }
+        true
+    }
+
+    fn close(&self) -> bool {
+        if let Some(window) = Dom::window() {
+            window.close();
+        }
+        true
     }
 }
 

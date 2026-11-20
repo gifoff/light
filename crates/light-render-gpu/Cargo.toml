@@ -1,0 +1,24 @@
+[package]
+name = "light-render-gpu"
+version = "0.20.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Light Render (GPU): показ кадра через pixels/wgpu (вынесено из light-gui, 0.20.0 этап 5)"
+
+[features]
+# Включает окно winit в `light-gui`, необходимое для `WgpuBackend`
+# (создаёт `pixels::SurfaceTexture` поверх `winit::window::Window`).
+window = ["light-gui/window"]
+
+[dependencies]
+# Окно/поверхность, в которую рисуем кадр; трейт `RendererBackend`.
+light-gui = { workspace = true }
+# Тип окна (`Window`) для сигнатуры `WgpuBackend::new`.
+winit = { workspace = true }
+# GPU-показ (через `pixels` → wgpu/naga; единый wgpu в графе).
+pixels = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,3 +1,81 @@
+## [0.20.0] - 2026-11-20
+
+### Added
+
+- **Модульность (Strangler Fig, этапы 1–5):** `light-fw-core` декомпозирован
+  на пять слоёв:
+  - `light-reactivity` — сигналы (`Property`, `Proxy`, `Observer`, `Watcher`,
+    `watch`) и `Collection`;
+  - `light-vdom` — VDOM, layout, DOM, runtime, plugins, validation;
+  - `light-gui` — GUI-слой: окно на winit, a11y-мост (AccessKit),
+    `file_dialog`, `async_runtime`, devtools-инфраструктура, render-абстракция;
+  - `light-render-cpu` — программная отрисовка через `softbuffer`;
+  - `light-render-gpu` — аппаратный рендер через `pixels` (wgpu/naga).
+  Публичный API 0.19.x сохранён: ядро реэкспортирует все модули под прежними
+  именами (`light_fw_core::window`, `light_fw_core::reactive` и т.д.).
+- **Headless by default:** `light-fw-core` теперь собирается без окон, winit,
+  softbuffer/pixels и a11y-интеграции **по умолчанию** (`default =
+  ["elements-basic"]`). Дерево зависимостей headless-сборки (`--no-default-features`
+  или `default-features = false` у потребителя) не содержит ни `winit`, ни
+  `softbuffer`/`pixels`/`wgpu`, ни `accesskit*`, ни `rfd` — только реактивность,
+  VDOM/layout, макросы и light-gui без фич (stub). Подтверждено E2E-тестом
+  (`C:\Temp\light-plugin-e2e\stage8-headless`): `cargo tree` чистое.
+- **CLI/API без GUI:** новый приёмник для «чистой» работы — фасад
+  `light-fw` остаётся для GUI-приложений (default-фичи включают окно +
+  softbuffer + a11y), а headless-код использует `light-fw-core` с
+  `default-features = false`. Раздел «API/CLI без GUI» — в `docs/guide.md`.
+
+### Changed
+
+- **default-фичи `light-fw-core`:** было
+  `["elements-basic", "window", "softbuffer-backend", "a11y-winit"]` → стало
+  `["elements-basic"]`. GUI-режим включается явными фичами `window` /
+  `softbuffer-backend` / `wgpu-backend` / `a11y-winit`.
+- **default-фичи `light-fw`:** без изменений
+  (`["elements-basic", "window", "softbuffer-backend", "a11y-winit"]`) —
+  фасад продолжает быть GUI-first, что важно для `light init`/`light dev`.
+- **Breaking change: payload'ы ошибок.** В `light_fw_core::error::Error`
+  варианты `Window`, `CreateWindow`, `Surface`, `Texture`, `Softbuffer`
+  теперь хранят текст ошибки (`String`), а не типизированные
+  `winit::error::*` / `pixels::*` / `softbuffer::SoftBufferError`. Ядро не
+  зависит от этих крейтов напрямую; обратная совместимость 0.19.x на уровне
+  текста ошибок (`Display`) сохраняется. Это допустимо для 0.20.0, так как
+  архитектура сильно меняется (модульность + headless).
+- **`[workspace.package] version` → 0.20.0** и все path-зависимости в корне
+  воркспейса обновлены до 0.20.0; `Cargo.lock` синхронизирован.
+
+### Docs
+
+- `docs/ARCHITECTURE.md`: описана 5-слойная структура после Strangler Fig
+  (reactivity / vdom / gui / render-cpu / render-gpu) и принцип
+  Headless-by-default.
+- `docs/guide.md`: раздел «API/CLI без GUI» — минимальный пример использования
+  `light-fw-core` с `Property` и `watch` без окон (совпадает с E2E-тестом).
+- `README.md`: таблица крейтов обновлена (все 5 новых слоёв), блок features
+  дополнен описанием headless-режима.
+
+## [Unreleased]
+
+### Added
+
+- **cli / cli-core**: Настраиваемый реестр (`registry` в `light.config.json`:
+  `url`, `download_url`, `docs_url`; дефолты — crates.io). Новые файлы
+  `registry_config.rs`, `metadata.rs`; расширен trait `RemoteRegistry`
+  (методы `owners`, `download_crate`).
+- **cli**: `light search` расширен флагами `--yes` (авто-выбор + скачивание
+  `.crate` + валидация `[package.metadata.light]`, exit 0/1), `--json`
+  (машино-читаемый вывод), `--limit`, `--path`. Ранжирование: официальный →
+  совпадение имени с запросом → загрузки. Официальность определяется по owners
+  (аккаунт `gifoff`); `already_installed` — по `[dependencies]` в `Cargo.toml`.
+- **cli-core**: модуль `metadata` — извлечение и валидация метаданных из
+  скачанного `.crate` (NoMetadata/IncompatibleCore — фатальные; EmptyProvides/
+  Conflict — предупреждение с подтверждением).
+- **docs**: docs/cli.md (флаги `light search`), docs/guide.md (раздел
+  «Настраиваемый реестр»), README.md (примеры `light search --yes`/`--json`).
+
+<!-- Этап 6: Modularity-буллеты этапов 1 и 4 перенесены в [0.20.0] выше. -->
+
+
 ## [0.19.0] - 2026-11-16
 
 ### Added
@@ -25,6 +103,12 @@
 
 ### Added
 
+- **Modularity (0.20.0, этап 4):** GUI-модули (`window/`, `render/`, `a11y/`,
+  `devtools/`, `file_dialog.rs`, `async_runtime.rs`) перебазианы из `light-fw-core`
+  в новый крейт `light-gui`. Публичный API 0.19.x сохранён через реэкспорт
+  (`extern crate self as light_fw;` + `pub use light_gui::*`).
+  Headless-режим: `cargo check -p light-fw-core --no-default-features`
+  не тянет winit/softbuffer/pixels/rfd/accesskit/futures.
 - **cli / cli-core**: Настраиваемый реестр (`registry` в `light.config.json`:
   `url`, `download_url`, `docs_url`; дефолты — crates.io). Новые файлы
   `registry_config.rs`, `metadata.rs`; расширен trait `RemoteRegistry`
@@ -34,6 +118,11 @@
   (машино-читаемый вывод), `--limit`, `--path`. Ранжирование: официальный →
   совпадение имени с запросом → загрузки. Официальность определяется по owners
   (аккаунт `gifoff`); `already_installed` — по `[dependencies]` в `Cargo.toml`.
+- **Modularity (0.20.0, этап 1):** пять новых скелетных крейтов для
+  декомпозиции `light-fw-core`: `light-reactivity`, `light-vdom`,
+  `light-gui`, `light-render-cpu`, `light-render-gpu`. Пока пусты;
+  перенос кода — следующие этапы. Workspace: новые члены + `tiny-skia 0.12`
+  и `wgpu 24` в `[workspace.dependencies]`.
 - **cli-core**: модуль `metadata` — извлечение и валидация метаданных из
   скачанного `.crate` (NoMetadata/IncompatibleCore — фатальные; EmptyProvides/
   Conflict — предупреждение с подтверждением).

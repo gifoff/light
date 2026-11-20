@@ -130,44 +130,87 @@ pub const RUNTIME_TEMPLATES_ENABLED: bool = false;
 pub use serde;
 pub use serde_json;
 
-pub mod a11y;
-pub mod collection;
+// GUI-модули (0.20.0, этап 4 — Strangler Fig): окно на winit, a11y-мост,
+// рендер-бэкенды, асинхронный рантайм и DevTools вынесены в `light-gui`.
+// Реэкспортируем каждый из них под прежними именами, чтобы публичный API
+// `light_fw_core::*` (и генерируемый код `::light_fw::…`) не изменился.
+// Заглушки (`#[doc(hidden)]`) нужны только там, где без фичи модуля в
+// `light-gui` нет вовсе: headless-режим сохраняет стабильные имена
+// реэкспорта (`post_to_ui`, `TaskHandle`, …) для макросного кода.
+/// GUI-слой: окно, события ввода, a11y — перебазиан в `light-gui` (этап 4).
+pub use light_gui::a11y;
+// 0.20.0 (Этап 5): фасад `light-fw::run` ссылается на `light_gui::run_with_backend`
+// и `light_gui::render::null::NullBackend`. Реэкспортируем `light-gui` как
+// `light_gui` под прежним именем, чтобы путь `light_fw_core::light_gui::…`
+// работал через glob-реэкспорт `pub use light_fw_core::*;` в `light-fw/src/lib.rs`.
+pub use light_gui;
+// Этап 4 (Strangler Fig): `accesskit` живёт в `light-gui`. Для интеграционных
+// тестов ядра (`tests/a11y_*.rs`) реэкспортируем его под прежним именем,
+// чтобы не добавлять прямую зависимость `accesskit` на уровне `[dev-dependencies]`
+// (она и так пробрасывается через фичу `a11y` в `light-gui`).
+// Тестам ядра нужен прямой путь `light_fw_core::accesskit` — добавляем его
+// как `[dev-dependencies]` с той же версией, что и `light-gui`.
+#[cfg(feature = "window")]
+/// Модуль окна (winit): реализация живёт в `light-gui`.
+pub use light_gui::window;
+// Без фичи `window` — заглушка (пустой модуль) под тем же именем, чтобы
+// код 0.19.x, ссылающийся на `light_fw::window::…`, не ломался компиляцией
+// в headless-режиме (`--no-default-features`).
+#[cfg(not(feature = "window"))]
+pub mod window {
+    //! Заглушка модуля окна без фичи `window`.
+}
+#[cfg(feature = "async-runtime")]
+pub use light_gui::async_runtime;
+// Без фичи `async-runtime` — заглушка с теми же именами (см. light_gui::stub):
+// headless-режим (`--no-default-features`) всё равно компилирует модуль
+// `async_runtime`, но функции возвращают `Err(TaskError)` вместо того, чтобы
+// паниковать на отсутствии EventLoopProxy.
+#[cfg(not(feature = "async-runtime"))]
+pub use light_gui::stub as async_runtime;
 pub mod component;
 pub mod control;
 #[cfg(feature = "devtools")]
-pub mod devtools;
-pub mod dom;
+/// Инспекция состояния приложения: JSON-снимки VDOM/раскладки (DevTools).
+pub use light_gui::devtools;
+// `error` остаётся локальным: полный тип с вариантами VDOM (`Font`,
+// `UnregisteredCustomElement`, `Image`) плюс `From<light_gui::Error>` для
+// оконных/бэкенд-вариантов (теперь живут в `light-gui`, этап 4).
 pub mod error;
 #[cfg(feature = "file-dialog")]
-pub mod file_dialog;
-pub mod layout;
-pub mod plugins;
+pub use light_gui::file_dialog;
+pub use light_vdom::{dom, layout, plugins, runtime, text_wrap, validation, vdom};
 pub mod prelude;
-pub mod reactive;
-pub mod runtime;
-mod text_wrap;
-pub mod validation;
-pub mod vdom;
-
-#[cfg(feature = "async-runtime")]
-pub mod async_runtime;
 #[cfg(feature = "window")]
-pub mod render;
-#[cfg(feature = "window")]
-pub mod window;
+/// Рендер-бэкенды (`softbuffer`/`pixels`): перебазианы в `light-gui` (этап 4).
+pub use light_gui::render;
+#[cfg(not(feature = "window"))]
+#[doc(hidden)]
+mod render {
+    //! Заглушка модуля рендера без фичи `window`.
+}
 
+// Реэкспорт API асинхронного рантайма (этап 4: модуль живёт в `light-gui`;
+// без фичи `async-runtime` — заглушка с теми же именами).
 #[cfg(feature = "async-await")]
-pub use async_runtime::spawn_async;
+pub use light_gui::async_runtime::spawn_async;
 #[cfg(feature = "async-runtime")]
-pub use async_runtime::{
+pub use light_gui::async_runtime::{
     TaskContext, TaskError, TaskHandle, UserEvent, apply_action, post_to_ui, post_update,
     post_update_to, spawn,
 };
-pub use collection::Collection;
+// Обратная совместимость 0.20.0: channel-абстракция оконных операций
+// (закрытие, минимизация, toggle maximize) перебазиана в `light-vdom`
+// (этап 3).
+pub use light_reactivity as reactivity;
+pub use light_vdom::window_backend;
+// Обратная совместимость 0.20.0: реактивное ядро и коллекция перебазированы
+// в `light-reactivity`; реэкспортируем оба модуля под прежними именами, чтобы
+// `light_fw_core::reactive` / `light_fw_core::collection` работали без изменений.
 pub use component::{Component, WindowConfig};
 pub use control::{
     FocusCommand, WindowCommand, WindowToken, blur, current_window_token, focus, focused_key,
-    set_current_window_token,
+    is_maximized, set_current_window_token, set_maximized,
 };
 #[cfg(feature = "devtools")]
 pub use devtools::{
@@ -177,11 +220,18 @@ pub use devtools::{
 pub use dom::Dom;
 pub use error::{Error, Result};
 pub use light_fw_macros::{component, proxy, template};
-pub use reactive::{Property, Proxy, ProxyState, Watcher, watch};
+pub use light_reactivity::{collection, reactive};
+// Реэкспорт конкретных типов — обратная совместимость с 0.19.x.
+pub use light_reactivity::{Collection, Property, Proxy, ProxyState, Watcher, watch};
 #[cfg(feature = "window")]
 pub use render::RendererBackend;
-#[cfg(feature = "wgpu-backend")]
-pub use render::WgpuBackend;
+// 0.20.0 этап 5: конкретные реализации бэкендов вынесены из `light-gui`
+// в отдельные крейты. Реэкспортируем их под прежними именами для обратной
+// совместимости 0.19.x (публичный API приложения не меняется).
+#[cfg(feature = "softbuffer-backend")]
+pub use light_render_cpu::SoftbufferBackend;
+#[cfg(all(feature = "wgpu-backend", not(feature = "softbuffer-backend")))]
+pub use light_render_gpu::WgpuBackend;
 #[cfg(feature = "image-support")]
 pub use vdom::ImageData;
 pub use vdom::{
@@ -191,10 +241,48 @@ pub use vdom::{
 
 /// Открывает окно с интерфейсом компонента и запускает цикл событий.
 ///
-/// Возвращает только при закрытии окна или ошибке.
+/// 0.20.0 (Этап 5): бэкенд отрисовки выбирается по фиче сборки:
+/// * `softbuffer-backend` → программная отрисовка через `softbuffer`
+///   ([`light-render-cpu`](https://crates.io/crates/light-render-cpu));
+/// * `wgpu-backend` (без softbuffer) → аппаратный показ через `pixels`
+///   ([`light-render-gpu`](https://crates.io/crates/light-render-gpu));
+/// * без обоих → заглушка [`light_gui::render::null::NullBackend`] (headless).
+///
+/// Конкретная реализация создаётся фабрикой, которую [`run`] передаёт в
+/// [`light_gui::run_with_backend`]; сам `light-gui` не знает о `softbuffer`/
+/// `pixels`. Возвращает только при закрытии окна или ошибке.
 #[cfg(feature = "window")]
-pub fn run(component: impl Component + 'static) -> Result<()> {
-    window::run(component)
+pub fn run(component: impl Component + 'static) -> crate::error::Result<()> {
+    // Фабрика создаёт бэкенд под конкретное окно (главное или дочернее).
+    // Замыкание `Send + Sync`: оно пересоздаётся для каждого окна в `App`.
+    // `light_gui::window::Window` — публичный re-экспорт `winit::window::Window`
+    // (сигнатура `run_with_backend` использует именно его).
+    type Win = crate::window::Window;
+    let factory = Box::new(|width: u32, height: u32, window: std::sync::Arc<Win>| {
+        #[cfg(feature = "softbuffer-backend")]
+        {
+            Ok(Box::new(light_render_cpu::SoftbufferBackend::new(
+                width, height, window,
+            )?)
+                as Box<dyn light_gui::render::RendererBackend>)
+        }
+        #[cfg(all(feature = "wgpu-backend", not(feature = "softbuffer-backend")))]
+        {
+            Ok(
+                Box::new(light_render_gpu::WgpuBackend::new(width, height, window)?)
+                    as Box<dyn light_gui::render::RendererBackend>,
+            )
+        }
+        #[cfg(not(any(feature = "softbuffer-backend", feature = "wgpu-backend")))]
+        {
+            let _ = window;
+            Ok(
+                Box::new(light_gui::render::null::NullBackend::new(width, height))
+                    as Box<dyn light_gui::render::RendererBackend>,
+            )
+        }
+    });
+    light_gui::run_with_backend(component, factory).map_err(crate::error::Error::from)
 }
 
 /// Запускает TCP-сервер DevTools на `127.0.0.1:port`.

@@ -16,3 +16,6 @@ kind = "element"
 display-name = "Form elements"
 core = "^0.17"
 provides.elements = ["checkbox", "radio", "select", "option"]
+
+[lints]
+workspace = true

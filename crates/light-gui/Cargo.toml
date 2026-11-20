@@ -1,0 +1,94 @@
+[package]
+name = "light-gui"
+version = "0.20.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Light GUI: окно winit, события ввода, a11y-мост, рендер-бэкенды и асинхронный рантайм (вынесено из light-fw-core в 0.20.0, Этап 4)"
+
+[lib]
+name = "light_gui"
+
+[dependencies]
+# VDOM — источник содержимого, которое нужно показать в окне; также
+# `window_backend` (трайты/команды) и `component` (Component trait),
+# которые GUI-слой реализует/использует.
+light-vdom = { workspace = true }
+# Reактивный слой: `window/mod.rs` подвешивает repaint-запрос через
+# `light_reactivity::set_repaint_requester`.
+light-reactivity = { workspace = true }
+# Для `encode_screenshot` в devtools.rs (base64 PNG → JSON).
+base64 = "0.22"
+
+# Окно и события.
+winit = { workspace = true, optional = true }
+ab_glyph = { workspace = true, optional = true }
+png = { workspace = true, optional = true }
+rfd = { workspace = true, optional = true }
+accesskit = { version = "0.25", optional = true, features = ["serde"] }
+accesskit_winit = { version = "0.34", optional = true }
+futures = { version = "0.3", optional = true }
+
+thiserror = "2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[features]
+default = []
+
+# Базовое окно на winit: цикл событий, шрифт (ab_glyph), PNG (иконки/SHOT).
+window = ["dep:winit", "dep:ab_glyph", "dep:png"]
+# Фичи бэкендов (0.20.0, Этап 5): сами реализации переехали в отдельные крейты
+# — `light-render-cpu` (softbuffer) и `light-render-gpu` (pixels/wgpu). В этом
+# крейте они сохраняются только как «метки» (не тянут ни softbuffer, ни pixels):
+# фасад `light-fw` по ним выбирает, какую реализацию передать в `run_with_backend`.
+softbuffer-backend = ["window"]
+wgpu-backend = ["window"]
+# Фоновые задачи и доставка сообщений в UI-поток (`spawn`/`post_to_ui`).
+async-runtime = ["window"]
+# Асинхронные замыкания (фьючи) через `futures::executor::block_on`.
+async-await = ["dep:futures", "async-runtime"]
+# Построение дерева доступности AccessKit.
+a11y = ["dep:accesskit"]
+# Интеграция с `accesskit_winit` (требует `window`).
+a11y-winit = ["a11y", "window", "dep:accesskit_winit"]
+# Живые регионы (`aria-live`) / программный фокус / клавиатурная навигация:
+# подмодули a11y внутри этого крейта.
+a11y-live = ["a11y"]
+a11y-focus = ["a11y"]
+a11y-keyboard = ["a11y"]
+# Нативный диалог выбора файла (крейт `rfd`).
+file-dialog = ["dep:rfd"]
+# Включение модуля DevTools-сервера (TCP-команды для `light devtools`, SHOT: png).
+devtools = ["dep:png"]
+# `<image>`: декодирование PNG-изображений (window::image) + варианты
+# NodeKind::Image/`RuntimeImage` в light-vdom. Проксим `image-support`
+# в light-vdom, чтобы `ImageData` и варианты NodeKind были доступны
+# (аналогично `elements-*`).
+image-support = ["window", "dep:png", "light-vdom/image-support"]
+# Прозрачность окна (per-pixel alpha).
+window-transparent = ["window"]
+# Модальные окна (`modal`).
+window-modal = ["window"]
+# Несколько окон (`open_window`).
+window-multi = ["window"]
+# Адресация окон по идентификатору (`open("id")`).
+window-by-id = ["window"]
+# Изменение размера окна (`resizable`).
+window-resize = ["window"]
+# Runtime-шаблоны: hot HTML reload в dev-режиме.
+runtime-templates = []
+
+# --- Элементы разметки (прокси: поведение живёт в light-vdom, но некоторые
+# части window/a11y компилируются условно от фич элементов).
+# `elements-input` — составная (input + resize-grip), в light-vdom её нет:
+# она раскладывается на light-fw-macros + отдельный resize-grip в core.
+elements-basic = ["light-vdom/elements-basic"]
+elements-input = []
+elements-checkbox = ["light-vdom/elements-checkbox"]
+elements-radio = ["light-vdom/elements-radio"]
+elements-select = ["light-vdom/elements-select"]
+
+[lints]
+workspace = true

@@ -34,7 +34,7 @@ impl MemoryBackend {
 }
 
 impl RendererBackend for MemoryBackend {
-    fn resize(&mut self, width: u32, height: u32) -> light_fw::Result<()> {
+    fn resize(&mut self, width: u32, height: u32) -> light_fw::render::Result<()> {
         self.width = width;
         self.height = height;
         self.frame = vec![0; (width * height * 4) as usize];
@@ -49,7 +49,7 @@ impl RendererBackend for MemoryBackend {
         &mut self.frame
     }
 
-    fn present(&mut self) -> light_fw::Result<()> {
+    fn present(&mut self) -> light_fw::render::Result<()> {
         Ok(())
     }
 }

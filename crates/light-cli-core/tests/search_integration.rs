@@ -25,7 +25,7 @@ fn crate_bytes(cargo_toml: &str) -> Vec<u8> {
 
     let mut builder = tar::Builder::new(Vec::new());
     let mut header = tar::Header::new_gnu();
-    let name = "light-widget-datepicker-0.19.0/Cargo.toml";
+    let name = "light-widget-datepicker-0.20.0/Cargo.toml";
     header.set_path(name).expect("set path");
     header.set_size(cargo_toml.len() as u64);
     header.set_mode(0o644);
@@ -218,7 +218,7 @@ async fn download_and_validate_ok_manifest() {
     let cargo_toml = r#"
 [package]
 name = "light-widget-datepicker"
-version = "0.19.0"
+version = "0.20.0"
 edition = "2024"
 
 [dependencies]
@@ -226,7 +226,7 @@ edition = "2024"
 [package.metadata.light]
 kind = "widget"
 display-name = "Datepicker"
-core = "^0.19"
+core = "^0.20"
 
 [package.metadata.light.provides]
 elements = ["datepicker"]
@@ -239,7 +239,7 @@ components = []
     let archive = crate_bytes(cargo_toml);
 
     Mock::given(method("GET"))
-        .and(path_regex(r"/light-widget-datepicker/0\.19\.0/download.*"))
+        .and(path_regex(r"/light-widget-datepicker/0\.20\.0/download.*"))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("Content-Type", "application/octet-stream")
@@ -253,7 +253,7 @@ components = []
         let config = test_config(&uri, &uri);
         let client = RegistryClient::new(config);
         let bytes = client
-            .download_crate("light-widget-datepicker", "0.19.0")
+            .download_crate("light-widget-datepicker", "0.20.0")
             .expect("download");
         let toml_text = light_fw_cli_core::metadata::extract_cargo_toml(&bytes).expect("extract");
         light_fw_cli_core::metadata::validate_metadata(&toml_text, "light-widget-datepicker")
@@ -263,7 +263,7 @@ components = []
     match result {
         light_fw_cli_core::metadata::ValidationResult::Ok(meta) => {
             assert_eq!(meta.crate_name, "light-widget-datepicker");
-            assert_eq!(meta.version, "0.19.0");
+            assert_eq!(meta.version, "0.20.0");
             assert_eq!(meta.provides_elements, vec!["datepicker".to_string()]);
         }
         other => panic!("expected Ok, got {other:?}"),

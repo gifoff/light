@@ -12,3 +12,6 @@ dev-mode = ["light-fw/dev-mode"]
 
 [dependencies]
 light-fw = { path = "../../crates/light-fw", features = ["async-runtime"] }
+
+[lints]
+workspace = true
