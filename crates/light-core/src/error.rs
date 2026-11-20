@@ -111,10 +111,7 @@ impl From<light_gui::error::Error> for Error {
             // Фолбэк — `Font(String)`: единственный вариант `Error`, доступный
             // без фич (`image-support`/`window`/`*-backend`); текст ошибки
             // сохраняется в поле.
-            #[cfg(all(
-                not(feature = "softbuffer-backend"),
-                not(feature = "wgpu-backend")
-            ))]
+            #[cfg(all(not(feature = "softbuffer-backend"), not(feature = "wgpu-backend")))]
             light_gui::error::Error::Backend(msg) => Error::Font(msg),
             #[cfg(feature = "image-support")]
             light_gui::error::Error::Image(msg) => Error::Image(msg),
