@@ -165,6 +165,21 @@ fn load_profile(config_path: &str) -> ConfigProfile {
     }
 }
 
+/// Тип фабрики бэкенда: замыкание `(width, height, window) -> Box<dyn RendererBackend>`.
+///
+/// Используется в [`run`]: вызывается при первом показе окна с его размером
+/// и `Arc<Window>`. Выбор конкретной реализации делает фасад `light-fw`.
+#[cfg(feature = "window")]
+pub type BackendFactory = Box<
+    dyn Fn(
+            u32,
+            u32,
+            std::sync::Arc<light_fw_core::window::Window>,
+        ) -> light_gui::Result<Box<dyn light_gui::render::RendererBackend>>
+        + Send
+        + Sync,
+>;
+
 /// Запускает окно приложения с выбором рендер-бэкенда по фиче сборки.
 ///
 /// Это основной публичный API: вызывается из `fn main` пользователя. Бэкенд
@@ -191,20 +206,14 @@ fn load_profile(config_path: &str) -> ConfigProfile {
 /// ```
 #[cfg(feature = "window")]
 pub fn run(component: impl Component + 'static) -> crate::Result<()> {
-    use std::sync::Arc;
-    type Win = light_fw_core::window::Window;
     // Фабрика: (width, height, window) -> Box<dyn RendererBackend>.
     // Вызывается при первом показе окна (см. `light_gui::window::windows::App::paint`).
     // `light_gui` — реэкспорт из `light_fw_core` (0.20.0, Этап 5); не
     // добавляем прямую зависимость в `[dependencies]`.
-    let factory: Box<
-        dyn Fn(u32, u32, Arc<Win>) -> light_gui::Result<Box<dyn light_gui::render::RendererBackend>>
-            + Send
-            + Sync,
-    > = {
+    let factory: BackendFactory = {
         #[cfg(feature = "softbuffer-backend")]
         {
-            Box::new(|width: u32, height: u32, window: Arc<Win>| {
+            Box::new(|width: u32, height: u32, window| {
                 Ok(Box::new(light_render_cpu::SoftbufferBackend::new(
                     width, height, window,
                 )?)
@@ -213,7 +222,7 @@ pub fn run(component: impl Component + 'static) -> crate::Result<()> {
         }
         #[cfg(all(feature = "wgpu-backend", not(feature = "softbuffer-backend")))]
         {
-            Box::new(|width: u32, height: u32, window: Arc<Win>| {
+            Box::new(|width: u32, height: u32, window| {
                 Ok(
                     Box::new(light_render_gpu::WgpuBackend::new(width, height, window)?)
                         as Box<dyn light_gui::render::RendererBackend>,
@@ -222,7 +231,7 @@ pub fn run(component: impl Component + 'static) -> crate::Result<()> {
         }
         #[cfg(all(not(feature = "softbuffer-backend"), not(feature = "wgpu-backend")))]
         {
-            Box::new(|width: u32, height: u32, _window: Arc<Win>| {
+            Box::new(|width: u32, height: u32, _window| {
                 Ok(
                     Box::new(light_gui::render::null::NullBackend::new(width, height))
                         as Box<dyn light_gui::render::RendererBackend>,
