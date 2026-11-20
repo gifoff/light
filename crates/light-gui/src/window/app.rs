@@ -62,6 +62,7 @@ pub(super) type BackendFactory = std::sync::Arc<
 ///
 /// Если [`Component::window_config`] возвращает `None`, цикл событий не запускается
 /// и функция сразу завершается успешно.
+#[allow(clippy::type_complexity)]
 pub fn run_with_backend(
     component: impl Component + 'static,
     backend: Box<
@@ -166,6 +167,7 @@ pub(super) struct App {
 }
 
 impl App {
+    #[allow(clippy::type_complexity)]
     pub(super) fn new(
         root: Box<dyn Component>,
         font: Rc<FontMetrics>,
