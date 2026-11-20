@@ -17,3 +17,6 @@ display-name = "Form validation"
 core = "^0.17"
 provides.attributes = [":validator", "required"]
 provides.directives = ["@validate"]
+
+[lints]
+workspace = true

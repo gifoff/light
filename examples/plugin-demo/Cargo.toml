@@ -30,3 +30,6 @@ core = "^0.18"
 
 [package.metadata.light.provides]
 elements = ["datepicker"]
+
+[lints]
+workspace = true

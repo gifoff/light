@@ -13,3 +13,6 @@ dev-mode = ["light-fw/dev-mode"]
 [dependencies]
 light-fw = { path = "../../crates/light-fw", features = ["async-runtime", "async-await"] }
 futures-timer = "3.0"
+
+[lints]
+workspace = true

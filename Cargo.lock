@@ -2407,7 +2407,6 @@ dependencies = [
  "accesskit_winit",
  "base64 0.22.1",
  "futures",
- "futures-timer",
  "light-reactivity",
  "light-vdom",
  "pixels",
@@ -2423,10 +2422,6 @@ dependencies = [
 [[package]]
 name = "light-reactivity"
 version = "0.20.0"
-dependencies = [
- "serde",
- "serde_json",
-]
 
 [[package]]
 name = "light-render-cpu"

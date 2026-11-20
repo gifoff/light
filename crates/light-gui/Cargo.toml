@@ -31,7 +31,6 @@ accesskit_winit = { version = "0.34", optional = true }
 softbuffer = { workspace = true, optional = true }
 pixels = { workspace = true, optional = true }
 futures = { version = "0.3", optional = true }
-futures-timer = { version = "3.0", optional = true }
 
 thiserror = "2"
 serde = { version = "1.0", features = ["derive"] }
@@ -49,7 +48,7 @@ wgpu-backend = ["window", "dep:pixels"]
 # Фоновые задачи и доставка сообщений в UI-поток (`spawn`/`post_to_ui`).
 async-runtime = ["window"]
 # Асинхронные замыкания (фьючи) через `futures::executor::block_on`.
-async-await = ["dep:futures", "dep:futures-timer", "async-runtime"]
+async-await = ["dep:futures", "async-runtime"]
 # Построение дерева доступности AccessKit.
 a11y = ["dep:accesskit"]
 # Интеграция с `accesskit_winit` (требует `window`).
@@ -65,7 +64,7 @@ file-dialog = ["dep:rfd"]
 devtools = ["dep:png"]
 # `<image>`: декодирование PNG-изображений (window::image) + варианты
 # NodeKind::Image/`RuntimeImage` в light-vdom.
-image-support = ["window", "dep:png", "light-vdom/image-support"]
+image-support = ["window", "dep:png"]
 # Прозрачность окна (per-pixel alpha).
 window-transparent = ["window"]
 # Модальные окна (`modal`).
@@ -88,3 +87,6 @@ elements-input = []
 elements-checkbox = ["light-vdom/elements-checkbox"]
 elements-radio = ["light-vdom/elements-radio"]
 elements-select = ["light-vdom/elements-select"]
+
+[lints]
+workspace = true

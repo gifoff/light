@@ -41,6 +41,10 @@ default = []
 network = ["dep:reqwest"]
 
 [dev-dependencies]
+# `wiremock` — только для интеграционного теста `search_integration.rs`.
 wiremock = "0.6"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 flate2 = "1"
+
+[lints]
+workspace = true

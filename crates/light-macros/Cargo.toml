@@ -50,3 +50,6 @@ toml = "0.8"
 
 [dev-dependencies]
 trybuild = "1"
+
+[lints]
+workspace = true

@@ -102,7 +102,6 @@ min-max-size = ["light-fw-macros/min-max-size"]
 # `<image>` и PNG-иконки окон: декодирование PNG живёт в light-gui (window::image).
 image-support = [
     "light-fw-macros/image-support",
-    "light-vdom/image-support",
     "light-gui/image-support",
 ]
 # Нативный диалог выбора файла (крейт `rfd` в light-gui).
@@ -115,7 +114,6 @@ file-dialog = ["light-gui/file-dialog"]
 window = [
     "dep:winit",
     "light-gui/window",
-    "light-vdom/window",
     "light-fw-macros/template-window",
 ]
 # Показ кадра через `softbuffer` (без wgpu/naga). По умолчанию включён.
@@ -123,7 +121,6 @@ softbuffer-backend = [
     "window",
     "dep:softbuffer",
     "light-gui/softbuffer-backend",
-    "light-vdom/softbuffer-backend",
 ]
 # Показ кадра через `pixels` (wgpu/naga). Альтернативный бэкенд.
 # Если включены обе фичи, используется `softbuffer-backend`.
@@ -131,7 +128,6 @@ wgpu-backend = [
     "window",
     "dep:pixels",
     "light-gui/wgpu-backend",
-    "light-vdom/wgpu-backend",
 ]
 # Прозрачность окна (per-pixel alpha).
 window-transparent = ["window", "light-gui/window-transparent"]
@@ -199,3 +195,6 @@ trybuild = "1"
 name = "performance"
 harness = false
 required-features = ["window"]
+
+[lints]
+workspace = true

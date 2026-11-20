@@ -288,11 +288,13 @@ impl RegistryProbe for CratesIoProbe {
 
 #[cfg(feature = "network")]
 fn crates_io_versions(name: &str) -> ApiOutcome {
-    #[derive(Deserialize)]
+    use serde::Deserialize;
+
+    #[derive(Debug, Deserialize)]
     struct Response {
         versions: Vec<VersionEntry>,
     }
-    #[derive(Deserialize)]
+    #[derive(Debug, Deserialize)]
     struct VersionEntry {
         num: String,
     }

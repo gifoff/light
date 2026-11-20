@@ -45,3 +45,6 @@ elements-basic = []
 elements-checkbox = []
 elements-radio = []
 elements-select = []
+
+[lints]
+workspace = true

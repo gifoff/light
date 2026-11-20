@@ -22,3 +22,6 @@ light-fw = { workspace = true, features = [
     "window-modal",
     "z-order",
 ] }
+
+[lints]
+workspace = true

@@ -7,6 +7,8 @@ use light_vdom::layout::{CHECKBOX_BOX, CHECKBOX_GAP, FIELD_PAD_X, Rect};
 
 use super::*;
 
+/// Рисует закрытое поле выпадающего списка.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_select(
     canvas: &mut Canvas,
     font: &crate::window::font::FontMetrics,
@@ -80,9 +82,9 @@ pub(crate) fn draw_select(
 }
 
 /// Рисует раскрытое меню выпадающего списка поверх интерфейса.
-#[allow(clippy::too_many_arguments)]
 #[cfg(feature = "elements-select")]
 use crate::window::font::measure;
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_select_popup(
     canvas: &mut Canvas,
     font: &crate::window::font::FontMetrics,

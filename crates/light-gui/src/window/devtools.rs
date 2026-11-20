@@ -3,6 +3,7 @@ use super::app::App;
 use light_vdom::{Event as DomEvent, KeyInfo};
 
 impl App {
+    #[cfg(feature = "a11y-winit")]
     pub(super) fn on_access_event(&mut self, event: accesskit_winit::Event) {
         let Some(state) = self.windows.get_mut(&event.window_id) else {
             return;
