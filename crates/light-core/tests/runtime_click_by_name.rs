@@ -163,7 +163,7 @@ fn runtime_text_updates_after_click() {
 }
 
 /// Первый найденный текстовый узел (его содержимое как `&str`).
-fn find_first_text<'a>(node: &'a VElement) -> Option<&'a str> {
+fn find_first_text(node: &VElement) -> Option<&str> {
     if let light_fw::vdom::NodeKind::Text { content } = &node.kind {
         return Some(content.as_str());
     }

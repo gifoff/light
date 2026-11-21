@@ -298,8 +298,16 @@ mod tests {
         assert!(dir.join(LOCKFILE_NAME).is_file());
 
         let lock = Lockfile::read(&dir).expect("read lock");
-        // Ядро в lockfile — полная версия бинарника (major.minor.patch).
-        assert_eq!(lock.core, LIGHT_DEPENDENCY_VERSION);
+        // Ядро в lockfile — нижняя граница минорного диапазона: `cargo_toml`
+        // прописывает `light-fw = "0.20"` (minor_version()), а `resolve_core_version`
+        // берёт `min_version("0.20")` = `0.20.0`. Патч-версию не проверяем — она
+        // зависит от релиза и не входит в контракт init.
+        let expected_minor = minor_version();
+        let expected_core = format!("{}.0", expected_minor);
+        assert_eq!(
+            lock.core, expected_core,
+            "ядро в lockfile — min_version(minor_version())"
+        );
     }
 
     #[test]
