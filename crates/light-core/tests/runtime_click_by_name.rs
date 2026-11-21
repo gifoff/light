@@ -120,16 +120,30 @@ fn find_button_key(node: &VElement, content: &str) -> Option<&'static str> {
 /// `render_dynamic` (runtime-парсер), и текст `{{ count }}` должен обновляться
 /// после клика (0 → 1). До правки клик по имени не доставлялся, поэтому состояние
 /// не менялось и отрисованный текст оставался прежним (скриншоты одинаковые).
+///
+/// Тест проверяет именно **runtime-дерево** (`render_dynamic`), а не статическое
+/// `render()`-фолбэк: runtime-парсер читает HTML с диска и строит `Text { content }`
+/// из `eval_field`, так что узел `{{ count }}` внутри `<div>` содержит актуальное
+/// значение (0 до клика, 1 после).
 #[test]
 fn runtime_text_updates_after_click() {
-    let app = CountApp::new();
+    use light_fw::runtime::render_dynamic;
 
-    // Начальное дерево: текст «0».
-    let tree0 = app.render();
-    let text0 = find_first_text(&tree0).expect("текстовый узел {{ count }}");
+    let app = CountApp::new();
+    // Путь к шаблону и fallback — те же, что у макроса: `CARGO_MANIFEST_DIR`
+    // + относительный путь из атрибута `#[template]`.
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/templates/counter_no_key.html"
+    );
+    let fallback = include_str!("templates/counter_no_key.html");
+
+    // Начальное runtime-дерево: текст «0» (eval_field("count") → "0").
+    let rt0 = render_dynamic(path, fallback, &app).expect("runtime-шаблон должен разобраться");
+    let text0 = find_first_text(&rt0).expect("текстовый узел {{ count }}");
     assert_eq!(
         text0, "0",
-        "интерполяция должна показать начальное значение"
+        "интерполяция в runtime-дереве должна показать начальное значение"
     );
 
     // Клик по имени обработчика (то, что шлёт `light devtools click --key increment`).
@@ -137,13 +151,14 @@ fn runtime_text_updates_after_click() {
         app.dispatch("increment", Event::Click),
         "клик по имени должен инкрементировать count"
     );
+    assert_eq!(app.count(), 1, "state обновилось");
 
     // Перерисовка: runtime-рендер вычисляет `{{ count }}` заново → «1».
-    let tree1 = app.render();
-    let text1 = find_first_text(&tree1).expect("текстовый узел {{ count }}");
+    let rt1 = render_dynamic(path, fallback, &app).expect("runtime-шаблон должен разобраться");
+    let text1 = find_first_text(&rt1).expect("текстовый узел {{ count }}");
     assert_eq!(
         text1, "1",
-        "после клика интерполяция должна обновиться 0 → 1"
+        "после клика интерполяция в runtime-дереве должна обновиться 0 → 1"
     );
 }
 
