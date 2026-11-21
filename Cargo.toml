@@ -26,6 +26,8 @@ members = [
     "crates/light-gui",
     "crates/light-render-cpu",
     "crates/light-render-gpu",
+    # --- 0.21.0: UI Foundation (виджеты Tooltip/Toast/Modal/Progress) --------
+    "crates/light-ui",
 ]
 
 [workspace.package]
@@ -68,6 +70,9 @@ light-vdom = { path = "crates/light-vdom", version = "0.20.2" }
 light-gui = { path = "crates/light-gui", version = "0.20.2" }
 light-render-cpu = { path = "crates/light-render-cpu", version = "0.20.2" }
 light-render-gpu = { path = "crates/light-render-gpu", version = "0.20.2" }
+# 0.21.0: UI Foundation — готовые виджеты (Tooltip/Toast/Modal/Progress).
+# Первая версия нового слоя; светится на 0.21.0 (не 0.20.2) до релиза 0.21.0.
+light-ui = { path = "crates/light-ui", version = "0.21.0" }
 
 syn = { version = "2", features = ["full"] }
 quote = "1"
