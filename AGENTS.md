@@ -267,6 +267,39 @@ gh run view <run-id> --log
    - После апрува — внесите изменения.
 8. **Коммит**: Используйте Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`). В сообщении коммита укажите, если были обновлены доки (например, `feat(devtools): ... (+ docs)`).
 
+## GitHub Authentication
+
+### Правило: Авторизация для `git push`
+
+Если команда `git push` завершается ошибкой авторизации (или просит пароль),
+используй токен из переменной окружения Windows (`GH_TOKEN`). **Никогда не
+вызывай `git push` без явной подстановки токена в URL**, иначе процесс зависнет
+на запросе пароля (Git попытается открыть интерактивное окно Credential Manager,
+которого агент не видит).
+
+В PowerShell используй этот паттерн для пуша:
+
+```powershell
+$token = $env:GH_TOKEN
+if (-not $token) { $token = [System.Environment]::GetEnvironmentVariable("GH_TOKEN", "User") }
+git push https://$token@github.com/gifoff/light.git HEAD:<имя_ветки>
+```
+
+Замени `<имя_ветки>` на текущую ветку (например, `release/0.21.0`).
+
+Дополнительно (рекомендуется при запуске через pwsh): чтобы гарантированно
+отключить интерактивный промпт и credential-helper'ы, которые могли бы
+перехватить ввод:
+
+```powershell
+$env:GIT_TERMINAL_PROMPT = "0"
+git -c "credential.helper=" push "https://x:$token@github.com/gifoff/light.git" HEAD:<имя_ветки>
+```
+
+> `x` перед `:$token@` — любая непустая логин-строка (вход не используется,
+> только Bearer-токен). Никогда не выводи токен в лог — при необходимости
+> маскируй его (например, `[regex]::Replace($out, [regex]::Escape($token), "<T>")`).
+
 ## Branching Strategy
 
 ### Ветки по версиям
