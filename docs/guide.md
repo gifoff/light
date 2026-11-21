@@ -54,7 +54,7 @@ Light строится на нескольких принципах:
 
 ```toml
 [dependencies]
-light-fw = "0.17"
+light-fw = "0.20"
 
 [features]
 # Включает поддержку hot-reload и DevTools
@@ -156,7 +156,7 @@ Light собран по принципу «платите только за то
 интеграция доступности:
 
 ```toml
-light-fw = "0.17" # default = ["elements-basic", "window", "softbuffer-backend", "a11y-winit"]
+light-fw = "0.20" # default = ["elements-basic", "window", "softbuffer-backend", "a11y-winit"]
 ```
 
 Для показа через `wgpu` включите `wgpu-backend`. Если включены обе фичи,
@@ -166,13 +166,17 @@ light-fw = "0.17" # default = ["elements-basic", "window", "softbuffer-backend",
 
 Начиная с этой версии библиотека разбита на ядро и компоненты:
 
-| Крейт                       | Роль                                                                 | Как подключается |
-| --------------------------- | -------------------------------------------------------------------- | ---------------- |
-| `light-fw-core`                | Ядро: валидация, фасад 0.19.x (GUI вынесен в `light-gui`)           | фичи крейта      |
-| `light-gui`                   | GUI-слой: окно на winit, события, a11y, рендер-бэкенды, async-runtime | фичи крейта (window, softbuffer-backend, a11y-winit, …) |
-| `light-fw`                    | Мета-крейт: реэкспортирует ядро, макросы и подключённые компоненты  | обычная зависимость |
-| `light-fw-element-form`        | Компонент-элемент: `<checkbox>`, `<radio>`, `<select>`/`<option>`    | фича `elements-form` или прямая зависимость |
-| `light-fw-behavior-validation` | Компонент-поведение: `required`, `:validator`, `@validate`           | фича `validation` или прямая зависимость |
+| Крейт                        | Роль                                                                                                  | Как подключается |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------- |
+| `light-fw-core`              | Фасад 0.19.x, **headless by default** (0.20.0): реэкспорт всех слоёв; GUI-фичи (окно/рендер/a11y) — опциональные | фичи крейта |
+| `light-reactivity`          | Сигналы: `Property`, `Proxy`, `Observer`, `Watcher`, `watch`. Вынесен из `light-fw-core` (0.20.0, этап 2) | фича `async-runtime` / реэкспорт `reactive` |
+| `light-vdom`                | VDOM, layout, DOM, runtime, plugins, validation. Вынесен из `light-fw-core` (0.20.0, этапы 2–3)       | фичи крейта (`elements-*`, `window`, `runtime-templates`, …) |
+| `light-gui`                 | GUI-слой: окно на `winit`, a11y-мост AccessKit, `file_dialog`, `async_runtime`, devtools. Вынесен из `light-fw-core` (0.20.0, этап 4). **Рендер-бэкенды не здесь** — в `light-render-cpu`/`light-render-gpu` | фичи крейта (`window`, `a11y-winit`, `file-dialog`, `devtools`, …) |
+| `light-render-cpu`          | Программная отрисовка через `softbuffer` (CPU-бэкенд). Вынесен из `light-gui` (0.20.0, этап 5)        | фича `softbuffer-backend` |
+| `light-render-gpu`          | Аппаратная отрисовка через `pixels` (wgpu/naga). Вынесен из `light-gui` (0.20.0, этап 5)             | фича `wgpu-backend` |
+| `light-fw`                  | Мета-крейт: реэкспортирует ядро, макросы и подключённые компоненты                                    | обычная зависимость |
+| `light-fw-element-form`      | Компонент-элемент: `<checkbox>`, `<radio>`, `<select>`/`<option>`                                      | фича `elements-form` или прямая зависимость |
+| `light-fw-behavior-validation` | Компонент-поведение: `required`, `:validator`, `@validate`                                             | фича `validation` или прямая зависимость |
 
 Крейт `light-fw` транслирует свои фичи в фичи `light-fw-core` (например,
 `light-fw/elements-form` → `light-fw-core/elements-form` и `light-fw-element-form`),
@@ -248,7 +252,7 @@ light-fw = "0.17" # default = ["elements-basic", "window", "softbuffer-backend",
 Минимальная сборка — только базовые элементы без окна:
 
 ```toml
-light-fw = { version = "0.17", default-features = false, features = ["elements-basic"] }
+light-fw = { version = "0.20", default-features = false, features = ["elements-basic"] }
 ```
 
 Если шаблон использует элемент, для которого фича не включена, компилятор сообщит об ошибке и подскажет, какую фичу добавить. Пользовательскую валидацию включает `validation`; ограничения размера — `min-max-size`.
@@ -336,7 +340,7 @@ light suggest # что стоит добавить
 
 ```
 🟢 Установлено:
-  - light-fw-element-form 0.17.0 (elements: select, checkbox, radio, option)
+  - light-fw-element-form 0.20.0 (elements: select, checkbox, radio, option)
 
 🟡 Доступно (установить):
   - datepicker → light-widget-datepicker ^0.18
@@ -345,7 +349,7 @@ light suggest # что стоит добавить
   - my-custom-tag
 
 🗑 Не используется (можно убрать из Cargo.toml):
-  - light-fw-behavior-validation 0.17.0
+  - light-fw-behavior-validation 0.20.0
 
 ⚠️ Конфликты:
   - datepicker: light-widget-datepicker, light-fw-datepicker
@@ -423,7 +427,7 @@ Light doctor
   ⚠ light.lock отсутствует (воспроизводимость не гарантирована)
 
 Компоненты (1):
-  ✓ light-fw-element-form 0.17.0 (совместим)
+  ✓ light-fw-element-form 0.20.0 (совместим)
 ```
 
 ### `light search <запрос>`
@@ -588,7 +592,7 @@ $ light add light-fw-datepicker --features calendar,timezone --yes
 Для `<image>` включите фичу `image-support`:
 
 ```toml
-light-fw = { version = "0.17", features = ["image-support"] }
+light-fw = { version = "0.20", features = ["image-support"] }
 ```
 
 ```html
@@ -622,7 +626,7 @@ fn load_avatar(path: &Path) -> light_fw::Result<ImageData> {
 диалог доступен с фичей `file-dialog`:
 
 ```toml
-light-fw = { version = "0.17", features = ["image-support", "file-dialog"] }
+light-fw = { version = "0.20", features = ["image-support", "file-dialog"] }
 ```
 
 ```rust

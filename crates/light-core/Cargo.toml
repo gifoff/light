@@ -34,11 +34,11 @@ light-gui = { workspace = true }
 # `light_gui::run_with_backend` — см. `src/lib.rs`.
 light-render-cpu = { workspace = true, optional = true }
 light-render-gpu = { workspace = true, optional = true }
-# Регистрация плагин-компонентов через distributed slice (Plugin API, Этап 3):
-# каждый плагин кладёт фабрику в `[CustomElementFactory; ..]`, сборка склеивает
-# слайсы всех крейтов бинарника. Не опциональна: слайс пуст, если плагины не
-# подключены.
-linkme = "0.3"
+# NOTE (0.20.2 cleanup): `linkme` убран из [dependencies] — ядро не содержит
+# distributed-slice напрямую (регистрация плагин-компонентов живёт в
+# `light-vdom::plugins`). В [dev-dependencies] он остаётся для интеграционного
+# теста `tests/custom_elements.rs`, который объявляет
+# `#[linkme::distributed_slice(REGISTERED_COMPONENTS)]`.
 light-fw-html.workspace = true
 light-fw-macros.workspace = true
 # Не опциональны: `Component::inspect_state`/`inject_state` и генерируемый
@@ -190,6 +190,10 @@ runtime-templates = [
 ]
 
 [dev-dependencies]
+# Интеграционный тест `tests/custom_elements.rs` использует
+# `#[linkme::distributed_slice(REGISTERED_COMPONENTS)]` для регистрации
+# пользовательских элементов (Plugin API, Этап 3) — нужен только в тестах.
+linkme = "0.3"
 # Этап 4 (Strangler Fig): интеграционные тесты a11y_*.rs используют типы
 # `accesskit::{Role, NodeId, TreeUpdate}` напрямую — добавляем в dev-deps
 # с той же версией, что и в `light-gui` (там это уже опциональная зависимость).

@@ -28,7 +28,7 @@ description = "Date picker component for Light"
 repository = "https://github.com/<user>/light-fw-datepicker"
 
 [dependencies]
-light-fw = "0.17"
+light-fw = "0.20"
 
 # Для поддержки локальной разработки с Hot Reload
 [features]
@@ -39,8 +39,8 @@ dev-mode = ["light-fw/dev-mode"]
 
 ```toml
 [dependencies]
-light-fw = { version = "0.17", features = ["elements-form"] }
-light-fw-element-form = "0.17"
+light-fw = { version = "0.20", features = ["elements-form"] }
+light-fw-element-form = "0.20"
 ```
 
 ## 3. Минимальный компонент
@@ -92,7 +92,7 @@ fn main() -> light_fw::Result<()> {
 [package.metadata.light]
 kind = "widget"
 display-name = "Date Picker"
-core = "^0.17"
+core = "^0.20"
 
 [package.metadata.light.registry]
 official = false

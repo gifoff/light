@@ -53,17 +53,17 @@ repository = "https://github.com/<user>/light-widget-datepicker"
 
 [dependencies]
 # Крейт `light-fw` реэкспортирует ядро и макросы `#[template]`/`#[proxy]`.
-light-fw = { version = "0.17", default-features = false, features = [
+light-fw = { version = "0.20", default-features = false, features = [
     "elements-basic",
     "elements-form",
 ] }
-light-fw-element-form = { version = "0.17" }
+light-fw-element-form = { version = "0.20" }
 
 [package.metadata.light]
 kind = "widget"
 display-name = "Date Picker"
 # Актуальная мажорная версия ядра
-core = "^0.17"
+core = "^0.20"
 
 [package.metadata.light.provides]
 elements = ["datepicker"]
@@ -72,7 +72,7 @@ directives = []
 
 [package.metadata.light.requires]
 components = [
-    "light-fw-element-form ^0.17",
+    "light-fw-element-form ^0.20",
 ]
 ```
 

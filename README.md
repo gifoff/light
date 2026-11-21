@@ -44,7 +44,7 @@ light init my-app --template counter
 
 ## Статус
 
-Текущая версия — **0.20.0**. Проект в стадии **пре-1.0**: публичный API ещё не стабилен и может меняться между минорными версиями. Мы следуем семверу.
+Текущая версия — **0.20.2**. Проект в стадии **пре-1.0**: публичный API ещё не стабилен и может меняться между минорными версиями. Мы следуем семверу.
 
 **Модульность (новое в 0.20.0):** `light-fw-core` декомпозирован на 5 слоёв
 (`light-reactivity`, `light-vdom`, `light-gui`, `light-render-cpu`,
@@ -75,7 +75,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-light-fw = "0.17"
+light-fw = "0.20"
 
 [features]
 dev-mode = ["light-fw/dev-mode"]
@@ -205,7 +205,7 @@ Light разделён на крейты, чтобы вы подключали �
 | Крейт | Default-фичи | Ключевые фичи |
 | --- | --- | --- |
 | `light-fw-core` | `elements-basic` | `window`, `softbuffer-backend`, `wgpu-backend`, `a11y`, `a11y-winit`, `file-dialog`, `async-runtime`, `devtools`, `min-max-size`, `elements-*` |
-| `light-fw` | `elements-basic`, `window`, `softbuffer-backend`, `a11y-winit` | те же, что у ядра + `dev-mode`, `hot-reload`, `runtime-templates`, `devtools` |
+| `light-fw` | `elements-basic`, `window`, `softbuffer-backend`, `a11y-winit` | те же, что у ядра + `dev-mode`, `runtime-templates`, `devtools` |
 | `light-gui` | *(none)* | `window`, `a11y`, `file-dialog`, `async-runtime`, `devtools` |
 | `light-render-cpu` | *(none)* | `window` |
 | `light-render-gpu` | *(none)* | `window` |
