@@ -1,3 +1,24 @@
+## [0.20.2] - 2026-11-21
+
+### Fixed
+
+- **Layout: авто-ширина текстовых контейнеров** (`crates/light-vdom/src/layout/`).
+  Колонка `Column` с auto-шириной, чьё содержимое состоит только из атомарных
+  узлов (текст, поле, изображение — например `<div>{{ count }}</div>` из
+  runtime-шаблона), при родителе с `align-items != start` получала нулевую базу
+  ширины, и внутренний текст (`width=100%`) обнулялся — глиф не рендерился.
+  Теперь такие контейнеры авторазмериваются по max-content (аналог хедеров
+  `h1`–`h5` и кнопок). Новый предикат `is_text_container` в `base.rs`; условие
+  `!stretch_w` исключает контейнеры, которые родитель уже растягивает.
+- **DevTools Shot: устаревший framebuffer** (`crates/light-gui/src/window/devtools.rs`).
+  В headless-режиме (NullBackend) нет `RedrawRequested` от winit, поэтому
+  framebuffer мог устареть, и `shot` кодировал предыдущий кадр. Перед чтением
+  `frame_mut()` теперь вызываются `window.invalidate()` + `window.redraw()`,
+  что гарантирует актуальный кадр.
+- **Тест `runtime_text_updates_after_click`** (`crates/light-core/tests/`).
+  Обновлён для проверки дерева, возвращаемого `render_dynamic` (runtime-данные),
+  а не статического `render()`.
+
 ## [0.20.0] - 2026-11-20
 
 ### Added

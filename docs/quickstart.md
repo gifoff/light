@@ -44,7 +44,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-light-fw = "0.17"
+light-fw = "0.20"
 
 [features]
 dev-mode = ["light-fw/dev-mode"]

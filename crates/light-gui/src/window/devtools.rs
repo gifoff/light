@@ -414,6 +414,15 @@ impl App {
                     let _ = response_tx.send(Some("error: no window".to_owned()));
                     return;
                 };
+                // Принудительный перерендер: в headless-режиме нет RedrawRequested
+                // от winit, поэтому framebuffer может устареть. invalidate() ставит
+                // full_redraw, redraw() пересобирает VDOM и красит свежий кадр в
+                // surface — затем мы кодируем именно этот актуальный буфер.
+                window.invalidate();
+                if let Err(e) = window.redraw() {
+                    let _ = response_tx.send(Some(format!("error: redraw failed: {e}")));
+                    return;
+                }
                 let (w, h) = window.surface.size();
                 let buf: Vec<u8> = window.surface.frame_mut().to_vec();
                 let b64 = crate::devtools::encode_screenshot(&buf, w, h);

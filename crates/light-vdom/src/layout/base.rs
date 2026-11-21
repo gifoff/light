@@ -3,7 +3,7 @@
 
 use std::{cell::RefCell, collections::HashMap};
 
-use crate::vdom::{Edges, NodeKind, Overflow, Style, VElement, WhiteSpace};
+use crate::vdom::{Edges, NodeKind, Overflow, Position, Style, VElement, WhiteSpace};
 
 /// Шрифт интерфейса по умолчанию (px).
 pub const FONT_SIZE: f32 = 16.0;
@@ -166,6 +166,37 @@ pub(crate) fn button_extra_padding(vnode: &VElement, style: &Style) -> Edges {
 /// контентной ширины, обнуляется вместе с ним.
 pub(crate) fn is_heading(vnode: &VElement) -> bool {
     matches!(vnode.kind, NodeKind::Column) && matches!(vnode.tag, "h1" | "h2" | "h3" | "h4" | "h5")
+}
+
+/// Контейнер-колонка, чьё содержимое состоит только из атомарных
+/// «неконтейнерных» узлов (текст, поле, изображение, кастомный элемент).
+///
+/// Такие колонки (например `<div>{{ count }}</div>` в runtime-шаблоне)
+/// раскладываются так же, как заголовки `h1`–`h5`: при `align-items != start`
+/// родителя их auto-ширина получает нулевую базу, и внутренний текст
+/// (`width=100%`) обнуляется. Функция возвращает `true`, когда все видимые
+/// flow-дети — неконтейнерные узлы, т.е. поддерево не содержит вложенных
+/// Column/Row/Window/Button/TitleBar-контейнеров. Пустая колонка и колонка
+/// с хотя бы одним контейнером внутри — `false` (обычный путь раскладки).
+pub(crate) fn is_text_container(vnode: &VElement) -> bool {
+    use NodeKind::*;
+    if !matches!(vnode.kind, Column) {
+        return false;
+    }
+    if vnode.children.is_empty() {
+        return false;
+    }
+    vnode
+        .children
+        .iter()
+        .filter(|c| c.style.visible && c.style.position == Position::Flow)
+        .all(|c| match c.kind {
+            // Вложенные контейнеры — не текстовый блок (обычный путь раскладки).
+            // Остальные узлы (Text/TextField/Image/Checkbox/Radio/Select/Custom/
+            // RuntimeImage и др.) — атомарные, допустимы внутри текстового блока.
+            Column | Row | TitleBar | Window | Button { .. } => false,
+            _ => true,
+        })
 }
 
 /// Ось `cross`-растяжения потомков в потоке родителя.

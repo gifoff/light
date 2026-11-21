@@ -1,6 +1,6 @@
 [package]
 name = "light-vdom"
-version = "0.20.0"
+version = "0.20.2"
 edition = "2024"
 rust-version = "1.95"
 description = "VDOM, layout, DOM tree and runtime for the Light UI framework (stage 3 of the light-fw-core decomposition)"
@@ -21,14 +21,17 @@ serde_json = "1.0"
 light-reactivity = { workspace = true }
 light-fw-html = { workspace = true }
 
-# Оциональные зависимости (перенесены из light-fw-core в Этапе 3 — Strangler Fig).
-# В light-fw-core они остаются как feature-зависимости до этапа 4.
+# Опциональная зависимость (перенесена из light-fw-core в Этапе 3 — Strangler Fig):
+# декодирование PNG для `<image>` и иконок. `winit` удалён (0.20.2 cleanup):
+# окно живёт в `light-gui`; фича `window` ниже — только локальный канал
+# `WindowCommand`/`WindowToken`, без оконных зависимостей.
 png = { workspace = true, optional = true }
-winit = { workspace = true, optional = true }
 
 [features]
 default = []
-window = ["dep:winit"]
+# Локальный channel окна (`WindowCommand`/`WindowToken` в `window_backend`);
+# реальные окна/winit — в `light-gui`. Зависимостей внешних не тянет.
+window = []
 image-support = ["dep:png"]
 async-runtime = []
 runtime-templates = []

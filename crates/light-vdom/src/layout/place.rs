@@ -411,11 +411,21 @@ impl super::base::Layout {
                 // Кастомный элемент течёт вертикально (как Column): горизонтально
                 // остаются только Row и TitleBar.
                 let horizontal = matches!(vnode.kind, NodeKind::Row | NodeKind::TitleBar);
-                // Заголовок `h1`–`h5` (`Column` с теком-меткой) при `align-items !=
-                // start` родителя получает нулевую базу ширины и его внутренний текст
-                // (`width=100%`) обнуляется. Как у кнопки: авторазмер по max-content —
-                // детей раскладываем в безлимитной ширине и считаем её по содержимому.
-                let is_head = !root && is_heading(vnode) && matches!(style.width, Size::Auto);
+                // Заголовок `h1`–`h5` (`Column` с тегом-меткой) или текстовый
+                // контейнер (колонка, чьё содержимое — только атомарные узлы:
+                // текст/поле/изображение, например `<div>{{ count }}</div>` из
+                // runtime-шаблона) при `align-items != start` родителя получают
+                // нулевую базу ширины, и их внутренний текст (`width=100%`)
+                // обнуляется. Как у кнопки: авторазмер по max-content — детей
+                // раскладываем в безлимитной ширине и считаем её по содержимому.
+                //
+                // `!stretch_w` — когда родитель растягивает (`align-items=start`),
+                // авто-ширина уже получает полную ширину (`definite_w = avail_w`),
+                // и max-content не нужен: обычный путь корректен.
+                let is_head = !root
+                    && !stretch_w
+                    && matches!(style.width, Size::Auto)
+                    && (is_heading(vnode) || is_text_container(vnode));
                 // Контентная область, которую узел отдаёт детям под проценты:
                 // собственный определённый размер минус внутренние отступы.
                 // Для заголовка с авто-шириной — ширина не ограничена, чтобы внутренний
@@ -629,10 +639,11 @@ impl super::base::Layout {
                 self.nodes[index].rect = Rect::new(flow_x, flow_y, w, h);
                 let content = ContentBox::from_rect(self.nodes[index].rect, inset);
                 if is_head {
-                    // Дети заголовка выкладывались в безлимитной content box на
-                    // нулевой базе; пересаживаем их целиком в итоговый (расширенный)
-                    // content box: позиция — по content box, ширина `width=100%`
-                    // текста растягивается на его `w`. Аналог центрирования кнопки.
+                    // Заголовок / текстовый контейнер с авто-шириной: дети
+                    // выкладывались в безлимитной content box на нулевой базе;
+                    // пересаживаем их целиком в итоговый (расширенный) content
+                    // box: позиция — по content box, ширина `width=100%` текста
+                    // растягивается на его `w`. Аналог центрирования кнопки.
                     let dx = content.left - measure_content.left;
                     let dy = content.top - measure_content.top;
                     for ci in self.nodes[index].children.clone() {
