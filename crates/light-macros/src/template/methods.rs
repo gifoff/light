@@ -35,15 +35,35 @@ pub(super) fn build_methods(
     form_validators: &[(String, TokenStream)],
     loaded_files: &[String],
 ) -> BuiltMethods {
-    let invoke_arms: Vec<TokenStream> = click_handlers
-        .iter()
-        .map(|(handler_name, (call_tokens, _))| {
-            quote! { #handler_name => {
-                #call_tokens();
+    // Две ветки на каждый `@click` (см. пояснение в pipeline.rs:185-208): по
+    // ИМЕНИ обработчика и по КЛЮЧУ узла. Runtime-дерево без явного `key=`
+    // ключирует кнопку по имени обработчика — до 0.20.1 генерировалась только
+    // ветка по позиционному статическому ключу, поэтому `click --key increment`
+    // проваливался в `_ => false`. Теперь имя сопоставляется как точный литерал,
+    // а явный `key="inc_btn"` покрывает ветка по ключу узла.
+    //
+    // Дублировать ветки не страшно: позицияльный статический ключ уникален на
+    // узел (не совпадёт ни с именем, ни с чужим ключом), а имена дедуплицируются
+    // BTreeSet'ом (два узла с одним именем дают одну рабочую ветку).
+    let mut seen_names: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    let mut invoke_arms: Vec<TokenStream> = Vec::new();
+    for (key_token, (call_tokens, name)) in click_handlers {
+        // 1. По имени обработчика — точный литерал (основной путь runtime).
+        if seen_names.insert(name.as_str()) {
+            let name_lit = LitStr::new(name, Span::call_site());
+            let call = call_tokens.clone();
+            invoke_arms.push(quote! { #name_lit => {
+                #call();
                 true
-            } }
-        })
-        .collect();
+            } });
+        }
+        // 2. По ключу узла (явный `key="inc_btn"` / позиционный `"0.2"`) —
+        // для случая, когда DevTools шлёт свой ключ, отличный от имени.
+        invoke_arms.push(quote! { #key_token => {
+            #call_tokens();
+            true
+        } });
+    }
 
     let invoke_handler_method = if click_handlers.is_empty() {
         quote! {}
