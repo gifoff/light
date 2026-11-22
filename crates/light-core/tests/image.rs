@@ -12,8 +12,15 @@ use light_fw::vdom::{NodeKind, VElement, diff};
 #[proxy]
 struct ImageApp {}
 
+/// Ищет узел-изображение в дереве: либо `Image` (compile-time), либо
+/// `RuntimeImage` (runtime-templates). Под `--all-features` включена фича
+/// `runtime-templates`, поэтому `render()` может вернуть оба варианта —
+/// тесты обязаны принимать оба.
 fn find_image(node: &VElement) -> Option<&VElement> {
-    if matches!(node.kind, NodeKind::Image { .. }) {
+    if matches!(
+        node.kind,
+        NodeKind::Image { .. } | NodeKind::RuntimeImage { .. }
+    ) {
         return Some(node);
     }
     node.children.iter().find_map(find_image)
@@ -36,7 +43,14 @@ fn image_macro_embeds_png_and_reads_dimensions() {
             assert_eq!(alt, "Проверочное изображение");
             assert!(data.starts_with(b"\x89PNG\r\n\x1a\n"));
         }
-        _ => unreachable!(),
+        NodeKind::RuntimeImage { image, alt } => {
+            assert_eq!(alt, "Проверочное изображение");
+            // Размеры из IHDR того же checker.png (4×2).
+            assert_eq!((image.width(), image.height()), (4, 2));
+            // Байты PNG начинаются с magic number.
+            assert!(image.bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+        }
+        _ => unreachable!("find_image вернул не изображение"),
     }
 }
 
@@ -44,12 +58,22 @@ fn image_macro_embeds_png_and_reads_dimensions() {
 fn image_alt_is_exposed_to_accessibility() {
     let tree = ImageApp::new().render();
     let image = find_image(&tree).expect("изображение в дереве");
-    assert_eq!(image.attr("alt"), Some("Проверочное изображение"));
+    // a11y-роль должна быть `Image` для обоих вариантов.
     #[cfg(feature = "a11y")]
     assert_eq!(
         light_fw::a11y::roles::role_for(image),
         light_fw::a11y::AriaRole::Image
     );
+    // alt обязателен в обоих случаях — проверяем поле напрямую.
+    match &image.kind {
+        NodeKind::Image { alt, .. } => {
+            assert_eq!(alt, "Проверочное изображение");
+        }
+        NodeKind::RuntimeImage { alt, .. } => {
+            assert_eq!(alt, "Проверочное изображение");
+        }
+        _ => unreachable!(),
+    }
 }
 
 fn image_node(src: &'static str, data: &'static [u8], alt: &str) -> VElement {
