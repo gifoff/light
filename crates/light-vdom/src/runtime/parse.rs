@@ -10,6 +10,9 @@ use crate::{
     vdom::{Align, NodeKind, Overflow, VElement, intern_key},
 };
 
+#[cfg(feature = "image-support")]
+use crate::vdom::ImageData;
+
 #[cfg(feature = "runtime-templates")]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "runtime-templates")]
@@ -205,6 +208,9 @@ enum ElementKind {
     Checkbox,
     Radio,
     Select,
+    /// Изображение (`<image>`): PNG-данные и `alt`.
+    #[cfg(feature = "image-support")]
+    Image(ImageData, String),
 }
 
 /// Эвалюирует директиву `v-if` в runtime-режиме.
@@ -323,6 +329,52 @@ pub(crate) fn build_element<C: Component + ?Sized>(
         "checkbox" => (ElementKind::Checkbox, None),
         "radio" => (ElementKind::Radio, None),
         "select" => (ElementKind::Select, None),
+        // `<image>`: PNG читается с диска в runtime; `width`/`height` обрабатываются
+        // общим путём стилей ниже (layout берёт их против intrinsic-размера).
+        #[cfg(feature = "image-support")]
+        "image" => {
+            let src = attr_value(&element.attrs, "src")
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            // Атрибут обязателен (тот же контракт, что в compile-time макросе).
+            let Some(src) = src else {
+                parse_fail(&element.name, "src", "");
+                return None;
+            };
+            // Слэш-направление допускаем: шаблон может писать `assets\x.png`.
+            let src = src.replace('\\', "/");
+            let alt = attr_value(&element.attrs, "alt")
+                .unwrap_or_default()
+                .to_owned();
+            // Файл читается относительно CWD — `light dev` работает в каталоге
+            // проекта (как и macro: путь из `src` относителен к Cargo.toml).
+            let bytes = match std::fs::read(&src) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    eprintln!("light: <image> не удалось прочитать файл {src:?}: {e}");
+                    return None;
+                }
+            };
+            let image = match ImageData::from_png(bytes) {
+                Ok(image) => image,
+                Err(e) => {
+                    eprintln!("light: <image> не удалось декодировать PNG {src:?}: {e}");
+                    return None;
+                }
+            };
+            (ElementKind::Image(image, alt), None)
+        }
+        #[cfg(not(feature = "image-support"))]
+        "image" => {
+            // Явное сообщение вместо «неподдерживаемый тег»: тег известен, но
+            // фича выключена. Формулировка как в compile-time макросе.
+            eprintln!(
+                "light: тег <image> недоступен: Cargo-фича `image-support` выключена\n \
+                 help: включите её в зависимости, например \
+                 `light-fw = {{ features = [\"image-support\"] }}`"
+            );
+            return None;
+        }
         // Нестандартный тег: ищем зарегистрированную фабрику плагина (Plugin API,
         // Этап 3). Если плагин подключён — строим кастомный элемент через его
         // render(); если нет — это неподдерживаемый тег (откат как раньше).
@@ -343,6 +395,17 @@ pub(crate) fn build_element<C: Component + ?Sized>(
         ElementKind::Checkbox => build_checkbox(element, key, component)?,
         ElementKind::Radio => build_radio(element, key, component)?,
         ElementKind::Select => build_select(element, key, component)?,
+        #[cfg(feature = "image-support")]
+        ElementKind::Image(image, alt) => {
+            // `ImageData` — дешёвый clone (Arc-подложка), alt — короткий String.
+            VElement::leaf(
+                intern_key(key),
+                NodeKind::RuntimeImage {
+                    image: image.clone(),
+                    alt: alt.clone(),
+                },
+            )
+        }
     };
     let style = build_style(&element.name, &element.attrs, default_font, component)?;
     let (raw_tag, raw_attrs) = collect_meta(&element.attrs, &element.name);

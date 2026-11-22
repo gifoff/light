@@ -224,3 +224,148 @@ mod v_if_tests {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Runtime-поддержка `<image>` (0.21.0, ФИКС 1): PNG читается с диска, узел
+// строится как `NodeKind::RuntimeImage`; width/height проходят общим путём.
+// ---------------------------------------------------------------------------
+#[cfg(feature = "runtime-templates")]
+mod image_runtime_tests {
+    use crate::{
+        component::Component,
+        runtime::parse::parse_template,
+        vdom::{NodeKind, VElement, intern_key},
+    };
+
+    /// Тестовый компонент без полей и реактивности.
+    struct NullComponent;
+    impl Component for NullComponent {
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+
+        fn render(&self) -> VElement {
+            VElement::container(intern_key(""), NodeKind::Column, Vec::new())
+        }
+    }
+
+    /// Рекурсивный поиск `NodeKind::RuntimeImage` в runtime-дереве.
+    #[cfg(feature = "image-support")]
+    fn find_runtime_image(node: &VElement) -> Option<&VElement> {
+        match &node.kind {
+            NodeKind::RuntimeImage { .. } => Some(node),
+            _ => node.children.iter().find_map(find_runtime_image),
+        }
+    }
+
+    /// Валидный 2×1 RGBA-PNG (прозрачный) как base64: сигнатура, IHDR
+    /// (w=2, h=1, bit=8, color=6), один IDAT (zlib-стим: 1 store-block на
+    /// 9 байт), IEND. Декодер `png` (workspace-зависимость) подтвердит
+    /// корректность; размеры проверит `ImageData::from_png`.
+    const MIN_PNG_B64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAMSURBVBhXY4AABgYAAAkAAYD316gAAAAASUVORK5CYII=";
+
+    /// Базовый набор base64 для декода PNG-файкса.
+    const B64_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    /// Декодирует base64 в байты (без поддержки `+`/`/`, только standard).
+    /// `=` padding игнорируется.
+    fn b64_decode(s: &str) -> Vec<u8> {
+        let s: String = s
+            .chars()
+            .filter(|c| *c != '=' && !c.is_whitespace())
+            .collect();
+        let mut out = Vec::with_capacity(s.len());
+        let mut buf: u32 = 0;
+        let mut bits: u32 = 0;
+        for ch in s.bytes() {
+            let v = B64_ALPHABET.iter().position(|&b| b == ch).unwrap() as u32;
+            buf = (buf << 6) | v;
+            bits += 6;
+            if bits >= 8 {
+                bits -= 8;
+                out.push(((buf >> bits) & 0xFF) as u8);
+            }
+        }
+        out
+    }
+
+    /// Создаёт каталог `dir/target/temp/...` (в пределах workspace) и пишет
+    /// PNG-файкс, возвращая путь. `CARGO_TARGET_DIR` — рабочая директория,
+    /// доступная в тестах.
+    fn write_test_png(sub: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let base = std::env::var("CARGO_TARGET_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("target"));
+        let dir = base.join("temp").join(format!("vdom-image-{sub}"));
+        std::fs::create_dir_all(&dir).expect("test dir created");
+        let bytes = b64_decode(MIN_PNG_B64);
+        assert!(!bytes.is_empty(), "b64 decode must be non-empty");
+        let path = dir.join("temp.png");
+        std::fs::write(&path, &bytes).expect("test png written");
+        (dir, path)
+    }
+
+    /// `<image src="…png" alt="…">` → `NodeKind::RuntimeImage` с ожидаемыми
+    /// `width`/`height`/`alt`, плюс `width`/`height` атрибуты работают через
+    /// общий стайл-путь (style.width/height = Px(...)).
+    #[cfg(feature = "image-support")]
+    #[test]
+    fn runtime_image_decodes_and_lays_out() {
+        let (dir, _png) = write_test_png("decode");
+        let old_cwd = std::env::current_dir().unwrap();
+        let _ = std::env::set_current_dir(&dir);
+        let html = r#"<window title="t"><image src="temp.png" alt="Alt text" width="100" height="50" /></window>"#;
+        let tree = parse_template(html, &NullComponent).expect("runtime <image> parsed");
+        let img = find_runtime_image(&tree).expect("RuntimeImage обязан быть в дереве");
+        match &img.kind {
+            NodeKind::RuntimeImage { image, alt } => {
+                assert_eq!(*alt, "Alt text", "alt должен сохраниться");
+                assert_eq!(
+                    (image.width(), image.height()),
+                    (2, 1),
+                    "размеры из IHDR тестового PNG (2×1)"
+                );
+                assert!(!image.bytes.is_empty(), "буфер PNG не пуст");
+            }
+            _ => unreachable!("find_runtime_image вернул не RuntimeImage"),
+        }
+        // Атрибуты width/height → style.width/height (общий путь build_style),
+        // layout разрешит их против intrinsic-размера узла.
+        assert!(
+            matches!(img.style.width, crate::vdom::Size::Px(100.0)),
+            "width=\"100\" обязан стать style.width = Px(100)"
+        );
+        assert!(
+            matches!(img.style.height, crate::vdom::Size::Px(50.0)),
+            "height=\"50\" обязан стать style.height = Px(50)"
+        );
+        let _ = std::env::set_current_dir(&old_cwd);
+    }
+
+    /// Отсутствующий файл → `parse_fail` + None (без panics).
+    #[cfg(feature = "image-support")]
+    #[test]
+    fn runtime_image_missing_file_returns_none() {
+        let (dir, _png) = write_test_png("missing");
+        let old_cwd = std::env::current_dir().unwrap();
+        let _ = std::env::set_current_dir(&dir);
+        // Файл `absent.png` не существует в этом каталоге — декодирование
+        // должно вернуть None (fallback на статическое дерево).
+        let html = r#"<window title="t"><image src="absent.png" /></window>"#;
+        assert!(
+            parse_template(html, &NullComponent).is_none(),
+            "отсутствующий PNG → None"
+        );
+        let _ = std::env::set_current_dir(&old_cwd);
+    }
+
+    /// Несуществующий тег (проверка, что наш новый arm не заслоняет кастомный
+    /// путь — кастомные элементы всё ещё идут через catch-all `_`).
+    #[test]
+    fn runtime_unknown_tag_still_falls_to_custom() {
+        // Кастомный элемент уже покрыт другими тестами; здесь проверим, что
+        // неизвестный тег по-прежнему даёт None (и не «подпадает» под image).
+        let html = r#"<totally-unknown-tag />"#;
+        assert!(parse_template(html, &NullComponent).is_none());
+    }
+}
