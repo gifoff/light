@@ -14,11 +14,18 @@ mod tests {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
     fn scratch(name: &str) -> PathBuf {
+        // CWD-относительный каталог: `temp_dir()` может быть недоступен в
+        // sandboxed окружении (PermissionDenied при записи), а текущий каталог —
+        // всегда. Ключ из pid + нано-времени + счётчика уникален на хосте.
         let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!(
-            "light-fw-cli-init-{name}-{}-{unique}",
-            std::process::id()
-        ));
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let pid = std::process::id();
+        let dir = std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(format!("light-fw-cli-init-{name}-{pid}-{nanos}-{unique}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch dir");
         dir
@@ -80,6 +87,7 @@ mod tests {
         assert!(names.contains(&".gitignore".to_string()));
         assert!(names.contains(&".cargo/config.toml".to_string()));
         assert!(names.contains(&"light.config.json".to_string()));
+        assert!(names.contains(&"AGENT.md".to_string()));
         // main.rs использует `#[template]` (HTML-шаблон).
         let main = plan
             .files
@@ -89,6 +97,43 @@ mod tests {
             .expect("main.rs in plan");
         assert!(main.contains("#[template"), "{main}");
         assert!(plan.write_lockfile);
+    }
+
+    #[test]
+    fn agent_md_is_always_generated_with_core_cheatsheet() {
+        // В каждом проекте (default и minimal) есть `AGENT.md` с ключевыми
+        // строками шпаргалки: не читать исходники, `<text>` — поле ввода,
+        // команды `light devtools`, ссылка на guide.md.
+        for options in [
+            InitOptions {
+                name: "with-agent".to_string(),
+                path: None,
+                minimal: false,
+                components: Vec::new(),
+                template: None,
+            },
+            InitOptions {
+                name: "minimal-agent".to_string(),
+                path: None,
+                minimal: true,
+                components: Vec::new(),
+                template: Some(InitTemplate::Counter),
+            },
+        ] {
+            let plan = plan(&options).expect("plan");
+            let text = plan
+                .files
+                .iter()
+                .find(|(path, _)| path.to_string_lossy().replace('\\', "/") == "AGENT.md")
+                .map(|(_, c)| c.as_str())
+                .unwrap_or_else(|| {
+                    panic!("AGENT.md отсутствует в плане (minimal={})", options.minimal)
+                });
+            assert!(text.contains("НЕ ЧИТАЙ ИСХОДНИКИ"), "{text}");
+            assert!(text.contains("поле ввода"), "{text}");
+            assert!(text.contains("light devtools"), "{text}");
+            assert!(text.contains("docs/guide.md"), "{text}");
+        }
     }
 
     #[test]
@@ -254,11 +299,12 @@ mod tests {
                 .expect("todo template")
                 .contains("Light Todo")
         );
-        // Cargo.toml + main.rs + шаблон + `.cargo/config.toml` + `light.config.json`.
+        // Cargo.toml + main.rs + шаблон + `.cargo/config.toml` + `light.config.json`
+        // + `AGENT.md` (шпаргалка для AI-агентов).
         assert_eq!(
             plan.files.len(),
-            5,
-            "Cargo.toml + main.rs + template + cargo config + light config"
+            6,
+            "Cargo.toml + main.rs + template + cargo config + light config + AGENT.md"
         );
         assert!(
             by_path(".cargo/config.toml")
