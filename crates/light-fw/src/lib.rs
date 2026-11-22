@@ -206,6 +206,21 @@ pub type BackendFactory = Box<
 /// ```
 #[cfg(feature = "window")]
 pub fn run(component: impl Component + 'static) -> crate::Result<()> {
+    // `light dev` собирает приложение с фичей `dev-mode` (→ `devtools`).
+    // В этом режиме DevTools поднимается по умолчанию на 9229, даже если
+    // пользователь вызывает `run()`, а не `run_with_config(...)`.
+    #[cfg(feature = "devtools")]
+    {
+        if light_fw_core::RUNTIME_TEMPLATES_ENABLED {
+            eprintln!("light: runtime-templates enabled (hot HTML reload active)");
+        } else {
+            eprintln!("light: runtime-templates DISABLED (hot HTML reload will not work)");
+        }
+        match enable_devtools(9229) {
+            Ok(port) => eprintln!("DevTools listening on 127.0.0.1:{port}"),
+            Err(error) => eprintln!("Не удалось запустить сервер DevTools на порту 9229: {error}"),
+        }
+    }
     // Фабрика: (width, height, window) -> Box<dyn RendererBackend>.
     // Вызывается при первом показе окна (см. `light_gui::window::windows::App::paint`).
     // `light_gui` — реэкспорт из `light_fw_core` (0.20.0, Этап 5); не

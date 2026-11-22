@@ -133,8 +133,10 @@ pub fn run(args: DevArgs) -> anyhow::Result<i32> {
                     "   → вручную: light add {} (--feature / --features при необходимости)",
                     a.crate_name
                 );
-            } else if std::io::stdin().is_terminal() {
-                // TTY-режим: спрашиваем пользователя (Y по умолчанию).
+            } else if !args.agent && std::io::stdin().is_terminal() {
+                // TTY-режим (без `--agent`): спрашиваем пользователя (Y по
+                // умолчанию). В режиме агента (`--agent`) вопрос не задаётся —
+                // устанавливаем автоматически, чтобы не блокировать pipeline.
                 print!(
                     "   Установить {}? [Y/n] ",
                     a.requirement
