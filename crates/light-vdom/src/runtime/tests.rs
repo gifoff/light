@@ -376,13 +376,16 @@ mod image_runtime_tests {
         out
     }
 
-    /// Создаёт каталог `dir/target/temp/...` (в пределах workspace) и пишет
-    /// PNG-файкс, возвращая путь. `CARGO_TARGET_DIR` — рабочая директория,
-    /// доступная в тестах.
+    /// Создаёт каталог `target/temp/...` (относительно workspace root) и
+    /// пишет PNG-файкс, возвращая путь. Базовый каталог — `$CARGO_MANIFEST_DIR/../../..`
+    /// (workspace root) + `target`. Путь абсолютный: работает локально и в
+    /// GitHub Actions (Linux/macOS/Windows), где cwd не всегда workspace root.
     fn write_test_png(sub: &str) -> (std::path::PathBuf, std::path::PathBuf) {
-        let base = std::env::var("CARGO_TARGET_DIR")
+        // Workspace root = crates/light-vdom/../../..
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
             .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| std::path::PathBuf::from("target"));
+            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let base = manifest_dir.join("..").join("..").join("..").join("target");
         let dir = base.join("temp").join(format!("vdom-image-{sub}"));
         std::fs::create_dir_all(&dir).expect("test dir created");
         let bytes = b64_decode(MIN_PNG_B64);

@@ -32,10 +32,7 @@ impl CustomElement for Tooltip {
         VElement::container(
             "",
             NodeKind::Column,
-            vec![VElement::leaf(
-                "",
-                NodeKind::Text { content: text },
-            )],
+            vec![VElement::leaf("", NodeKind::Text { content: text })],
         )
     }
 }
