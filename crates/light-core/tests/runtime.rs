@@ -146,15 +146,22 @@ fn strict_rejects_unknown_v_directive() {
     assert!(result.is_none());
 }
 
-/// `v-if` → None (в runtime не поддерживается).
+/// `v-if` с нераспознанным полем (у `Empty` поля нет) — показываем узел:
+/// compile-time-семантика «непонятно/не читается → показать». С 0.21.0 простая
+/// форма `v-if`/`v-if="!поле"` поддерживается в runtime (см. `eval_v_if`),
+/// поэтому узел больше **не** отклоняется (до этого тест фиксировал, что
+/// `v-if` в runtime запрещена — это было исправлено).
 #[test]
-fn strict_rejects_v_if() {
+fn v_if_with_unknown_field_shows_node() {
     let c = Empty;
     let result = light_fw::runtime::parse_template(
         r#"<window title="t" width="100" height="80"><div v-if="x">D</div></window>"#,
         &c,
     );
-    assert!(result.is_none());
+    assert!(
+        result.is_some(),
+        "v-if с нераспознанным полем → показать (None не ожидается)"
+    );
 }
 
 // ---------------------------------------------------------------------------

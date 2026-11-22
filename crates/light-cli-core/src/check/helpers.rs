@@ -16,8 +16,7 @@ pub(crate) const STANDARD_TAGS: &[&str] = &[
     // (фича `image-support`); это **ядро**, а не внешний компонент, поэтому его
     // отсутствие из списка приводило к ложному «неизвестный тег» в `light dev`/
     // `light check` (регрессия 0.20.2).
-    "window", "text", "password", "image",
-    // HTML5-строка.
+    "window", "text", "password", "image", // HTML5-строка.
     "html", "head", "body", "div", "span", "p", "a", "ul", "ol", "li", "h1", "h2", "h3", "h4",
     "h5", "h6", "button", "input", "label", "form", "table", "tr", "td", "th", "img", "video",
     "audio", "canvas", "svg", "section", "article", "header", "footer", "nav", "main", "aside",

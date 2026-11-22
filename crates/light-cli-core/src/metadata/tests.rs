@@ -130,11 +130,7 @@ elements = ["checkbox", "radio", "select", "option"]
         std::fs::create_dir_all(dir.join("app")).unwrap();
         std::fs::create_dir_all(dir.join("light-fw-element-form")).unwrap();
         std::fs::write(dir.join("app/Cargo.toml"), PLAIN_MANIFEST).unwrap();
-        std::fs::write(
-            dir.join("light-fw-element-form/Cargo.toml"),
-            FORM_MANIFEST,
-        )
-        .unwrap();
+        std::fs::write(dir.join("light-fw-element-form/Cargo.toml"), FORM_MANIFEST).unwrap();
 
         let path = |name: &str| {
             dir.join(name)

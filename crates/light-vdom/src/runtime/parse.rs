@@ -251,16 +251,8 @@ pub(crate) fn eval_v_if<C: Component + ?Sized>(component: &C, value: &str) -> bo
         raw.to_ascii_lowercase().as_str(),
         "true" | "1" | "yes" | "on" | "false" | "0"
     );
-    let value_bool = if recognized {
-        parse_bool(&raw)
-    } else {
-        true
-    };
-    if negate {
-        !value_bool
-    } else {
-        value_bool
-    }
+    let value_bool = if recognized { parse_bool(&raw) } else { true };
+    if negate { !value_bool } else { value_bool }
 }
 
 /// Строит один элемент (контейнер или лист) вместе со стилем, тегом, атрибутами
@@ -278,10 +270,10 @@ pub(crate) fn build_element<C: Component + ?Sized>(
     // [`eval_v_if`]. Если `v-if` задан — он **не** считается «неподдерживаемой»
     // директивой ниже (в отличие от `v-else-if`/`v-else`/`v-for`/`:attr`/
     // `@focus` и т.п. — их по-прежнему нельзя использовать в runtime).
-    if let Some(cond) = attr_value(&element.attrs, "v-if") {
-        if !eval_v_if(component, cond) {
-            return None;
-        }
+    if let Some(cond) = attr_value(&element.attrs, "v-if")
+        && !eval_v_if(component, cond)
+    {
+        return None;
     }
     for attr in &element.attrs {
         // `v-if` уже обработан выше — пропускаем его здесь.

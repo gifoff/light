@@ -257,9 +257,7 @@ pub(crate) fn attr_value<'a>(attrs: &'a [light_fw_html::Attr], name: &str) -> Op
 /// `v-if` поддерживается в runtime с 0.21.0 (см. [`eval_v_if`](super::parse::eval_v_if)):
 /// она эвалюируется **до** попадания сюда, поэтому здесь тоже исключена.
 pub(crate) fn is_unsupported_directive(name: &str) -> bool {
-    (name.starts_with("v-")
-        && name != "v-model"
-        && name != "v-if")
+    (name.starts_with("v-") && name != "v-model" && name != "v-if")
         || (name.starts_with('@') && name != "@click")
 }
 
