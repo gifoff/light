@@ -4,7 +4,9 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{Ident, LitStr};
 
-use super::tokens::{collect_interpolations, collect_v_for_items, is_primitive_serde, to_ident};
+use super::tokens::{
+    collect_interpolations, collect_v_for_items, collect_v_if_names, is_primitive_serde, to_ident,
+};
 use super::types::TemplateArgs;
 use super::validation::{attr_value, hex_id};
 use light_fw_html::{Element, Node};
@@ -13,6 +15,10 @@ pub(super) struct BuiltMethods {
     pub(super) invoke_handler: TokenStream,
     pub(super) dispatch_vmodel: TokenStream,
     pub(super) eval_field: TokenStream,
+    /// `eval_bool_field` для runtime `v-if="method()"`: сгенерировано только
+    /// если в шаблоне есть `v-if`/`v-else-if` на имена, которые **не** поля
+    /// (то есть методы-геттеры, возвращающие `bool`).
+    pub(super) eval_bool_field: TokenStream,
     pub(super) validate_field: TokenStream,
     pub(super) validate_form: TokenStream,
     pub(super) modal: TokenStream,
@@ -238,6 +244,44 @@ pub(super) fn build_methods(
         }
     };
 
+    // `eval_bool_field` для runtime `v-if="is_home"` / `v-else-if="!is_home"`:
+    // имена из `v-if`/`v-else-if`, которые **не** поля структуры, считаются
+    // методами-геттерами. Если пользователь назовёт несуществующее имя —
+    // компилятор укажет на опечатку (метод не найден). Возврат `bool`
+    // проверяется компилятором: если метод возвращает не `bool`, ошибка
+    // типизации в сгенерированном коде.
+    let v_if_names: std::collections::HashSet<String> = collect_v_if_names(content);
+    let mut bool_arms: Vec<TokenStream> = Vec::new();
+    for name in &v_if_names {
+        // `to_ident` может вернуть Err для невалидных имён — в этом случае
+        // пропускаем: компилятор укажет на опечатку в шаблоне.
+        let ident = match to_ident(name) {
+            Ok(id) => id,
+            Err(_) => continue,
+        };
+        if field_idents.contains(&ident) {
+            // Поле уже обработано в `eval_field`; дублировать не нужно.
+            continue;
+        }
+        // Не поле → метод. Генерируем вызов `self.name()` и приводим к `bool`.
+        // Если метод принимает аргументы или не возвращает `bool` — ошибка
+        // типизации компилятора (это правильно: v-if требует zero-arg bool).
+        let call = quote! { self.#ident() };
+        bool_arms.push(quote! { #name => ::std::option::Option::Some(#call), });
+    }
+    let eval_bool_field_method = if bool_arms.is_empty() {
+        TokenStream::new()
+    } else {
+        quote! {
+            fn eval_bool_field(&self, __name: &str) -> ::std::option::Option<bool> {
+                match __name {
+                    #(#bool_arms)*
+                    _ => ::std::option::Option::None,
+                }
+            }
+        }
+    };
+
     // Пользовательские проверки полей (`:validator`) и форм (`@validate`).
     let field_validator_arms = field_validators.iter().map(|(key, call)| {
         // `:validator` всегда передаёт `__value: &str` — явный аргумент,
@@ -352,6 +396,7 @@ pub(super) fn build_methods(
         invoke_handler: invoke_handler_method,
         dispatch_vmodel: dispatch_vmodel_method,
         eval_field: eval_field_method,
+        eval_bool_field: eval_bool_field_method,
         validate_field: validate_field_method,
         validate_form: validate_form_method,
         modal: modal_method,

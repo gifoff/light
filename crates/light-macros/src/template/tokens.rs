@@ -349,6 +349,35 @@ pub(super) fn collect_v_for_items(nodes: &[Node]) -> std::collections::HashSet<S
     out
 }
 
+/// Все имена, используемые в атрибутах `v-if` / `v-else-if` (без `!`-префикса).
+/// Эти имена могут быть полями **или** методами-геттерами (`is_home()`),
+/// поэтому их нужно собирать отдельно от интерполяций `{{ … }}`, чтобы
+/// макрос мог сгенерировать ветку `eval_bool_field` для методов.
+pub(super) fn collect_v_if_names(nodes: &[Node]) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    for node in nodes {
+        if let Node::Element(element) = node {
+            for attr in &element.attrs {
+                let tag = &attr.name;
+                if tag == "v-if" || tag == "v-else-if" {
+                    let value = attr.value.trim().trim_start_matches('!');
+                    // Берём только простые идентификаторы (без точек, скобок).
+                    let name = value.trim();
+                    if !name.is_empty()
+                        && !name.contains('.')
+                        && !name.contains('(')
+                        && !name.contains(|c: char| c.is_whitespace())
+                    {
+                        out.insert(name.to_string());
+                    }
+                }
+            }
+            out.extend(collect_v_if_names(&element.children));
+        }
+    }
+    out
+}
+
 /// Является ли тип поля структуры примитивным, который всегда реализует
 /// `serde::Serialize` и безопасно сериализуется «через геттер» в снимке
 /// состояния (ТЗ 0.13-D-fix, задача 2/3): числа (`i8…i128`, `u8…u128`,

@@ -210,6 +210,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> 
         invoke_handler: invoke_handler_method,
         dispatch_vmodel: dispatch_vmodel_method,
         eval_field: eval_field_method,
+        eval_bool_field: eval_bool_field_method,
         validate_field: validate_field_method,
         validate_form: validate_form_method,
         modal: modal_method,
@@ -276,6 +277,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> 
             #inspect_state_method
             #inject_state_method
             #eval_field_method
+            #eval_bool_field_method
             #invoke_handler_method
             #dispatch_vmodel_method
         }

@@ -215,50 +215,53 @@ enum ElementKind {
 
 /// Эвалюирует директиву `v-if` в runtime-режиме.
 ///
-/// Поддерживается тот же синтаксис, что и в compile-time макро: **простое
-/// булево поле** (`v-if="is_maximized"`) либо его инверсия
-/// (`v-if="!is_maximized"`). Любая более сложная запись (точки, вызовы методов,
-/// логические операторы) **не** распознаётся runtime'ом — и трактуется как
-/// «показывай» (узл остаётся видимым): статическое дерево уже содержит
-/// правильную видимость на момент последней пересборки, а runtime-рендер лишь
-/// уточняет её по одному простому полю. Возвращаем `false` (скрыть) только
-/// когда условие **явно** ложно: поле читается и равно `"false"/"0"/...`
-/// (или, для инверсии, явно истинно). Все прочие случаи → `true` (показать).
+/// Поддерживаются два синтаксиса (как и в compile-time макро):
+/// 1. **Простое булево поле** (`v-if="show"`, `v-if="!show"`): значение
+///    читается через [`Component::eval_field`] / [`eval_simple`](super::style::eval_simple),
+///    нормализуется булевыми токенами `true/1/yes/on` по правилу
+///    [`parse_bool`](crate::vdom::parse::parse_bool). Пустая строка или
+///    нераспознанное слово → «показать» (compile-time семантика).
+/// 2. **Метод-геттер без аргументов** (`v-if="is_home"`, `v-if="!is_home"`):
+///    если имя не совпадает с полем, но совпадает с именем ноль-аргументного
+///    метода, возвращающего `bool`, он вызывается через
+///    [`Component::eval_bool_field`]. Это позволяет использовать пользовательские
+///    методы для условной видимости в runtime.
 ///
-/// Строковое значение берём через [`eval_simple`](super::style::eval_simple)
-/// (обёртка над [`Component::eval_field`]) и нормализуем булевыми токенами
-/// `true/1/yes/on` тем же правилом, что и статический `:disabled`
-/// ([`parse_bool`](crate::vdom::parse::parse_bool)). Пустая строка или
-/// нераспознанное слово — **не** «ложь» (это метод/неподдерживаемый синтаксис)
-/// → показываем.
+/// Любой более сложный синтаксис (точки, аргументы, логические операторы)
+/// **не** распознаётся — трактуется как «показать», чтобы узел не исчезал из-за
+/// неподдерживаемой записи. Возвращаем `false` (скрыть) только когда условие
+/// **явно** ложно.
 #[cfg_attr(not(feature = "runtime-templates"), allow(dead_code))]
 pub(crate) fn eval_v_if<C: Component + ?Sized>(component: &C, value: &str) -> bool {
-    use crate::vdom::parse::parse_bool;
-
     let v = value.trim();
     let (negate, name) = match v.strip_prefix('!') {
         Some(rest) => (true, rest.trim()),
         None => (false, v),
     };
-    // eval_simple не возвращает None (для метода даёт ""), но трактуем отсутствие
-    // как «не удалось прочитать → показать», на всякий случай.
-    let Some(raw) = eval_simple(component, name) else {
-        return true;
-    };
-    // Пустая строка — метод (не читается как поле) или явно пустое значение:
-    // compile-time-семантика «непонятно → показать», не скрываем.
-    if raw.is_empty() {
-        return true;
+    // 1) Простое булево поле (`eval_field`) — базовый путь.
+    let raw = eval_simple(component, name).unwrap_or_default();
+    if !raw.is_empty() {
+        let recognized = matches!(
+            raw.to_ascii_lowercase().as_str(),
+            "true" | "1" | "yes" | "on" | "false" | "0"
+        );
+        let value_bool = if recognized {
+            crate::vdom::parse::parse_bool(&raw)
+        } else {
+            true
+        };
+        return if negate { !value_bool } else { value_bool };
     }
-    // Распознанные булевы токены — через `parse_bool`; нераспознанное слово
-    // (сложный синтаксис / имя метода) трактуем как `true`, чтобы элемент
-    // не исчезал из-за неподдерживаемой в runtime записи.
-    let recognized = matches!(
-        raw.to_ascii_lowercase().as_str(),
-        "true" | "1" | "yes" | "on" | "false" | "0"
-    );
-    let value_bool = if recognized { parse_bool(&raw) } else { true };
-    if negate { !value_bool } else { value_bool }
+    // 2) Метод-геттер (`v-if="is_home"`, `v-if="!is_home"`): `eval_field`
+    //    возвращает None для методов (пустая строка в `eval_simple`), поэтому
+    //    пробуем `eval_bool_field` — он вызвает ноль-аргументный метод, если
+    //    имя совпадает с именем такого метода на компоненте.
+    if let Some(value_bool) = component.eval_bool_field(name) {
+        return if negate { !value_bool } else { value_bool };
+    }
+    // 3) Не удалось ни как поле, ни как метод → «показывай» (compile-time
+    //    семантика: статическое дерево уже содержит правильную видимость).
+    true
 }
 
 /// Строит один элемент (контейнер или лист) вместе со стилем, тегом, атрибутами

@@ -223,6 +223,93 @@ mod v_if_tests {
             "ложный v-if обязан откатить runtime на статическое дерево (None)"
         );
     }
+
+    /// Компонент с **методом-геттером** `is_active()` (не поле):
+    /// `eval_field` не знает этого имени, но `eval_bool_field` вызывает метод.
+    struct MethodComp {
+        active: bool,
+    }
+
+    impl MethodComp {
+        fn is_active(&self) -> bool {
+            self.active
+        }
+    }
+
+    impl Component for MethodComp {
+        fn render(&self) -> VElement {
+            VElement::container(intern_key(""), NodeKind::Column, Vec::new())
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+
+        // Поля: нет. Методы: is_active() — обрабатывается eval_bool_field.
+        fn eval_bool_field(&self, name: &str) -> Option<bool> {
+            (name == "is_active").then(|| self.is_active())
+        }
+    }
+
+    /// `v-if="is_active"` при `active=true` → узел строится.
+    #[test]
+    fn v_if_method_true_builds_node() {
+        let comp = MethodComp { active: true };
+        let el = div_with_v_if("is_active");
+        assert!(
+            build_element::<MethodComp>(&el, "0.0", None, &comp).is_some(),
+            "v-if на метод-геттер (true) обязан построить узел"
+        );
+    }
+
+    /// `v-if="is_active"` при `active=false` → узел скрывается.
+    #[test]
+    fn v_if_method_false_hides_node() {
+        let comp = MethodComp { active: false };
+        let el = div_with_v_if("is_active");
+        assert!(
+            build_element::<MethodComp>(&el, "0.0", None, &comp).is_none(),
+            "v-if на метод-геттер (false) обязан скрыть узел"
+        );
+    }
+
+    /// `v-if="!is_active"` инверсия: active=true → скрыт; active=false → видим.
+    #[test]
+    fn v_if_method_negation_toggles() {
+        let hidden = MethodComp { active: true };
+        let el = div_with_v_if("!is_active");
+        assert!(
+            build_element::<MethodComp>(&el, "0.0", None, &hidden).is_none(),
+            "!is_active при active=true должно скрывать"
+        );
+        let shown = MethodComp { active: false };
+        assert!(
+            build_element::<MethodComp>(&el, "0.0", None, &shown).is_some(),
+            "!is_active при active=false должно показывать"
+        );
+    }
+
+    /// Интеграция через `parse_template`: метод-геттер в runtime.
+    #[test]
+    fn parse_template_v_if_method_true_keeps_false_falls_back() {
+        let on = MethodComp { active: true };
+        let tree_on = parse_template(
+            r#"<div direction="horizontal"><div v-if="is_active"></div></div>"#,
+            &on,
+        )
+        .expect("истинный v-if на метод не должен выключить runtime-рендер");
+        assert_eq!(tree_on.children.len(), 1, "узел обязан остаться");
+
+        let off = MethodComp { active: false };
+        assert!(
+            parse_template(
+                r#"<div direction="horizontal"><div v-if="is_active"></div></div>"#,
+                &off
+            )
+            .is_none(),
+            "ложный v-if на метод обязан откатить runtime на статику (None)"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
