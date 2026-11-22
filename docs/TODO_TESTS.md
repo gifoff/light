@@ -119,6 +119,25 @@ Doctor честно детектит несовместимость и заве�
 form `^0.7` → `^0.17`. `registry.toml` не тронут (production data,
 бум в 0.19.0).
 
+## Починено в 4a06ccf (release/0.21.0, CI-фикс)
+
+### `runtime_image_missing_file_returns_none` (light-vdom, Linux CI)
+
+Паника `test png written: Os { code: 2, kind: NotFound }` при `fs::write`.
+Функция `write_test_png` брала базовый каталог из `CARGO_TARGET_DIR` —
+который в GitHub Actions не задан как environment variable (cargo лишь
+*использует* его во внутреннем пути), тесты получали относительный
+путь `target/temp/...`, а cwd ≠ workspace root. В Windows-раунде
+раньше работало потому, что `CARGO_TARGET_DIR` иногда попадал в env через
+toolchain/кэширование, а на Linux/macOS — нет.
+
+Фикс: `write_test_png` теперь строит путь от `CARGO_MANIFEST_DIR/../../..`
+(abspath workspace root) + `target/temp/vdom-image-{sub}` — не зависит от
+cwd и от presence `CARGO_TARGET_DIR`. Тесты не менялись — они корректно
+ожидали работу с PNG-файксом, проблема была в пути.
+
+Приоритет: закрыто. Коммит: 4a06ccf.
+
 ## Починено в da16407 (Stage 0, feature/plugin-api)
 
 - `stop_without_active_session_fails` (crates/light-cli-core/tests/session.rs) —
