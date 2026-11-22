@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::config::{AGENT_MD, CARGO_CONFIG, GITIGNORE, LIGHT_CONFIG};
+use super::config::{AGENT_MD, CARGO_CONFIG, CLI_MD, GITIGNORE, GUIDE_MD, LIGHT_CONFIG};
 use super::generate::{
     APP_HTML, cargo_toml, main_rs, normalized_components, project_dir, validate_name,
 };
@@ -50,6 +50,9 @@ pub fn plan(options: &InitOptions) -> Result<InitPlan> {
         (PathBuf::from("light.config.json"), LIGHT_CONFIG.to_string()),
         // Шпаргалка для AI-агентов, работающих над проектом (см. `AGENT_MD`).
         (PathBuf::from("AGENT.md"), AGENT_MD.to_string()),
+        // Локальная документация: руководство и справка по CLI.
+        (PathBuf::from("docs").join("guide.md"), GUIDE_MD.to_string()),
+        (PathBuf::from("docs").join("cli.md"), CLI_MD.to_string()),
     ];
     if let Some(template) = options.template {
         for (path, content) in template.template_files() {

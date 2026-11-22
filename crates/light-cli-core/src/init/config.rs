@@ -47,38 +47,13 @@ pub const LIGHT_CONFIG: &str = r#"{
 /// (`light init`). Напоминает агентам не читать исходники фреймворка, а опираться
 /// на документацию и команды `light devtools`, и фиксирует частые грабли
 /// (`<text>` — поле ввода, `<image>` требует `image-support`).
-pub const AGENT_MD: &str = r#"# Инструкция для AI-агентов (Light Framework)
+pub const AGENT_MD: &str = include_str!("../../assets/templates/AGENT.md");
 
-Привет, AI! Если ты читаешь это, значит, ты работаешь над проектом
-на Light. **НЕ ЧИТАЙ ИСХОДНИКИ ФРЕЙМВОРКА** (light-vdom, light-macros
-и т.д.). Вся необходимая информация есть здесь.
+/// Руководство пользователя, встраиваемое в новый проект как `docs/guide.md`.
+pub const GUIDE_MD: &str = include_str!("../../assets/templates/guide.md");
 
-## 1. Синтаксис шаблонов (Важно!)
-- `<text>` — это **поле ввода** (требует `v-model`). Он не может
-  содержать дочерних элементов. Для простого текста используй
-  `<div>` или `<span>`: `<div font-size="24">{{ count }}</div>`.
-- `<image src="path" width="..." height="..." />` — требует фичи
-  `image-support` в Cargo.toml.
-- Условный рендеринг: `<div v-if="condition">...</div>`.
-  Условие — это имя метода или поля (например, `is_home`).
-
-## 2. Как запустить и протестировать (DevTools)
-**НИКОГДА** не используй `cargo run` и не блокируй терминал!
-
-1. Запусти в фоне (PowerShell):
-   `Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd .; light dev --agent"`
-2. Подожди 5-10 секунд (пока окно откроется).
-3. Используй команды `light devtools`:
-   - `light devtools shot --path shots` (сделать скриншот)
-   - `light devtools find --tag button --text "Click"` (найти элемент)
-   - `light devtools click --key <key>` (кликнуть)
-   - `light devtools state` (посмотреть JSON-состояние)
-   - `light devtools type --key <key> "text"` (ввести текст)
-4. Останови сессию: `light devtools session stop`.
-
-## 3. Документация
-Полное руководство: https://github.com/gifoff/light/blob/master/docs/guide.md
-"#;
+/// Справка по CLI, встраиваемая в новый проект как `docs/cli.md`.
+pub const CLI_MD: &str = include_str!("../../assets/templates/cli.md");
 
 pub(crate) const COUNTER_MAIN: &str = include_str!("../../assets/counter/src/main.rs");
 pub(crate) const COUNTER_HTML: &str = include_str!("../../assets/counter/templates/counter.html");

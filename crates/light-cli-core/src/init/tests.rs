@@ -300,11 +300,12 @@ mod tests {
                 .contains("Light Todo")
         );
         // Cargo.toml + main.rs + шаблон + `.cargo/config.toml` + `light.config.json`
-        // + `AGENT.md` (шпаргалка для AI-агентов).
+        // + `AGENT.md` (шпаргалка для AI-агентов) + `docs/guide.md` + `docs/cli.md`.
         assert_eq!(
             plan.files.len(),
-            6,
-            "Cargo.toml + main.rs + template + cargo config + light config + AGENT.md"
+            8,
+            "Cargo.toml + main.rs + template + cargo config + light config \
+             + AGENT.md + docs/guide.md + docs/cli.md"
         );
         assert!(
             by_path(".cargo/config.toml")
