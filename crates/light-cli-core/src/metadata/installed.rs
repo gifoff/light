@@ -8,11 +8,21 @@ use super::types::{ComponentMetadata, LIGHT_CORE_VERSION, ValidationError};
 use crate::manifest::{Provides, parse_manifest_from_text};
 
 /// Собирает метаданные ВСЕХ установленных Light-компонентов в проекте
-/// (published, path, git) через `cargo metadata --no-deps`.
+/// (published, path, git) через `cargo metadata`.
 ///
-/// Для каждого пакета, чей `Cargo.toml` содержит секцию
+/// Вызываемый **без** `--no-deps`: при этом в `packages` попадают не только
+/// root-пакет, но и транзитивные зависимости (включая опциональные, активные
+/// в текущей feature-конфигурации). Именно так становится видимым
+/// `light-fw-element-form` (`checkbox`/`radio`/`select`/`option`) — при
+/// `--no-deps` он пропал бы, и `light dev`/`light check` объявляли `<checkbox>`
+/// «не установлен», запуская ложный auto-install (регрессия 0.20.2).
+///
+/// Для каждого пакета, чей `Cargo.toml` (в `.cargo/registry/...` для
+/// опубликованных крейтов это `Cargo.toml.orig`) содержит секцию
 /// `[package.metadata.light]`, возвращает [`ComponentMetadata`] (имя, версия и
-/// `provides` из манифеста). Пакеты без секции пропускаются. Если `cargo
+/// `provides` из манифеста). Пакеты без секции пропускаются; один и тот же
+/// пакет может появиться несколько раз (workspace-мембры с одинаковыми
+/// name+version), дубликаты удаляются по паре `(name, version)`. Если `cargo
 /// metadata` завершился ошибкой (нет cargo в PATH, пустой stdout, битый JSON),
 /// функция **не** возвращает ошибку — печатает предупреждение на stderr и
 /// возвращает пустой вектор. Это делает `light check` устойчивым: отчёт
@@ -25,12 +35,7 @@ pub fn load_installed(project_root: &Path) -> Result<Vec<ComponentMetadata>> {
         let runner = SystemRunner;
         let out = runner.run(
             "cargo",
-            &[
-                "metadata".into(),
-                "--format-version".into(),
-                "1".into(),
-                "--no-deps".into(),
-            ],
+            &["metadata".into(), "--format-version".into(), "1".into()],
             Some(project_root),
         )?;
         load_installed_from_json(&out.stdout)
@@ -47,11 +52,18 @@ pub fn load_installed(project_root: &Path) -> Result<Vec<ComponentMetadata>> {
 /// Разбирает вывод `cargo metadata` (JSON, format-version 1) и извлекает
 /// метаданные компонентов. Вынесено отдельно от запуска процесса, чтобы логику
 /// можно было проверить на фикстуре без реального `cargo`.
+///
 /// Разбирает JSON-ответ `cargo metadata --format-version 1` и извлекает
 /// `[package.metadata.light]` из каждого пакета. Пакеты без метаданных
-/// пропускаются (не ошибаются). Публичный для интеграционных тестов,
-/// которые не хотят запускать реальный `cargo metadata`.
+/// пропускаются (не ошибаются). Без `--no-deps` в `packages` попадают
+/// транзитивные зависимости: один и тот же пакет может присутствовать несколько
+/// раз (workspace-мембры / разные версии), поэтому дубликаты удаляются по паре
+/// `(name, version)`. Если `manifest_path` недоступен на диске (крайне редкий
+/// случай) — пакет пропускается, а не роняет весь парсинг. Публичный для
+/// интеграционных тестов, которые не хотят запускать реальный `cargo metadata`.
 pub fn load_installed_from_json(json: &str) -> Result<Vec<ComponentMetadata>> {
+    use std::collections::BTreeSet;
+
     #[derive(serde::Deserialize)]
     struct Metadata {
         packages: Vec<Pkg>,
@@ -66,20 +78,31 @@ pub fn load_installed_from_json(json: &str) -> Result<Vec<ComponentMetadata>> {
 
     let meta: Metadata = serde_json::from_str(json)?;
     let mut installed = Vec::new();
+    let mut seen = BTreeSet::new();
     for pkg in meta.packages {
-        let text = std::fs::read_to_string(&pkg.manifest_path)?;
-        if let Some(manifest) = parse_manifest_from_text(&text)? {
-            installed.push(ComponentMetadata {
-                crate_name: pkg.name,
-                version: pkg.version,
-                kind: Some(manifest_kind_str(manifest.kind)),
-                core_version_req: Some(manifest.core.clone()),
-                provides_elements: manifest.provides.elements,
-                provides_attributes: manifest.provides.attributes,
-                provides_directives: manifest.provides.directives,
-                requires_components: manifest.requires.components,
-            });
+        // Дедупликация по (name, version): без `--no-deps` пакет может
+        // встретиться повторно (workspace-мембры с одинаковыми координатами).
+        if !seen.insert((pkg.name.clone(), pkg.version.clone())) {
+            continue;
         }
+        // Читаем манифест терпимо: если файла нет — пропускаем пакет, не
+        // прерывая разбор остальных (в отличие от прежнего жёсткого `?`).
+        let Ok(text) = std::fs::read_to_string(&pkg.manifest_path) else {
+            continue;
+        };
+        let Ok(Some(manifest)) = parse_manifest_from_text(&text) else {
+            continue;
+        };
+        installed.push(ComponentMetadata {
+            crate_name: pkg.name,
+            version: pkg.version,
+            kind: Some(manifest_kind_str(manifest.kind)),
+            core_version_req: Some(manifest.core.clone()),
+            provides_elements: manifest.provides.elements,
+            provides_attributes: manifest.provides.attributes,
+            provides_directives: manifest.provides.directives,
+            requires_components: manifest.requires.components,
+        });
     }
     Ok(installed)
 }

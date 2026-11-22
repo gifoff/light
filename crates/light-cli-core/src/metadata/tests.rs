@@ -103,6 +103,79 @@ edition = "2021"
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Регрессия 0.20.2: без `--no-deps` в вывод `cargo metadata` попадают и
+    /// транзитивные зависимости (например `light-fw-element-form`), поэтому
+    /// `<checkbox>`/`<radio>`/`<select>`/`<option>` перестают «пропадать». Здесь
+    /// проверяем ровно это: пакет из транзитивных зависимостей с
+    /// `[package.metadata.light]` виден, дубликаты по `(name, version)` убираются,
+    /// а отсутствующий на диске `manifest_path` не роняет весь парсинг.
+    #[test]
+    fn load_installed_from_json_sees_transitive_deps_and_dedupes() {
+        const FORM_MANIFEST: &str = r#"
+[package]
+name = "light-fw-element-form"
+version = "0.20.2"
+edition = "2021"
+
+[package.metadata.light]
+kind = "element"
+display-name = "Form Elements"
+core = "^0.20"
+[package.metadata.light.provides]
+elements = ["checkbox", "radio", "select", "option"]
+"#;
+
+        let dir = std::env::temp_dir().join("light-fw-cli-meta-transitive");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("app")).unwrap();
+        std::fs::create_dir_all(dir.join("light-fw-element-form")).unwrap();
+        std::fs::write(dir.join("app/Cargo.toml"), PLAIN_MANIFEST).unwrap();
+        std::fs::write(
+            dir.join("light-fw-element-form/Cargo.toml"),
+            FORM_MANIFEST,
+        )
+        .unwrap();
+
+        let path = |name: &str| {
+            dir.join(name)
+                .join("Cargo.toml")
+                .to_string_lossy()
+                .into_owned()
+        };
+        // `packages` — как отдаёт `cargo metadata` БЕЗ `--no-deps`:
+        //   1. `light-fw-element-form` один раз (транзитивная зависимость);
+        //   2. `light-fw-element-form` повторно (дубль по (name, version));
+        //   3. `ghost` — manifest_path отсутствует на диске (крайний случай).
+        let json = serde_json::to_string(&serde_json::json!({
+            "packages": [
+                { "name": "light-fw-element-form", "version": "0.20.2", "manifest_path": path("light-fw-element-form") },
+                { "name": "light-fw-element-form", "version": "0.20.2", "manifest_path": path("light-fw-element-form") },
+                { "name": "ghost", "version": "9.9.9", "manifest_path": path("missing-dir-missing-file") }
+            ]
+        }))
+        .expect("serialize fixture");
+
+        let installed = load_installed_from_json(&json).expect("parse");
+        assert_eq!(
+            installed.len(),
+            1,
+            "один уникальный пакет с метаданными; дубль и ghost исключены"
+        );
+        let meta = &installed[0];
+        assert_eq!(meta.crate_name, "light-fw-element-form");
+        assert_eq!(meta.version, "0.20.2");
+        assert_eq!(
+            meta.provides_elements,
+            vec![
+                "checkbox".to_string(),
+                "radio".to_string(),
+                "select".to_string(),
+                "option".to_string()
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn validate_ok_for_compatible_component() {
         let result = validate_metadata(VALID_MANIFEST, "light-widget-datepicker");

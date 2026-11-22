@@ -65,8 +65,14 @@ pub fn run(args: DevArgs) -> anyhow::Result<i32> {
         let install_fn = |name: &str| -> light_fw_cli_core::Result<()> {
             // ТЗ 0.17.2: автоподгрузка явно уважает дефолтные фичи `light-fw`
             // (не отключает их); опция прописана в обоих вызовах.
+            // `no_verify: true` — автоустановка из `light dev` **не** запускает
+            // отдельный `cargo check` (регрессия 0.20.2: бесконечный `cargo check`
+            // без таймаута «замораживал» `light dev` в non-TTY/CI). Корректность
+            // добавленной зависимости тут же проверяет сама последующая сборка
+            // приложения — `run_dev` сразу делает `cargo run --features dev-mode`.
             let opts = light_fw_cli_core::add::AddOptions {
                 default_features: true,
+                no_verify: true,
                 ..Default::default()
             };
             let plan = light_fw_cli_core::add::plan_add(&project_root, name, &opts)?;

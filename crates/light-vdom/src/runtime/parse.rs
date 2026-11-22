@@ -18,8 +18,8 @@ use std::time::SystemTime;
 use super::custom::{build_children, store_custom_instance};
 use super::fields::{ROOT_KEY, build_checkbox, build_radio, build_select, build_text_field};
 use super::style::{
-    attr_value, build_style, build_window_config, collect_meta, is_unsupported_directive,
-    resolve_button_type, resolve_disabled,
+    attr_value, build_style, build_window_config, collect_meta, eval_simple,
+    is_unsupported_directive, resolve_button_type, resolve_disabled,
 };
 
 #[cfg_attr(not(feature = "runtime-templates"), allow(dead_code))]
@@ -207,6 +207,62 @@ enum ElementKind {
     Select,
 }
 
+/// Эвалюирует директиву `v-if` в runtime-режиме.
+///
+/// Поддерживается тот же синтаксис, что и в compile-time макро: **простое
+/// булево поле** (`v-if="is_maximized"`) либо его инверсия
+/// (`v-if="!is_maximized"`). Любая более сложная запись (точки, вызовы методов,
+/// логические операторы) **не** распознаётся runtime'ом — и трактуется как
+/// «показывай» (узл остаётся видимым): статическое дерево уже содержит
+/// правильную видимость на момент последней пересборки, а runtime-рендер лишь
+/// уточняет её по одному простому полю. Возвращаем `false` (скрыть) только
+/// когда условие **явно** ложно: поле читается и равно `"false"/"0"/...`
+/// (или, для инверсии, явно истинно). Все прочие случаи → `true` (показать).
+///
+/// Строковое значение берём через [`eval_simple`](super::style::eval_simple)
+/// (обёртка над [`Component::eval_field`]) и нормализуем булевыми токенами
+/// `true/1/yes/on` тем же правилом, что и статический `:disabled`
+/// ([`parse_bool`](crate::vdom::parse::parse_bool)). Пустая строка или
+/// нераспознанное слово — **не** «ложь» (это метод/неподдерживаемый синтаксис)
+/// → показываем.
+#[cfg_attr(not(feature = "runtime-templates"), allow(dead_code))]
+pub(crate) fn eval_v_if<C: Component + ?Sized>(component: &C, value: &str) -> bool {
+    use crate::vdom::parse::parse_bool;
+
+    let v = value.trim();
+    let (negate, name) = match v.strip_prefix('!') {
+        Some(rest) => (true, rest.trim()),
+        None => (false, v),
+    };
+    // eval_simple не возвращает None (для метода даёт ""), но трактуем отсутствие
+    // как «не удалось прочитать → показать», на всякий случай.
+    let Some(raw) = eval_simple(component, name) else {
+        return true;
+    };
+    // Пустая строка — метод (не читается как поле) или явно пустое значение:
+    // compile-time-семантика «непонятно → показать», не скрываем.
+    if raw.is_empty() {
+        return true;
+    }
+    // Распознанные булевы токены — через `parse_bool`; нераспознанное слово
+    // (сложный синтаксис / имя метода) трактуем как `true`, чтобы элемент
+    // не исчезал из-за неподдерживаемой в runtime записи.
+    let recognized = matches!(
+        raw.to_ascii_lowercase().as_str(),
+        "true" | "1" | "yes" | "on" | "false" | "0"
+    );
+    let value_bool = if recognized {
+        parse_bool(&raw)
+    } else {
+        true
+    };
+    if negate {
+        !value_bool
+    } else {
+        value_bool
+    }
+}
+
 /// Строит один элемент (контейнер или лист) вместе со стилем, тегом, атрибутами
 /// и, если задан `window_config`, настройками окна.
 /// Внутренний: фабрика элемента (используется кастомными элементами).
@@ -216,7 +272,22 @@ pub(crate) fn build_element<C: Component + ?Sized>(
     window_config: Option<WindowConfig>,
     component: &C,
 ) -> Option<VElement> {
+    // Директива `v-if` (compile-time и runtime): если условие явно ложно — узел
+    // не строится вообще (видимость «скрываем»). Поддерживается простое поле
+    // (`v-if="is_maximized"`) либо его инверсия (`v-if="!is_maximized"`); см.
+    // [`eval_v_if`]. Если `v-if` задан — он **не** считается «неподдерживаемой»
+    // директивой ниже (в отличие от `v-else-if`/`v-else`/`v-for`/`:attr`/
+    // `@focus` и т.п. — их по-прежнему нельзя использовать в runtime).
+    if let Some(cond) = attr_value(&element.attrs, "v-if") {
+        if !eval_v_if(component, cond) {
+            return None;
+        }
+    }
     for attr in &element.attrs {
+        // `v-if` уже обработан выше — пропускаем его здесь.
+        if attr.name == "v-if" {
+            continue;
+        }
         if is_unsupported_directive(&attr.name) {
             parse_fail(&element.name, &attr.name, &attr.value);
             return None;

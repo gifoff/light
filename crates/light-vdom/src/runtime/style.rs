@@ -252,9 +252,15 @@ pub(crate) fn attr_value<'a>(attrs: &'a [light_fw_html::Attr], name: &str) -> Op
 }
 
 /// Является ли имя атрибута конструкцией, не поддерживаемой во время выполнения
-/// (директива `v-*` или обработчик, кроме простого `@click`).
+/// (директива `v-*` или обработчик, кроме простых `v-if`, `v-model` и `@click`).
+///
+/// `v-if` поддерживается в runtime с 0.21.0 (см. [`eval_v_if`](super::parse::eval_v_if)):
+/// она эвалюируется **до** попадания сюда, поэтому здесь тоже исключена.
 pub(crate) fn is_unsupported_directive(name: &str) -> bool {
-    name.starts_with("v-") && name != "v-model" || (name.starts_with('@') && name != "@click")
+    (name.starts_with("v-")
+        && name != "v-model"
+        && name != "v-if")
+        || (name.starts_with('@') && name != "@click")
 }
 
 /// Текстовое содержимое элемента (все текстовые дети склеены).
