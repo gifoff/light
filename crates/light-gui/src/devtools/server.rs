@@ -257,6 +257,40 @@ fn dispatch_command(command: &str) -> String {
                 Ok(None) | Err(_) => "timeout".to_owned(),
             }
         }
+        "MOVE" => {
+            let key = rest.trim();
+            if !key.is_empty() {
+                let (tx, rx) = std::sync::mpsc::channel();
+                super::send_command(super::DevToolsCommand::MoveEnter {
+                    key: key.to_owned(),
+                    response_tx: tx,
+                });
+                match rx.recv_timeout(std::time::Duration::from_secs(1)) {
+                    Ok(true) => "ok:true".to_owned(),
+                    Ok(false) => "ok:false".to_owned(),
+                    _ => "timeout".to_owned(),
+                }
+            } else {
+                "missing key".to_owned()
+            }
+        }
+        "MOVE_LEAVE" => {
+            let key = rest.trim();
+            if !key.is_empty() {
+                let (tx, rx) = std::sync::mpsc::channel();
+                super::send_command(super::DevToolsCommand::MoveLeave {
+                    key: key.to_owned(),
+                    response_tx: tx,
+                });
+                match rx.recv_timeout(std::time::Duration::from_secs(1)) {
+                    Ok(true) => "ok:true".to_owned(),
+                    Ok(false) => "ok:false".to_owned(),
+                    _ => "timeout".to_owned(),
+                }
+            } else {
+                "missing key".to_owned()
+            }
+        }
         _ => "unknown command".to_owned(),
     }
 }

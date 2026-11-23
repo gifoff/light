@@ -718,6 +718,8 @@ impl super::base::Layout {
                     abs_nodes.push(before);
                 }
                 for &idx in &abs_nodes {
+                    let old_x = self.nodes[idx].rect.x;
+                    let old_y = self.nodes[idx].rect.y;
                     let node = &mut self.nodes[idx];
                     let s = &node.style;
                     let has_explicit = s.abs_left != 0.0
@@ -762,6 +764,19 @@ impl super::base::Layout {
                         node.rect.x = final_x;
                         node.rect.y = final_y;
                     }
+                    // Потоковые потомки уже расложены относительно старой
+                    // позиции контейнера (origin = content.left/top). Сдвигаем
+                    // всё поддерево (кроме самого узла) на разницу, чтобы текст
+                    // и другие дети не остались в (0,0) окна.
+                    let dx = self.nodes[idx].rect.x - old_x;
+                    let dy = self.nodes[idx].rect.y - old_y;
+                    if dx != 0.0 || dy != 0.0 {
+                        let end = self.subtree_end(idx);
+                        for n in &mut self.nodes[idx + 1..end] {
+                            n.rect.x += dx;
+                            n.rect.y += dy;
+                        }
+                    }
                 }
                 self.nodes[index].scroll_width = (content_w + inset.horizontal()).max(w);
                 self.nodes[index].scroll_height = (content_h + inset.vertical()).max(h);
@@ -803,5 +818,20 @@ impl super::base::Layout {
             self.nodes[start].style.font_color = Some(color);
         }
         (w + step_w, h + step_h)
+    }
+
+    /// Возвращает индекс, следующий за поддеревом узла `start` (глубинами).
+    fn subtree_end(&self, start: usize) -> usize {
+        let mut end = start + 1;
+        let mut stack = vec![start];
+        while let Some(idx) = stack.pop() {
+            for &child in &self.nodes[idx].children {
+                if child >= end {
+                    end = child + 1;
+                }
+                stack.push(child);
+            }
+        }
+        end
     }
 }

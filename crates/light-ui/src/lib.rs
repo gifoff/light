@@ -5,9 +5,7 @@
 //! через `linkme`, реакция на `Mouseenter`/`Mouseleave`) и `Toast`
 //! (`show_toast` с автоскрытием через 3 секунды, без блокировки UI).
 
-pub mod toast;
-pub mod tooltip;
+pub mod widgets;
 
 // Публичные реэкспорты: демо-приложения пишут `use light_ui::{show_toast, Tooltip};`.
-pub use toast::show_toast;
-pub use tooltip::Tooltip;
+pub use widgets::{Tooltip, show_toast};

@@ -428,6 +428,48 @@ impl App {
                 let b64 = crate::devtools::encode_screenshot(&buf, w, h);
                 let _ = response_tx.send(Some(b64));
             }
+            crate::devtools::DevToolsCommand::MoveEnter { key, response_tx } => {
+                let Some(id) = self
+                    .tokens
+                    .get(&light_vdom::window_backend::active_window())
+                    .copied()
+                else {
+                    let _ = response_tx.send(false);
+                    return;
+                };
+                let Some(window) = self.windows.get_mut(&id) else {
+                    let _ = response_tx.send(false);
+                    return;
+                };
+                let event = DomEvent::Mouseenter;
+                let handled = window.component.dispatch(&key, event.clone())
+                    || window.component.dispatch_vmodel(&key, &event);
+                if handled {
+                    window.invalidate();
+                }
+                let _ = response_tx.send(handled);
+            }
+            crate::devtools::DevToolsCommand::MoveLeave { key, response_tx } => {
+                let Some(id) = self
+                    .tokens
+                    .get(&light_vdom::window_backend::active_window())
+                    .copied()
+                else {
+                    let _ = response_tx.send(false);
+                    return;
+                };
+                let Some(window) = self.windows.get_mut(&id) else {
+                    let _ = response_tx.send(false);
+                    return;
+                };
+                let event = DomEvent::Mouseleave;
+                let handled = window.component.dispatch(&key, event.clone())
+                    || window.component.dispatch_vmodel(&key, &event);
+                if handled {
+                    window.invalidate();
+                }
+                let _ = response_tx.send(handled);
+            }
         }
     }
 }

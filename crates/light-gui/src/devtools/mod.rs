@@ -136,6 +136,22 @@ pub enum DevToolsCommand {
         /// Канал возврата: `Some("base64:...")` / `Some("error: ...")`.
         response_tx: std::sync::mpsc::Sender<Option<String>>,
     },
+    /// Симулировать наведение курсора на элемент с ключом `key`
+    /// (отправляет `Event::Mouseenter` через `Component::dispatch`).
+    MoveEnter {
+        /// Ключ узла.
+        key: String,
+        /// Канал возврата: `true` — обработано, `false` — нет.
+        response_tx: std::sync::mpsc::Sender<bool>,
+    },
+    /// Симулировать уход курсора с элемента с ключом `key`
+    /// (отправляет `Event::Mouseleave` через `Component::dispatch`).
+    MoveLeave {
+        /// Ключ узла.
+        key: String,
+        /// Канал возврата: `true` — обработано, `false` — нет.
+        response_tx: std::sync::mpsc::Sender<bool>,
+    },
 }
 
 /// Сериализация дерева и раскладки для DevTools.
