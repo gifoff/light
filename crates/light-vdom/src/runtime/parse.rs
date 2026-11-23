@@ -65,6 +65,24 @@ pub(crate) fn parse_fail(element: &str, attr_name: &str, attr_value: &str) {
 #[cfg(not(debug_assertions))]
 pub(crate) fn parse_fail(_element: &str, _attr_name: &str, _attr_value: &str) {}
 
+/// Имя обработчика события для runtime-диспетчеризации по имени.
+///
+/// Убирает скобки вызова (`"show_tip()"` → `"show_tip"`), пробельные
+/// символы вокруг и ведущее `this.` — макрос-генерированный
+/// [`Component::invoke_handler`](crate::component::Component::invoke_handler)
+/// сопоставляет именно это имя. Аналог `normalize_click` в `custom.rs`,
+/// но для мышиных событий (0.21.0: `@mouseenter`/`@mouseleave` на
+/// контейнерах в runtime-шаблонах).
+fn normalize_event_handler(handler: &str) -> String {
+    let trimmed = handler.trim();
+    let trimmed = trimmed.strip_prefix("this.").unwrap_or(trimmed);
+    trimmed
+        .strip_suffix("()")
+        .map(str::trim)
+        .unwrap_or(trimmed)
+        .to_owned()
+}
+
 /// Читает HTML-шаблон с диска и разбирает его в [`VElement`], используя mtime-кэш.
 ///
 /// `path` — `'static` путь к файлу (генерируется макросом); `fallback` — текст
@@ -428,6 +446,21 @@ pub(crate) fn build_element<C: Component + ?Sized>(
         && let Some(val) = attr_value(&element.attrs, "value")
     {
         attrs.push(("data-value", val.to_owned()));
+    }
+    // Runtime-обработчики мыши (`@mouseenter`/`@mouseleave` на контейнерах
+    // `div`/`span`): имя сохраняется в узле как data-атрибут
+    // `data-event="variant:name"` (одна пара — один обработчик на элемент,
+    // второй атрибут того же вида перезаписывает первый). Окно доставляет
+    // его через `Component::invoke_handler` при Mouseenter/Mouseleave
+    // (0.21.0). `@click` не сохраняется: для кнопок работает существующий
+    // путь `dispatch_by_name` по имени.
+    for (attr, variant) in [("@mouseenter", "Mouseenter"), ("@mouseleave", "Mouseleave")] {
+        if let Some(handler) = attr_value(&element.attrs, attr) {
+            let name = normalize_event_handler(handler);
+            if !name.is_empty() {
+                attrs.push((intern_key("data-event"), format!("{variant}:{name}")));
+            }
+        }
     }
     let mut elem = leaf.with_style(style).with_tag(tag).with_attrs(attrs);
     if let Some(cfg) = window_config {

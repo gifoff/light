@@ -55,7 +55,8 @@ impl App {
                 //    где позиции могли сдвинуться после hot-reload.
                 let event = DomEvent::Click;
                 let handled = window.component.dispatch(&key, event.clone())
-                    || window.component.dispatch_vmodel(&key, &event);
+                    || window.component.dispatch_vmodel(&key, &event)
+                    || window.dispatch_custom_event(&key, &event);
                 if handled {
                     window.invalidate();
                 }
@@ -442,8 +443,11 @@ impl App {
                     return;
                 };
                 let event = DomEvent::Mouseenter;
+                // 1. Статическая/макросная диспетчеризация.
+                // 2. Кастомный элемент плагина (Этап 5 — on_event).
                 let handled = window.component.dispatch(&key, event.clone())
-                    || window.component.dispatch_vmodel(&key, &event);
+                    || window.component.dispatch_vmodel(&key, &event)
+                    || window.dispatch_custom_event(&key, &event);
                 if handled {
                     window.invalidate();
                 }
@@ -464,7 +468,8 @@ impl App {
                 };
                 let event = DomEvent::Mouseleave;
                 let handled = window.component.dispatch(&key, event.clone())
-                    || window.component.dispatch_vmodel(&key, &event);
+                    || window.component.dispatch_vmodel(&key, &event)
+                    || window.dispatch_custom_event(&key, &event);
                 if handled {
                     window.invalidate();
                 }

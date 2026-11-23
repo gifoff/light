@@ -45,11 +45,11 @@ impl App {
         }
     }
 
-    pub(super) fn apply_command(&self, token: WindowToken, command: WindowCommand) {
+    pub(super) fn apply_command(&mut self, token: WindowToken, command: WindowCommand) {
         let Some(id) = self.tokens.get(&token).copied() else {
             return;
         };
-        let Some(state) = self.windows.get(&id) else {
+        let Some(state) = self.windows.get_mut(&id) else {
             return;
         };
         let window = &state.window;
@@ -67,9 +67,12 @@ impl App {
             WindowCommand::ToggleMaximize => window.set_maximized(!window.is_maximized()),
             WindowCommand::Show => window.set_visible(true),
             WindowCommand::Hide => window.set_visible(false),
-            // `Invalidate`: принудительно запросить перерисовку окна (виджеты
-            // используют это после `post_to_ui` для гарантии обновления кадра).
-            WindowCommand::Invalidate => window.request_redraw(),
+            // `Invalidate`: принудительно перерисовать окно с полным rebuild'ом
+            // VDOM (виджеты используют это после `post_to_ui` для гарантии, что
+            // изменения состояния приведут к актуальному кадру даже без событий ввода).
+            WindowCommand::Invalidate => {
+                state.invalidate();
+            }
         }
     }
 }

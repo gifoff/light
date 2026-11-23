@@ -26,11 +26,18 @@
 //!
 //! Сервер слушает только на `127.0.0.1` (безопасность). Работа ведётся в
 //! отдельном `[std::thread]`, не блокируя UI-поток. Клиенты обрабатываются
-//! последовательно (head-of-line blocking) — приемлемо для dev-инструмента.
+//! последательно (head-of-line blocking) — приемлемо для dev-инструмента.
 
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
+use std::time::Duration;
+
+/// Количество попыток bind при занятом порту (включая первую).
+const BIND_ATTEMPTS: u32 = 3;
+
+/// Пауза между повторными попытками bind (секунды).
+const BIND_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 /// Запускает TCP-сервер на `127.0.0.1:port`.
 ///
@@ -38,19 +45,49 @@ use std::thread;
 /// свободный порт сама). Сервер обрабатывает клиентов в отдельном потоке;
 /// сам вызов возвращает немедленно.
 ///
+/// Если порт занят (`ErrorKind::AddrInUse`, на Windows — `os error 10048`)
+/// — повторные попытки с интервалом [`BIND_RETRY_DELAY`], всего
+/// [`BIND_ATTEMPTS`] раз: освобождающий процесс (прошлый `light dev`)
+/// обычно успевает закрыть сокет между запусками. Ошибки выводятся в лог
+/// без предупреждений; ошибка возвращается только после исчерпания
+/// попыток.
+///
 /// # Ошибки
 ///
-/// Возвращает ошибку, если `TcpListener::bind` не удался (например, порт
-/// занят).
+/// Возвращает ошибку, если `TcpListener::bind` не удался ни при одной
+/// попытке (например, порт стабильно занят).
 pub fn start(port: u16) -> std::io::Result<u16> {
-    let listener = TcpListener::bind(("127.0.0.1", port))?;
-    let addr = listener.local_addr()?;
-    thread::spawn(move || {
-        for stream in listener.incoming().flatten() {
-            handle_client(stream);
+    let mut last_err: Option<std::io::Error> = None;
+    for attempt in 1..=BIND_ATTEMPTS {
+        match TcpListener::bind(("127.0.0.1", port)) {
+            Ok(listener) => {
+                let addr = listener.local_addr()?;
+                thread::spawn(move || {
+                    for stream in listener.incoming().flatten() {
+                        handle_client(stream);
+                    }
+                });
+                return Ok(addr.port());
+            }
+            Err(err) if err.kind() == ErrorKind::AddrInUse && attempt < BIND_ATTEMPTS => {
+                eprintln!(
+                    "light: devtools-порт {} занят (освобождается?), \
+                     повторная попытка {attempt}/{BIND_ATTEMPTS} через 1 c",
+                    port
+                );
+                last_err = Some(err);
+                thread::sleep(BIND_RETRY_DELAY);
+            }
+            Err(err) => {
+                return Err(err);
+            }
         }
-    });
-    Ok(addr.port())
+    }
+    // Цикл завершился только в ветке AddrInUse на последней попытке
+    // (остальные варианты возвращают из тела цикла).
+    Err(last_err.unwrap_or_else(|| {
+        std::io::Error::new(ErrorKind::Other, "не удалось занять devtools-порт")
+    }))
 }
 
 /// Читает одну строку (до `\n` или EOF) из TCP-потока.

@@ -71,11 +71,53 @@ pub(super) fn build_methods(
         } });
     }
 
+    // Runtime-доставка мышиных событий на контейнеры (`div`/`span` с
+    // `@mouseenter`/`@mouseleave`, 0.21.0): runtime-парсер хранит имя
+    // обработчика в атрибуте `data-event="Variant:NAME"`. Здесь `invoke_handler`
+    // дополняется двумя ветками на каждый обработчик (Mouseenter и Mouseleave).
+    // Ветка инертна, пока дерево не содержит `data-event`: статический путь
+    // (макросные ветки `dispatch`) обрабатывает мышь до `invoke_handler`,
+    // а Click для кнопок — по имени обработчика; без data-атрибута обход
+    // возвращается false до вызова метода.
+    let mouse_arms: Vec<TokenStream> = click_handlers
+        .iter()
+        .flat_map(|(_, (call_tokens, name))| {
+            let name = name.clone();
+            ["Mouseenter", "Mouseleave"]
+                .into_iter()
+                .map(move |variant| {
+                    let call = call_tokens.clone();
+                    let variant_ident = syn::Ident::new(variant, Span::call_site());
+                    let suffix = format!(":{name}");
+                    let suffix_lit = LitStr::new(&suffix, Span::call_site());
+                    quote! {
+                        if let ::light_fw::vdom::Event::#variant_ident = __event_ref {
+                            if let Some(node) = __root.get(__handler)
+                                && let Some(data) = node.attr("data-event")
+                                && data.ends_with(#suffix_lit)
+                            {{
+                                #call();
+                                return true;
+                            }}
+                        }
+                    }
+                })
+        })
+        .collect();
     let invoke_handler_method = if click_handlers.is_empty() {
         quote! {}
     } else {
         quote! {
             fn invoke_handler(&self, __handler: &str, __event: ::light_fw::vdom::Event) -> bool {
+                // Runtime-доставка мыши (`@mouseenter`/`@mouseleave` на
+                // контейнерах, 0.21.0): активна только при включённой
+                // runtime-шаблонизации (флаг — из light-fw, без cfg-фичи
+                // макросного крейта). Без data-атрибута обход инертен.
+                if ::light_fw::FEATURE_RUNTIME_TEMPLATES {
+                    let __root = self.render();
+                    let __event_ref = &__event;
+                    #(#mouse_arms)*
+                }
                 match __handler {
                     #(#invoke_arms)*
                     _ => false,
@@ -84,7 +126,6 @@ pub(super) fn build_methods(
         }
     };
 
-    // Runtime-writeback для v-model: obходит текущий render-дерево (возвращённый
     // из `render()`), находит узел с данным ключом, читает атрибут `data-v-model`
     // и применяет writeback. Нужен только при runtime-templates (иначе статические
     // ветки `dispatch` уже обрабатывают v-model по ключу). Без привязок — пустой.

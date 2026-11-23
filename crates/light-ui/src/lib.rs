@@ -7,5 +7,6 @@
 
 pub mod widgets;
 
-// Публичные реэкспорты: демо-приложения пишут `use light_ui::{show_toast, Tooltip};`.
-pub use widgets::{Tooltip, show_toast};
+// Публичные реэкспорты: демо-приложения пишут
+// `use light_ui::{show_toast, show_toast_cfg, ToastConfig, Tooltip};`.
+pub use widgets::{ToastConfig, Tooltip, show_toast, show_toast_cfg};

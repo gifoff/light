@@ -271,14 +271,23 @@ pub(crate) fn attr_value<'a>(attrs: &'a [light_fw_html::Attr], name: &str) -> Op
         .map(|a| a.value.as_str())
 }
 
+/// Поддерживаемые в runtime обработчики событий (`@...`-атрибуты).
+///
+/// 0.21.0: `@mouseenter`/`@mouseleave` на контейнерах (`div`/`span`) —
+/// имена сохраняются в узле (см. [`crate::vdom::VElement`]) и доставляются
+/// через [`Component::invoke_handler`](crate::component::Component::invoke_handler);
+/// `@click` — как и раньше, по имени обработчика.
+pub(crate) const RUNTIME_EVENT_ATTRS: [&str; 3] = ["@click", "@mouseenter", "@mouseleave"];
+
 /// Является ли имя атрибута конструкцией, не поддерживаемой во время выполнения
-/// (директива `v-*` или обработчик, кроме простых `v-if`, `v-model` и `@click`).
+/// (директива `v-*` или обработчик, кроме простых `v-if`, `v-model` и
+/// `@click`/`@mouseenter`/`@mouseleave` — см. [`RUNTIME_EVENT_ATTRS`]).
 ///
 /// `v-if` поддерживается в runtime с 0.21.0 (см. [`eval_v_if`](super::parse::eval_v_if)):
 /// она эвалюируется **до** попадания сюда, поэтому здесь тоже исключена.
 pub(crate) fn is_unsupported_directive(name: &str) -> bool {
     (name.starts_with("v-") && name != "v-model" && name != "v-if")
-        || (name.starts_with('@') && name != "@click")
+        || (name.starts_with('@') && !RUNTIME_EVENT_ATTRS.contains(&name))
 }
 
 /// Текстовое содержимое элемента (все текстовые дети склеены).
