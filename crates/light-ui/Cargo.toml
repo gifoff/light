@@ -10,8 +10,29 @@ description = "Light UI: готовые виджеты (Tooltip, Toast, Modal, P
 [lib]
 name = "light_ui"
 
+# Кастомные теги, разрешённые в HTML-шаблонах (ТЗ 0.19.0 Этап 4, Plugin API).
+# Демо объявляет эти теги, чтобы `#[template]` генерировал `NodeKind::Custom`,
+# а runtime доставлял их плагинной фабрике (distributed-slice в light-ui).
+# `kind = "widget"` + `display-name` обязательны для парсинга `[package.metadata.light]`
+# (иначе `light check`/`light dev` пропускают пакет и считают `<tooltip>` «неизвестным»).
+[package.metadata.light]
+kind = "widget"
+display-name = "Light UI Widgets"
+core = "^0.20"
+
+[package.metadata.light.provides]
+elements = ["tooltip", "toast"]
+
+[features]
+# Опциональная фича: пробрасывает `async-runtime` в `light-fw-core`, что
+# активирует `light-gui/async-runtime` (окна + spawn/post_to_ui). По умолчанию
+# выключена (stub-реэкспорт — компиляция без окон); чтобы использовать
+# `show_toast`, подключите `light-ui` с `features = ["async-runtime"]`.
+async-runtime = ["light-fw-core/async-runtime"]
+
 [dependencies]
 # Базовый фреймворк: элементы/поведения/VDOM, на которых строятся виджеты.
+# Фича `async-runtime` активизируется опционально через `[features]` выше.
 light-fw-core = { workspace = true }
 # Окно winit, события ввода и рендер-бэкенды — слой, над которым живут виджеты.
 light-gui = { workspace = true }
