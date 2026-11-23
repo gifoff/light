@@ -38,6 +38,10 @@ pub(crate) fn build_style<C: Component + ?Sized>(
     let mut align_items = Align::Start;
     let mut padding = Edges::ZERO;
     let mut margin = Edges::ZERO;
+    let mut abs_top = 0.0f32;
+    let mut abs_right = 0.0f32;
+    let mut abs_bottom = 0.0f32;
+    let mut abs_left = 0.0f32;
     let mut background = None;
     let mut font_color = None;
     let mut border_color = None;
@@ -136,6 +140,18 @@ pub(crate) fn build_style<C: Component + ?Sized>(
             "margin-top" | "margin-right" | "margin-bottom" | "margin-left" => {
                 set_edge_side(&mut margin, name, strict(parse_px_strict(value))?)
             }
+            "top" => {
+                abs_top = strict(parse_px_strict(value))?;
+            }
+            "right" => {
+                abs_right = strict(parse_px_strict(value))?;
+            }
+            "bottom" => {
+                abs_bottom = strict(parse_px_strict(value))?;
+            }
+            "left" => {
+                abs_left = strict(parse_px_strict(value))?;
+            }
             "border-size" => border_size = strict(parse_px_strict(value))?,
             "font-size" => font_size = strict(parse_px_strict(value)),
             "background" => background = strict_color(name, value, parse_color(value)),
@@ -175,6 +191,10 @@ pub(crate) fn build_style<C: Component + ?Sized>(
         align_items,
         padding,
         margin,
+        abs_top,
+        abs_right,
+        abs_bottom,
+        abs_left,
         background,
         font_color,
         border_color,

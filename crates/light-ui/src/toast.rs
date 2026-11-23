@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use light_fw_core::async_runtime::{post_to_ui, spawn};
+use light_fw_core::control::{WindowCommand, request};
 use light_fw_core::plugins::{CustomElement, CustomElementFactory, EventCtx};
 use light_fw_core::vdom::{Event, NodeKind, VElement};
 
@@ -48,6 +49,12 @@ pub fn show_toast(text: &str) {
         }
         let _ = post_to_ui(|| {
             TOAST_VISIBLE.store(false, Ordering::Relaxed);
+            // Принудительно запрашиваем перерисовку окна: после сброса флага
+            // UI-цикл может не перерисовать кадр автоматически (например,
+            // если нет активных событий ввода), и toast "зависнет" видимым.
+            // `WindowCommand::Invalidate` заставляет winit вызвать
+            // `request_redraw()` на целевом окне в ближайшем кадре.
+            request(WindowCommand::Invalidate);
         });
     });
 }

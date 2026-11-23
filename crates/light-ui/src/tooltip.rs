@@ -12,7 +12,7 @@
 use std::cell::Cell;
 
 use light_fw_core::plugins::{CustomElement, CustomElementFactory, EventCtx};
-use light_fw_core::vdom::{Event, NodeKind, VElement};
+use light_fw_core::vdom::{Event, NodeKind, Size, VElement};
 
 /// Кастомный элемент: строит поддерево (Column + Text) с текстом из
 /// атрибута `text`, показывает его только пока курсор над элементом
@@ -52,6 +52,11 @@ impl CustomElement for Tooltip {
             node.children
                 .push(VElement::leaf("", NodeKind::Text { content: text }));
         }
+        // Гарантируем минимальный размер 50×20, чтобы зона наведения была
+        // видимой и кликабельной даже без содержимого (синтетические события
+        // Mouseenter срабатывают только при ненулевом rect).
+        node.style.min_width = Some(Size::Px(50.0));
+        node.style.min_height = Some(Size::Px(20.0));
         node
     }
 

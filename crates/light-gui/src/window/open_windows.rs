@@ -67,6 +67,9 @@ impl App {
             WindowCommand::ToggleMaximize => window.set_maximized(!window.is_maximized()),
             WindowCommand::Show => window.set_visible(true),
             WindowCommand::Hide => window.set_visible(false),
+            // `Invalidate`: принудительно запросить перерисовку окна (виджеты
+            // используют это после `post_to_ui` для гарантии обновления кадра).
+            WindowCommand::Invalidate => window.request_redraw(),
         }
     }
 }

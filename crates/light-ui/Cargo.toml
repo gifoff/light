@@ -24,10 +24,11 @@ core = "^0.20"
 elements = ["tooltip", "toast"]
 
 [features]
-# Опциональная фича: пробрасывает `async-runtime` в `light-fw-core`, что
-# активирует `light-gui/async-runtime` (окна + spawn/post_to_ui). По умолчанию
-# выключена (stub-реэкспорт — компиляция без окон); чтобы использовать
-# `show_toast`, подключите `light-ui` с `features = ["async-runtime"]`.
+# Асинхронный рантайм (spawn/post_to_ui) — используется `show_toast` для
+# автоскрытия через 3 секунды. В 0.21.0 включён по умолчанию: без него
+# виджет Toast не может работать. Для headless-сборок можно отключить
+# через `default-features = false` (тогда `show_toast` будет no-op).
+default = ["async-runtime"]
 async-runtime = ["light-fw-core/async-runtime"]
 
 [dependencies]
