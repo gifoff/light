@@ -85,9 +85,7 @@ pub fn start(port: u16) -> std::io::Result<u16> {
     }
     // Цикл завершился только в ветке AddrInUse на последней попытке
     // (остальные варианты возвращают из тела цикла).
-    Err(last_err.unwrap_or_else(|| {
-        std::io::Error::new(ErrorKind::Other, "не удалось занять devtools-порт")
-    }))
+    Err(last_err.unwrap_or_else(|| std::io::Error::other("не удалось занять devtools-порт")))
 }
 
 /// Читает одну строку (до `\n` или EOF) из TCP-потока.
