@@ -1,5 +1,47 @@
 # Известные проблемы с тестами
 
+## `light devtools move` / `move-leave` не работают с runtime-templates (known issue, цель — 0.22.0) (2026-11-24)
+
+**Симптом:** при включённой фиче `runtime-templates` команды
+`light devtools move --key <k>` / `move-leave` возвращают `{ok:false}`
+для узлов с `@mouseenter`/`@mouseleave`, хотя обработчик в шаблоне есть
+и `light devtools state` показывает на узле `data-event="Mouseenter:…"`.
+
+**Причина (диагностика, чтение исходников):** с `runtime-templates`
+маппинг `@mouseenter`/`@mouseleave` живёт только в runtime-дереве
+(`light-vdom/src/runtime/parse.rs:445–474` пишет `data-event`), а
+DevTools-команды диспетчируют событие через `component.dispatch`
+(`light-gui/src/window/devtools.rs:445–477`) → статические `#arms` +
+`dispatch_by_name` + `dispatch_vmodel` — без fallback'а на `invoke_handler`
+(`light-macros/src/template/methods.rs:82–127`), который реально работает
+с runtime-деревом. Реальное наведение мышью (окно) идёт через
+`WindowCommand::InvokeHandler` → `invoke_handler` и работает корректно —
+это ограничение именно DevTools-инструмента, не фреймворка.
+
+**Обход для E2E/тестов:** программный вызов обработчика через кнопку
+`@click` (`light devtools click --key …`), либо ручное наведение.
+
+**Предлагаемое исправление (0.22.0):**
+1. В `crates/light-gui/src/window/devtools.rs` для `MoveEnter`/`MoveLeave`
+   добавить после `dispatch_custom_event`:
+   `|| window.component.invoke_handler(&key, event.clone())`.
+2. Либо в `pipeline.rs::dispatch` под `FEATURE_RUNTIME_TEMPLATES` вызывать
+   `invoke_handler` как fallback после `dispatch_by_name` / `dispatch_vmodel`.
+3. Минимум — диагностическое сообщение вместо голого `ok:false`
+   («ключ X не найден в статическом дереве; посмотрите `state` для
+   runtime-атрибутов `data-event`»).
+
+Приоритет: средний. Задокументировано в `docs/guide.md` (примечание
+в разделе CLI-обёртка) и в CHANGELOG `[Unreleased]` / Known limitations.
+Найден в ходе E2E 0.21.0 (см. `C:\dev\test-workspace\final-e2e\REPORT-E2E-0.21.0.md`).
+
+## `light devtools find` не ищет runtime-дерево (known issue, цель — 0.22.0) (2026-11-24)
+
+`find --text "…"` возвращает `null` для элементов, созданных динамически
+(`v-if`/`<template>`) при включённой `runtime-templates`: поиск идёт по
+статическому (до-рендер) дереву. Обход: `light devtools tree` / `state`
+для просмотра актуального VDOM и явные `key` для кликов. Приоритет: низкий.
+
 ## Pre-existing CI failures, починены в release/0.21.0 (2026-11-24)
 
 - **Clippy `io_other_error`** — `crates/light-gui/src/devtools/server.rs:89`:

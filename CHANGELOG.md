@@ -125,6 +125,23 @@
   (упоминание v-if skip в описании слоя `vdom`), docs/TODO_TESTS.md
   (записи о pre-existing CI-фиксах).
 
+### Known limitations
+
+- **devtools**: `light devtools move` / `move-leave` могут возвращать
+  `ok:false` для элементов с `@mouseenter`/`@mouseleave` при включённой
+  фиче `runtime-templates`: команды диспетчируют событие по статическому
+  дереву, а runtime-хэндлеры живут в динамическом. Ограничение инструмента,
+  не баг фреймворка — реальное наведение мышью работает корректно. Обход:
+  программный вызов обработчика через `light devtools click`. Задокументировано
+  в `docs/guide.md` и `docs/TODO_TESTS.md` (цель — 0.22.0).
+
+### Docs (E2E 0.21.0)
+
+- docs/guide.md: примечания об ограничениях `light devtools move`
+  (runtime-templates) и `find` (статическое дерево) в разделе DevTools.
+- docs/TODO_TESTS.md: запись про известное ограничение `move` как
+  known issue для 0.22.0.
+
 <!-- Этап 6: Modularity-буллеты этапов 1 и 4 перенесены в [0.20.0] выше. -->
 
 
