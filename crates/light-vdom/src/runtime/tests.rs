@@ -494,7 +494,7 @@ mod image_runtime_tests {
                 "note: skipping image test (cannot create {})",
                 dir.display()
             );
-            return (base, base);
+            return (base.clone(), base);
         }
         let bytes = b64_decode(MIN_PNG_B64);
         assert!(!bytes.is_empty(), "b64 decode must be non-empty");
