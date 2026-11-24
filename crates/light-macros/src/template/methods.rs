@@ -237,11 +237,17 @@ pub(super) fn build_methods(
     // см. выше), а не сырые `nodes`, иначе в шаблоне с `<window>` интерполяции
     // лежат в детях окна и на верхнем уровне их нет.
     let v_for_vars: std::collections::HashSet<String> = collect_v_for_items(content);
-    let used_idents: Vec<String> = collect_interpolations(content)
+    // Имена из `v-if`/`v-else-if` тоже попадают в `eval_field`: поле, используемое
+    // только в `v-if="flag"` (без `{{ flag }}`), иначе не получит ветку и
+    // runtime-рендер дефолтит его к «показать» (eval_v_if → true), что держит
+    // узел видимым. Добавляем их к интерполяциям (дедупликация через HashSet).
+    let mut used_set: std::collections::HashSet<String> = collect_interpolations(content)
         .into_iter()
         .filter(|raw| !raw.contains('.') && !raw.is_empty())
         .filter(|raw| !v_for_vars.contains(raw))
         .collect();
+    used_set.extend(collect_v_if_names(content));
+    let used_idents: Vec<String> = used_set.into_iter().collect();
     let eval_arms: Vec<proc_macro2::TokenStream> = {
         let mut arms: Vec<proc_macro2::TokenStream> = used_idents
             .iter()

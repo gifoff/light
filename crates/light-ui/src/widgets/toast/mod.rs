@@ -1,356 +1,424 @@
-//! Виджет `Toast` (0.21.0): временное уведомление.
+//! Виджет **Toast** (0.21.0, архитектурный рефакторинг).
 //!
-//! `show_toast` / `show_toast_cfg` показывают toast и скрывают его через
-//! заданное время **без блокировки UI-потока**: вместо `std::thread::spawn +
-//! sleep` используется фоновая задача ([`light_fw_core::spawn`]) — отдельный
-//! OS-поток, который после таймаута возвращает результат в UI-цикл через
-//! [`post_to_ui`] (там же сбрасывается флаг видимости;
-//! `WindowCommand::Invalidate` заставляет winit перерисовать кадр). Если
-//! UI-цикл ещё не запущен или уже завершён, `post_to_ui` возвращает ошибку —
-//! её безопасно игнорируем (`let _ = ...`).
+//! ## Модель
 //!
-//! ## Повторные клики (0.21.0, генерация)
+//! Фреймворк — **механизм**, пользователь — **политика**. Toast больше **не**
+//! хардкодит цвет фона / цвет текста и **не** «изобретает» позицию
+//! (`top-right` и т.п.):
 //!
-//! Каждый вызов `show_toast*` увеличивает счётчик-генерацию
-//! [`TOAST_GEN`]. Задача автоскрытия запоминает генерацию на момент запуска;
-//! если к моменту пробуждения генерация изменилась (новый клик перезапустил
-//! таймер), старый hide-колбэк просто пропускается: флаг видимости трогается
-//! только «свежей» задачей. Без этого тост исчезал в случайный момент — через
-//! несколько кликов первый таймер срабатывал раньше последнего показа.
+//! * [`show_toast(text, duration_ms)`] добавляет toast в менеджер
+//!   [`ToastManager`] (`thread_local`, т.к. `CustomElement` — не `Send+Sync`)
+//!   и запускает фоновую задачу, которая через `duration_ms` удаляет toast
+//!   (по `id`) и принудительно перерисовывает UI ([`WindowCommand::Invalidate`]).
+//! * `<toast-container>` рендерит **все** активные toast'ы вертикальным
+//!   столбиком (`margin_bottom: 10` у каждого — эквивалент `gap="10"`;
+//!   `gap` — неатрибут раскладки в light, см. ТЗ 0.21.0).
+//! * Контейнер **прозрачен** по умолчанию. Пользователь задаёт в HTML:
+//!   `<toast-container position="absolute" right="10" top="10" gap="10" />`
+//!   и при желании `background`/`font-color`/`font-size`/`padding`.
 //!
-//! ## Атрибуты элемента `<toast>`
+//! `CustomElement::render` получает **сырые** атрибуты тега, поэтому
+//! `render` сам вытаскивает `position`/`top`/`right`/`bottom`/`left`/
+//! `background`/`font-color`/`font-size`/`padding` и ставит их в style
+//! возвращённого корня (атрибуты стиля **не** применяются к тегу
+//! автоматически — runtime просто перекрашивает корень в
+//! `NodeKind::Custom("toast-container")`). Парсеры совпадают с VDOM:
+//! `position`/`width`/`height` — через `light_vdom::vdom::parse::*`,
+//! цвета — через общий парсер (формат `0xAARRGGBB`, имён нет — только
+//! `#RRGGBB[AA]`/`0x…`; «black»-типы задаются как `#000000`).
 //!
-//! - `text="..."` — подпись (по умолчанию пусто);
-//! - `duration="3000"` — длительность в мс, хранится как data-метка
-//!   (информативно; программная длительность задаётся в
-//!   [`show_toast_cfg`] / [`ToastConfig`]);
-//! - `position="top-right|top-left|bottom-right|bottom-left"` — позиция.
-//!   Элемент позиционируется абсолютными атрибутами контейнера (`left`/
-//!   `top`/`right`), поэтому здесь позиция хранится как data-метка; layout
-//!   берёт явные координаты из атрибутов узла.
+//! регистрация: подключение `light-ui` как зависимости автоматически делает
+//! тег `<toast-container>` доступным в runtime-шаблонах.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::Duration;
+use std::cell::RefCell;
+use std::str::FromStr;
+use std::time::{Duration, Instant};
 
 use light_fw_core::async_runtime::{post_to_ui, spawn};
 use light_fw_core::control::{WindowCommand, request};
 use light_fw_core::plugins::{CustomElement, CustomElementFactory, EventCtx};
-use light_fw_core::vdom::{Event, NodeKind, VElement};
-use light_fw_core::{Edges, Position};
+use light_fw_core::vdom::parse::{parse_color, parse_position, parse_size_or_auto};
+use light_fw_core::vdom::{Edges, Event, NodeKind, Style, VElement};
 
-/// Глобальный флаг «активен ли toast» (скелет: один активный toast).
-/// `AtomicBool`, т.к. флаг читается в UI-потоке (render) и может быть сброшен
-/// из фоновой задачи через `post_to_ui`.
-static TOAST_VISIBLE: AtomicBool = AtomicBool::new(false);
-
-/// Счётчик поколений toast: увеличивается при каждом `show_toast*`.
-/// Задача автоскрытия запоминает своё поколение и пропускает сброс, если
-/// к моменту пробуждения показан более свежий toast.
-static TOAST_GEN: AtomicU64 = AtomicU64::new(0);
-
-/// Включает/выключает видимость toast (в UI-потоке, через `post_to_ui`).
-pub(crate) fn set_visible(visible: bool) {
-    TOAST_VISIBLE.store(visible, Ordering::Relaxed);
-}
-
-/// Возвращает текущий флаг видимости toast.
-pub fn is_visible() -> bool {
-    TOAST_VISIBLE.load(Ordering::Relaxed)
-}
-
-/// Настройка toast'а: длительность в миллисекундах и позиция.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ToastConfig {
-    /// Длительность показа, мс (0 — без автоскрытия). По умолчанию 3000.
+/// Один активный toast.
+#[derive(Debug, Clone)]
+pub struct ActiveToast {
+    /// Уникальный идентификатор (счётчик [`ToastManager::next_id`]).
+    pub id: u64,
+    /// Подпись, показанная пользователю.
+    pub text: String,
+    /// Момент создания (для отладки / потенциального TTL-лога).
+    pub created_at: Instant,
+    /// Длительность жизни в мс (0 — toast живёт вечно, автоскрытия нет).
     pub duration_ms: u64,
-    /// Позиция: `top-right` (дефолт), `top-left`, `bottom-right`,
-    /// `bottom-left`. Читается элемент `<toast>` при рендере.
-    pub position: &'static str,
 }
 
-impl ToastConfig {
-    const DEFAULT_DURATION_MS: u64 = 3000;
-    const DEFAULT_POSITION: &'static str = "top-right";
+/// Менеджер активных toast'ов.
+///
+/// Состояние живёт в `thread_local!` (т.к. `CustomElement` — не
+/// `Send + Sync`, а `render` вызывается в UI-потоке). Фоновая задача
+/// автоскрытия **не** удерживает заимствование `RefCell` на время сна —
+/// она спит, а затем мутирует менеджер через `post_to_ui` (в UI-потоке).
+///
+/// Инициализация константна (`{ toasts: Vec::new(), next_id: 0 }`) —
+/// это позволяет использовать `thread_local! { static X = const { … } }`.
+pub struct ToastManager {
+    /// Активные toast'ы в порядке добавления (столбик сверху вниз).
+    pub toasts: Vec<ActiveToast>,
+    /// Счётчик `id` (монотонно растёт; не пересобирается при удалении).
+    pub next_id: u64,
+}
 
-    /// Конфигурат с дефолтными значениями (3 с, `top-right`).
-    pub fn new() -> Self {
+impl Default for ToastManager {
+    fn default() -> Self {
         Self {
-            duration_ms: Self::DEFAULT_DURATION_MS,
-            position: Self::DEFAULT_POSITION,
+            toasts: Vec::new(),
+            next_id: 0,
         }
     }
+}
 
-    /// Устанавливает длительность в мс.
-    pub fn with_duration_ms(mut self, ms: u64) -> Self {
-        self.duration_ms = ms;
-        self
+impl ToastManager {
+    /// Добавляет toast и возвращает его `id`.
+    pub fn push(&mut self, text: String, duration_ms: u64) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.toasts.push(ActiveToast {
+            id,
+            text,
+            created_at: Instant::now(),
+            duration_ms,
+        });
+        id
     }
 
-    /// Устанавливает позицию.
-    pub fn with_position(mut self, position: &'static str) -> Self {
-        self.position = position;
-        self
+    /// Удаляет toast по `id` (возвращает `true`, если был).
+    pub fn remove_by_id(&mut self, id: u64) -> bool {
+        let before = self.toasts.len();
+        self.toasts.retain(|t| t.id != id);
+        self.toasts.len() < before
     }
 }
 
-/// Показывает toast на 3 секунды с дефолтной позицией `top-right`
-/// (автоскрытие — фоновая задача + `post_to_ui`).
-///
-/// Повторный вызов перезапускает таймер (генерация [`TOAST_GEN`]).
-pub fn show_toast(text: &str) {
-    let cfg = ToastConfig::new();
-    show_toast_cfg(text, &cfg);
+thread_local! {
+    /// Тестовая фиксированная инициализация (константный блок).
+    static TOAST_MANAGER: RefCell<ToastManager> = const {
+        RefCell::new(ToastManager { toasts: Vec::new(), next_id: 0 })
+    };
 }
 
-/// Показывает toast с явной конфигурацией (длительность + позиция).
+/// Показывает toast: добавляет в [`ToastManager`] и запускает фоновую
+/// задачу автоскрытия через `duration_ms` (если > 0).
 ///
-/// Повторный вызов перезапускает таймер: старая задача автоскрытия видит
-/// смещённое поколение [`TOAST_GEN`] и пропускает сброс, поэтому «короткий
-/// после длинного» исчезает в правильный момент, а длинный — не гасит новый.
-pub fn show_toast_cfg(text: &str, cfg: &ToastConfig) {
-    let _ = text; // подпись (скелет: один активный toast, текст берёт элемент
-    // из атрибута `text` или остаётся пустым)
-    // Новое поколение: предыдущие hide-задачи станут stale.
-    let this_gen = TOAST_GEN.fetch_add(1, Ordering::AcqRel) + 1;
-    set_visible(true);
-    // Критично (ТЗ 0.21.0): сразу после показа нужно принудить UI-цикл
-    // перерисовать кадр — иначе vdom не перерендерится и toast визуально
-    // не появится, хотя флаг видимости уже true. `post_to_ui` гарантирует,
-    // что invalidate уходит в UI-поток; если цикл ещё не запущен — ошибка
-    // безопасно игнорируется (тот же паттерн, что и в hide-ветке).
+/// Вызывать **только из UI-потока** (обработчик события). Функция
+/// непаникующая: если цикл событий ещё не запущен, `post_to_ui`/`spawn`
+/// просто теряются (тот же паттерн, что и в `hide`-ветке).
+pub fn show_toast(text: &str, duration_ms: u64) {
+    let id = TOAST_MANAGER.with(|m| m.borrow_mut().push(text.to_owned(), duration_ms));
+    // Немедленная перерисовка, чтобы vdom перерендерился и toast появился.
     let _ = post_to_ui(|| request(WindowCommand::Invalidate));
-    if cfg.duration_ms == 0 {
-        return; // без автоскрытия
+    if duration_ms == 0 {
+        return; // вечноживущий toast (без автоскрытия).
     }
-    // Копируем значение до запуска closure'а (closure не может заимствовать
-    // `cfg`: borrow не переживает переход в фоновый поток).
-    let ms = cfg.duration_ms;
+    // Фоновая задача: спать `duration_ms`, затем через `post_to_ui` удалить
+    // **конкретный** toast по `id` и принудить invalidate. Не держим
+    // заимствование RefCell через сна — mutation только в UI-потоке.
     let _ = spawn(move |ctx| {
-        std::thread::sleep(Duration::from_millis(ms));
+        std::thread::sleep(Duration::from_millis(duration_ms));
         if ctx.is_cancelled() {
             return;
         }
-        // Поколение сменилось (повторный клик) — не прячём чужой toast.
-        let gen_now = TOAST_GEN.load(Ordering::Acquire);
-        if gen_now != this_gen {
-            return;
-        }
-        let _ = post_to_ui(|| {
-            TOAST_VISIBLE.store(false, Ordering::Relaxed);
-            request(WindowCommand::Invalidate);
+        let _ = post_to_ui(move || {
+            TOAST_MANAGER.with(|m| {
+                let removed = m.borrow_mut().remove_by_id(id);
+                // Invalidate нужно даже если removal вернул `false` (например,
+                // toast уже удалён) — нет, не нужно. Оптимизация: invalidate
+                // только если реально что-то поменялось.
+                if removed {
+                    request(WindowCommand::Invalidate);
+                }
+            });
         });
     });
 }
 
-/// Кастомный элемент `<toast>`: рендерит контейнер (пустой при выключенном
-/// флаге, Text с подписью при включённом). Подпись — из атрибута `text`;
-/// `duration`/`position` сохраняются в data-атрибутах (информативно;
-/// программная длительность задаётся в `show_toast_cfg`).
-pub struct Toast;
+/// Кастомный элемент `<toast-container>`: вертикальный столбик **всех**
+/// активных toast'ов. Прозрачен по умолчанию; атрибуты стиля тега
+/// (`position`/`top`/`right`/`bottom`/`left`/`background`/`font-color`/
+/// `font-size`/`padding`) переносит `render` в style возвращённого корня.
+///
+/// Каждый toast — `VElement::leaf(NodeKind::Text)` с `margin_bottom: 10`
+/// (эквивалент `gap="10"`; `gap` — неатрибут раскладки в light).
+pub struct ToastContainer;
 
-impl Default for Toast {
+impl Default for ToastContainer {
     fn default() -> Self {
         Self
     }
 }
 
-impl CustomElement for Toast {
-    fn tag(&self) -> &'static str {
-        "toast"
+/// Парсит `px`/число в `f32` (`10` или `"10px"` → `10.0`; пустое → `None`).
+fn parse_px(value: &str) -> Option<f32> {
+    let v = value.trim();
+    if v.is_empty() {
+        return None;
     }
+    let num = v.strip_suffix("px").unwrap_or(v).trim();
+    f32::from_str(num).ok()
+}
 
-    /// Рендер: пустой Column, если флаг выключен; Column с Text — если включён.
-    ///
-    /// Позиция (`top-right`/`top-left`/`bottom-right`/`bottom-left`) применяется
-    /// абсолютным позиционированием относительно content box родителя: узел
-    /// не занимает места в потоке и «прилипает» к углу окна. Отступ по краю —
-    /// 16 логических пикселей.
-    fn render(&self, attrs: &[(&'static str, String)], _children: &[VElement]) -> VElement {
-        let mut node = VElement::container("", NodeKind::Column, Vec::new());
-        // Data-метки: сохраняем длительность и позицию в data-атрибутах
-        // дерева (информативно; программная длительность задаётся в
-        // `show_toast_cfg`). Ключи — строковые литералы (`&'static str`).
-        for (name, value) in attrs {
-            let key = match *name {
-                "duration" => "data-duration",
-                "position" => "data-position",
-                _ => continue,
-            };
-            node.attrs.push((key, value.clone()));
-        }
-        if TOAST_VISIBLE.load(Ordering::Relaxed) {
-            let text = attrs
-                .iter()
-                .find_map(|(name, value)| (*name == "text").then_some(value.as_str()))
-                .unwrap_or("");
-            node.children.push(VElement::leaf(
-                "",
-                NodeKind::Text {
-                    content: text.to_owned(),
-                },
-            ));
-            // Абсолютное позиционирование по позиции (см. doc).
-            // `padding` внутри колонки даёт внутренний отступ текста от края.
-            let pad = 16.0_f32;
-            node.style.position = Position::Absolute;
-            node.style.padding = Edges::all(pad);
-            node.style.font_size = Some(14.0);
-            node.style.background = Some(0xFF20242B); // тёмная плашка
-            node.style.font_color = Some(0xFFFFFFFF); // белый текст
-            // Задаём смещения в зависимости от угла. Родительский content box
-            // здесь — корневой контейнер окна (600×400 в демо), поэтому
-            // «правый верхний угол» = abs_top + abs_right = 16, остальные 0.
-            // (Координаты берутся относительно правого/нижнего края родителя.)
-            let position = attrs
-                .iter()
-                .find(|(name, _)| *name == "position")
-                .map(|(_, v)| v.as_str())
-                .unwrap_or("top-right");
-            match position {
-                "top-left" => {
-                    node.style.abs_top = pad;
-                    node.style.abs_left = pad;
-                }
-                "bottom-left" => {
-                    node.style.abs_bottom = pad;
-                    node.style.abs_left = pad;
-                }
-                "bottom-right" => {
-                    node.style.abs_bottom = pad;
-                    node.style.abs_right = pad;
-                }
-                // Дефолт: top-right
-                _ => {
-                    node.style.abs_top = pad;
-                    node.style.abs_right = pad;
+/// Разбирает цвет: CSS-имена (через lower-case) + общие VDOM-форматы
+/// `#RRGGBB[AA]`/`0x…` (порядок байт — **`0xRRGGBBAA`**, т.е. alpha в
+/// младшем байте; совпадает с VDOM-тестами: `#FF0000` → `0xFF0000FF`).
+/// light-ui поддерживает **наименования** для удобного HTML-авторинга,
+/// которые runtime-шаблоны тоже понимают: `black`, `white`, `red`, `green`,
+/// `blue`, `yellow`, `orange`, `purple`, `gray`/`grey`. Всё остальное
+/// делегируется общему VDOM-парсеру [`parse_color`].
+fn parse_color_named(value: &str) -> Option<u32> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "black" => Some(0x00_00_00_FF),
+        "white" => Some(0xFF_FF_FF_FF),
+        "red" => Some(0xFF_00_00_FF),
+        "green" => Some(0x00_FF_00_FF),
+        "blue" => Some(0x00_00_FF_FF),
+        "yellow" => Some(0xFF_FF_00_FF),
+        "orange" => Some(0xFF_7F_00_FF),
+        "purple" => Some(0x80_00_80_FF),
+        "gray" | "grey" => Some(0x80_80_80_FF),
+        _ => parse_color(value),
+    }
+}
+
+/// Применяет стандартные атрибуты стиля тега к корню контейнера.
+///
+/// Обрабатываемые атрибуты (все опциональные; по умолчанию — «прозрачный,
+/// в потоке, без отступов»):
+///
+/// | атрибут       | поле стиля         | дефолт             |
+/// |---------------|--------------------|--------------------|
+/// | `background`  | `Style::background`| `None`             |
+/// | `font-color`  | `Style::font_color`| `None`             |
+/// | `position`    | `Style::position`  | `Position::Flow`   |
+/// | `top`/`right`/`bottom`/`left` | `Style::abs_*` | `0.0` |
+/// | `padding`     | `Style::padding`   | `Edges::ZERO`      |
+/// | `width`       | `Style::width`     | `Size::Auto`       |
+/// | `height`      | `Style::height`    | `Size::Auto`       |
+/// | `font-size`   | `Style::font_size` | `None`             |
+///
+/// Парсинг цвета: [parse_color_named] — CSS-имена (`black`, `white`, …)
+/// + общие VDOM-форматы `#RRGGBB[AA]`/`0x…` (порядок байт — `0xAARRGGBB`).
+fn apply_container_style(style: &mut Style, attrs: &[(&'static str, String)]) {
+    for (name, value) in attrs {
+        match *name {
+            "background" => style.background = parse_color_named(value),
+            "font-color" => style.font_color = parse_color_named(value),
+            "position" => style.position = parse_position(value),
+            "top" => {
+                if let Some(px) = parse_px(value) {
+                    style.abs_top = px;
                 }
             }
+            "right" => {
+                if let Some(px) = parse_px(value) {
+                    style.abs_right = px;
+                }
+            }
+            "bottom" => {
+                if let Some(px) = parse_px(value) {
+                    style.abs_bottom = px;
+                }
+            }
+            "left" => {
+                if let Some(px) = parse_px(value) {
+                    style.abs_left = px;
+                }
+            }
+            "padding" => {
+                if let Some(px) = parse_px(value) {
+                    style.padding = Edges::all(px);
+                }
+            }
+            "width" => style.width = parse_size_or_auto(value),
+            "height" => style.height = parse_size_or_auto(value),
+            "font-size" => {
+                if let Some(px) = parse_px(value) {
+                    style.font_size = Some(px);
+                }
+            }
+            // Остальные атрибуты (`gap`, `data-*`, …) игнорируются: `gap`
+            // не является атрибутом раскладки в light — расстояние между
+            // toast'ами задаётся `margin_bottom` каждого дочернего узла.
+            _ => {}
         }
-        node
+    }
+}
+
+impl CustomElement for ToastContainer {
+    fn tag(&self) -> &'static str {
+        "toast-container"
     }
 
-    /// События toast не обрабатываются: видимость управляется только через
-    /// `set_visible` / `show_toast*` (и автоскрытие).
+    /// Рендер: Column из всех активных toast'ов.
+    ///
+    /// Атрибуты стиля тега переносим в style корня **сами** (см.
+    /// [`apply_container_style`]). Каждый toast — Text-leaf с
+    /// `margin_bottom: 10` (эквивалент `gap="10"`; `gap` — неатрибут
+    /// раскладки в light, поэтому ТЗ-`gap="10"` интерпретируется как
+    /// 10px-отступ между toast'ами).
+    fn render(&self, attrs: &[(&'static str, String)], _children: &[VElement]) -> VElement {
+        let mut root = VElement::container("", NodeKind::Column, Vec::new());
+        apply_container_style(&mut root.style, attrs);
+
+        // --- Активные toast'ы ---
+        let toasts = TOAST_MANAGER.with(|m| m.borrow().toasts.clone());
+        for t in toasts {
+            let mut leaf = VElement::leaf(
+                "toast",
+                NodeKind::Text {
+                    content: t.text.clone(),
+                },
+            );
+            leaf.style.margin = Edges {
+                top: 0.0,
+                right: 0.0,
+                bottom: 10.0,
+                left: 0.0,
+            };
+            root.children.push(leaf);
+        }
+
+        root
+    }
+
+    /// События toast-контейнера не обрабатываются: видимость управляется
+    /// только через `show_toast` / автоскрытие.
     fn on_event(&mut self, _event: &Event, _ctx: &mut EventCtx<'_>) {}
 }
 
-/// Фабрика плагина: регистрирует кастомный элемент `toast` (distributed-slice).
-/// `const`: все поля — `&'static`/`fn pointer`, так что конструктор безопасен
-/// в статическом контексте.
-const TOAST: CustomElementFactory = CustomElementFactory {
-    tag: "toast",
+/// Фабрика плагина: регистрирует кастомный элемент `toast-container`
+/// (distributed-slice). `const`: все поля — `&'static`/`fn pointer`.
+const TOAST_CONTAINER: CustomElementFactory = CustomElementFactory {
+    tag: "toast-container",
     core_version_req: "^0.20",
     crate_name: "light-ui",
-    provides: &["toast"],
-    factory: || Box::new(Toast),
+    provides: &["toast-container"],
+    factory: || Box::new(ToastContainer),
 };
 
 #[linkme::distributed_slice(light_fw_core::plugins::REGISTERED_COMPONENTS)]
-static TOAST_ENTRY: CustomElementFactory = TOAST;
+static TOAST_CONTAINER_ENTRY: CustomElementFactory = TOAST_CONTAINER;
 
 #[cfg(test)]
 mod tests {
+    //! Unit-тесты: `show_toast`/автоскрытие, контракт стиля контейнера и
+    //! регистрация в distributed-slice.
+
     use super::*;
+    use light_fw_core::plugins::lookup;
+    use light_fw_core::vdom::Position;
 
-    /// Изначально toast невидим.
+    /// `show_toast` добавляет запись в thread-local менеджер (сразу после
+    /// возврата). ID монотонно растёт; `duration_ms` сохраняется.
     #[test]
-    fn toast_initially_hidden() {
-        TOAST_VISIBLE.store(false, Ordering::Relaxed);
-        assert!(!is_visible());
+    fn show_toast_pushes_into_manager() {
+        show_toast("hello", 100);
+        let toasts = TOAST_MANAGER.with(|m| m.borrow().toasts.clone());
+        assert_eq!(toasts.len(), 1);
+        assert_eq!(toasts[0].text, "hello");
+        assert_eq!(toasts[0].duration_ms, 100);
     }
 
-    /// `set_visible(true)` — единственный синхронный путь (UI-поток). Тест
-    /// фиксирует контракт флага: видимость управляется этим setter'ом.
-    /// Фоновая автоскрытийная задача проверяется только на отсутствии
-    /// блокировок (`show_toast` возвращает немедленно), а не по её действию —
-    /// это требует синхронизации с UI-циклом, что выходит за рамки unit-теста.
+    /// Менеджер: `push` возвращает следующий id, `remove_by_id` удаляет
+    /// конкретный (не первый) и возвращает `true`; повторное удаление —
+    /// `false`.
     #[test]
-    fn set_visible_toggle_works() {
-        TOAST_VISIBLE.store(false, Ordering::Relaxed);
-        assert!(!is_visible());
-        set_visible(true);
-        assert!(is_visible(), "set_visible(true) делает toast видимым");
-        set_visible(false); // cleanup
+    fn manager_push_and_remove_by_id() {
+        let mut m = ToastManager::default();
+        let a = m.push("a".into(), 1);
+        let b = m.push("b".into(), 2);
+        assert_eq!(a, 0);
+        assert_eq!(b, 1);
+        assert!(m.remove_by_id(1));
+        assert!(!m.remove_by_id(1)); // уже удалён
+        assert!(!m.remove_by_id(99)); // такого не было
+        assert_eq!(m.toasts.len(), 1);
+        assert_eq!(m.toasts[0].id, 0);
     }
 
-    /// `ToastConfig::new` даёт дефолты: 3000 мс и `top-right`.
+    /// Контейнер: `position="absolute" right="10" top="10"` → абсолютная
+    /// позиция с точными смещениями (демо из ТЗ: «топ-право, отступ 10»).
     #[test]
-    fn config_defaults() {
-        let cfg = ToastConfig::new();
-        assert_eq!(cfg.duration_ms, 3000);
-        assert_eq!(cfg.position, "top-right");
+    fn container_applies_position_and_offsets() {
+        let mut el = VElement::container("t", NodeKind::Column, vec![]);
+        let attrs = vec![
+            ("position", "absolute".to_string()),
+            ("right", "10".to_string()),
+            ("top", "10".to_string()),
+        ];
+        apply_container_style(&mut el.style, &attrs);
+        assert_eq!(el.style.position, Position::Absolute);
+        assert_eq!(el.style.abs_top, 10.0);
+        assert_eq!(el.style.abs_right, 10.0);
+        assert_eq!(el.style.abs_left, 0.0);
+        assert_eq!(el.style.abs_bottom, 0.0);
     }
 
-    /// Builder-сеттеры `with_duration_ms` / `with_position` работают.
+    /// `background="black"` + `font-color="white"` → CSS-имена
+    /// интерпретируются в RRGGBBAA-порядке light: `0x000000FF` / `0xFFFFFFFF`.
     #[test]
-    fn config_builder() {
-        let cfg = ToastConfig::new()
-            .with_duration_ms(5000)
-            .with_position("bottom-left");
-        assert_eq!(cfg.duration_ms, 5000);
-        assert_eq!(cfg.position, "bottom-left");
+    fn container_applies_named_colors() {
+        let mut el = VElement::container("t", NodeKind::Column, vec![]);
+        let attrs = vec![
+            ("background", "black".to_string()),
+            ("font-color", "white".to_string()),
+        ];
+        apply_container_style(&mut el.style, &attrs);
+        assert_eq!(el.style.background, Some(0x00_00_00_FF));
+        assert_eq!(el.style.font_color, Some(0xFF_FF_FF_FF));
     }
 
-    /// `show_toast_cfg` с `duration_ms = 0` показывает toast и НЕ ставит
-    /// автоскрытие (флаг остаётся true; caller отвечает за скрытие).
+    /// `#RRGGBB`-формат тоже поддерживается (через общий VDOM-парсер):
+    /// `#FF7F00` (оранжевый) → `0xFF7F00FF` (RRGGBBAA).
     #[test]
-    fn show_with_zero_duration_keeps_visible() {
-        TOAST_VISIBLE.store(false, Ordering::Relaxed);
-        let cfg = ToastConfig::new().with_duration_ms(0);
-        show_toast_cfg("x", &cfg);
-        assert!(is_visible(), "duration=0: toast должен остаться видимым");
-        // Cleanup: сбрасываем флаг вручную.
-        set_visible(false);
+    fn container_applies_hex_color() {
+        let mut el = VElement::container("t", NodeKind::Column, vec![]);
+        let attrs = vec![("background", "#FF7F00".to_string())];
+        apply_container_style(&mut el.style, &attrs);
+        assert_eq!(el.style.background, Some(0xFF_7F_00_FF));
     }
 
-    /// Элемент `<toast>` рендерит пустой контейнер, пока флаг не включён.
+    /// `padding="5"` → все четыре стороны `Edges::all(5.0)`; `gap="10"`
+    /// **не** является атрибутом раскладки (интерпретируется как
+    /// `margin_bottom` каждого дочернего toast'а — см. doc-комментарий).
     #[test]
-    fn toast_render_empty_when_hidden() {
-        TOAST_VISIBLE.store(false, Ordering::Relaxed);
-        let t = Toast;
-        let v = t.render(&[("text", "Hello".into())], &[]);
-        assert!(
-            v.children.is_empty(),
-            "пустой toast не должен содержать Text-дети"
-        );
+    fn container_applies_padding_and_ignores_gap() {
+        let mut el = VElement::container("t", NodeKind::Column, vec![]);
+        let attrs = vec![("padding", "5".to_string()), ("gap", "10".to_string())];
+        apply_container_style(&mut el.style, &attrs);
+        assert_eq!(el.style.padding, Edges::all(5.0));
+        // gap не меняет стиль корня (нет поля `gap` в Style).
     }
 
-    /// При включённом флаге `<toast>` содержит Text с подписью из атрибутов.
+    /// Без атрибутов контейнер прозрачен: цвета `None`, позиция в потоке,
+    /// padding нулевой (полностью «прозрачный» контейнер по умолчанию).
     #[test]
-    fn toast_render_shows_text_when_visible() {
-        TOAST_VISIBLE.store(true, Ordering::Relaxed);
-        let t = Toast;
-        let v = t.render(&[("text", "Hi".into())], &[]);
-        assert_eq!(v.children.len(), 1, "включённый toast — 1 дочерний Text");
-        TOAST_VISIBLE.store(false, Ordering::Relaxed); // cleanup
+    fn container_default_style_is_flow_and_transparent() {
+        let mut el = VElement::container("t", NodeKind::Column, vec![]);
+        apply_container_style(&mut el.style, &[]);
+        assert_eq!(el.style.position, Position::Flow);
+        assert!(el.style.background.is_none());
+        assert!(el.style.font_color.is_none());
+        assert!(el.style.padding.is_zero());
     }
 
-    /// Атрибуты `duration`/`position` сохраняются в data-метках дерева.
+    /// Регистрация в distributed-slice: `lookup("toast-container")`
+    /// возвращает фабрику light-ui (тег доступен в runtime-шаблонах).
     #[test]
-    fn toast_render_keeps_meta_attrs() {
-        TOAST_VISIBLE.store(false, Ordering::Relaxed);
-        let t = Toast;
-        let v = t.render(
-            &[("duration", "5000".into()), ("position", "top-left".into())],
-            &[],
-        );
-        // Ключи — строковые литералы (`&'static str`), поэтому `*k` даёт &str.
-        let keys: Vec<&str> = v.attrs.iter().map(|(k, _)| *k).collect();
-        assert!(keys.contains(&"data-duration"), "data-duration должен быть");
-        assert!(keys.contains(&"data-position"), "data-position должен быть");
-    }
-
-    /// Плагин регистрируется под тегом `toast` (distributed-slice lookup).
-    /// Проверяем метаданные фабрики (тег/crate/core_version) — это контракт
-    /// Plugin API; downcast экземпляра покрывается в light-vdom (см. там).
-    #[test]
-    fn toast_registered_in_distributed_slice() {
-        let entry = light_fw_core::plugins::lookup("toast");
-        assert!(entry.is_some(), "тег `toast` должен быть зарегистрирован");
-        let meta = entry.expect("только проверили Some");
-        assert_eq!(meta.tag, "toast");
-        assert_eq!(meta.crate_name, "light-ui");
-        assert_eq!(meta.core_version_req, "^0.20");
-        assert_eq!(meta.provides, &["toast"]);
+    fn toast_container_registered_in_distributed_slice() {
+        let factory = lookup("toast-container");
+        assert!(factory.is_some(), "tag \"toast-container\" must be registered");
+        let factory = factory.expect("checked");
+        assert_eq!(factory.crate_name, "light-ui");
+        assert_eq!(factory.provides, &["toast-container"]);
     }
 }

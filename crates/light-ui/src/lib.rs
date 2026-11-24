@@ -1,12 +1,20 @@
 //! # Light UI (0.21.0)
 //!
-//! Готовые виджеты поверх `light-fw-core` + `light-gui`: Tooltip, Toast,
-//! Modal, Progress. В этой версии — `Tooltip` (кастомный элемент `<tooltip>`
-//! через `linkme`, реакция на `Mouseenter`/`Mouseleave`) и `Toast`
-//! (`show_toast` с автоскрытием через 3 секунды, без блокировки UI).
+//! Готовые виджеты поверх `light-fw-core` + `light-gui`: Toast и Tooltip.
+//!
+//! * **Toast** — [`show_toast(text, duration_ms)`] добавляет toast в
+//!   `thread_local` менеджер и запускает фоновую задачу автоскрытия
+//!   (без блокировки UI); `<toast-container>` рендерит все активные
+//!   toast'ы вертикальным столбиком. Позиция/цвет/отступы задаются
+//!   стандартными атрибутами стиля в HTML.
+//! * **Tooltip** — кастомный элемент `<tooltip text="…" position="absolute"
+//!   top="…" left="…">`: прозрачный по умолчанию, стиль — из атрибутов
+//!   тега, видимость полностью под контролем пользователя через `v-if`
+//!   и `@mouseenter`/`@mouseleave` в шаблоне. Никакого внутреннего
+//!   ховер-состояния и задержек.
 
 pub mod widgets;
 
 // Публичные реэкспорты: демо-приложения пишут
-// `use light_ui::{show_toast, show_toast_cfg, ToastConfig, Tooltip};`.
-pub use widgets::{ToastConfig, Tooltip, show_toast, show_toast_cfg};
+// `use light_ui::{show_toast, ActiveToast, ToastContainer, ToastManager, Tooltip};`.
+pub use widgets::{ActiveToast, ToastContainer, ToastManager, Tooltip, show_toast};

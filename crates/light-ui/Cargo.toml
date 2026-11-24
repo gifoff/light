@@ -21,7 +21,7 @@ display-name = "Light UI Widgets"
 core = "^0.20"
 
 [package.metadata.light.provides]
-elements = ["tooltip", "toast"]
+elements = ["tooltip", "toast-container"]
 
 [features]
 # Асинхронный рантайм (spawn/post_to_ui) — используется `show_toast` для
