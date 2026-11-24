@@ -62,20 +62,12 @@ pub struct ActiveToast {
 ///
 /// Инициализация константна (`{ toasts: Vec::new(), next_id: 0 }`) —
 /// это позволяет использовать `thread_local! { static X = const { … } }`.
+#[derive(Default)]
 pub struct ToastManager {
     /// Активные toast'ы в порядке добавления (столбик сверху вниз).
     pub toasts: Vec<ActiveToast>,
     /// Счётчик `id` (монотонно растёт; не пересобирается при удалении).
     pub next_id: u64,
-}
-
-impl Default for ToastManager {
-    fn default() -> Self {
-        Self {
-            toasts: Vec::new(),
-            next_id: 0,
-        }
-    }
 }
 
 impl ToastManager {
