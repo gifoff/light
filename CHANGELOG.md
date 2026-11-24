@@ -77,8 +77,36 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **vdom**: `v-if="false"` теперь **пропускает** узел, а не прерывает
+  построение всего списка детей. Соседи в Row/Column рендерятся независимо
+  от состояния v-if других детей. До фикса `<tooltip v-if="false">` внутри
+  колонки убивал весь остаток поддерева (включая toast-container). Тест:
+  `v_if_false_skips_siblings_stay_rendered`.
+- **ui/toast**: `show_toast` вызывает `WindowCommand::Invalidate` при
+  добавлении — UI перерисовывается сразу после клика, без ожидания
+  внешнего события (hover, resize).
+- **ui/tooltip**: tooltip принудительно ставит `pointer-events: none` —
+  больше не перехватывает события мыши и не вызывает flicker
+  (показать → перехватить → скрыть → показать…).
+- **ci (pre-existing)**: `std::io::Error::other()` вместо `Error::new(ErrorKind::Other, …)`
+  в `crates/light-gui/src/devtools/server.rs:89` (clippy::io_other_error,
+  `16b7dd0`).
+- **ci (pre-existing)**: image-тест
+  `runtime_image_decodes_and_lays_out` — skip-guard: при недоступности
+  файловой системы (sandbox / CI macOS) тест логирует `note: skipping`
+  и завершается без panic (`16b7dd0`, `fb1f825`).
+- **ci (pre-existing)**: `#[derive(Default)]` для `ToastManager`
+  (clippy::derivable_impls, `4beaf87`).
+
 ### Added
 
+- **vdom/style**: новое свойство `pointer-events` (`auto` / `none`) и
+  динамическая привязка `:pointer-events`. Узлы с `pointer-events="none"`
+  исключаются из hit-test (hit_test.rs, query.rs) — они рендерятся, но не
+  получают события мыши. Полезно для тултипов, прогресс-баров и других
+  оверлеев.
 - **cli / cli-core**: Настраиваемый реестр (`registry` в `light.config.json`:
   `url`, `download_url`, `docs_url`; дефолты — crates.io). Новые файлы
   `registry_config.rs`, `metadata.rs`; расширен trait `RemoteRegistry`
@@ -91,8 +119,11 @@
 - **cli-core**: модуль `metadata` — извлечение и валидация метаданных из
   скачанного `.crate` (NoMetadata/IncompatibleCore — фатальные; EmptyProvides/
   Conflict — предупреждение с подтверждением).
-- **docs**: docs/cli.md (флаги `light search`), docs/guide.md (раздел
-  «Настраиваемый реестр»), README.md (примеры `light search --yes`/`--json`).
+- **docs**: docs/guide.md (строки `pointer-events` / `:pointer-events` в
+  таблице стилей, подраздел «Оверлеи, которые не перехватывают мышь»,
+  уточнение семантики `v-if` в разделе «Директивы»), docs/ARCHITECTURE.md
+  (упоминание v-if skip в описании слоя `vdom`), docs/TODO_TESTS.md
+  (записи о pre-existing CI-фиксах).
 
 <!-- Этап 6: Modularity-буллеты этапов 1 и 4 перенесены в [0.20.0] выше. -->
 

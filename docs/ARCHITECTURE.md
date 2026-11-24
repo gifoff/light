@@ -50,7 +50,7 @@ Component::render() → VElement (новое дерево)
 Основные слои `light-fw-core` (реэкспорт под прежними именами 0.19.x):
 
 - **`reactive`** (`light-reactivity`) — свойства `Property`/`Proxy`, наблюдатели и запрос перерисовки.
-- **`vdom`** (`light-vdom`) — `VElement`, `NodeKind`, стили, события и `diff`. Ключи узлов стабильны между отрисовками.
+- **`vdom`** (`light-vdom`) — `VElement`, `NodeKind`, стили, события и `diff`. Ключи узлов стабильны между отрисовками. `v-if="false"` в `build_children` **пропускает** узел, а не прерывает список: соседние элементы рендерятся независимо (тест `v_if_false_skips_siblings_stay_rendered`).
 - **`layout`** (`light-vdom`) — вычисление `Rect` для каждого узла.
 - **`window`** (`light-gui`) — цикл `winit`, управление окнами. Подмодуль `devtools` (фича `devtools`) — TCP-сервер на 127.0.0.1:9229.
 - **`window::paint`** (`light-render-cpu` / `light-render-gpu`) — программная либо аппаратная растеризация.

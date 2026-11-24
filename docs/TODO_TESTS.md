@@ -1,5 +1,19 @@
 # Известные проблемы с тестами
 
+## Pre-existing CI failures, починены в release/0.21.0 (2026-11-24)
+
+- **Clippy `io_other_error`** — `crates/light-gui/src/devtools/server.rs:89`:
+  `std::io::Error::new(ErrorKind::Other, …)` → `std::io::Error::other(…)`.
+  Clippy `-D warnings` (rust 1.100.0) падает на всех 3 OS. Фикс: `16b7dd0`.
+- **Image-test sandbox** — `crates/light-vdom/src/runtime/tests.rs:489`:
+  `create_dir_all` / `fs::write` → os error 5 (PermissionDenied) на macOS CI
+  и локально под DSH sandbox. Фикс: skip-guard — при недоступности ФС тест
+  логирует `note: skipping` и завершается без panic (`16b7dd0`, `fb1f825`).
+- **Clippy `derivable_impls`** — `crates/light-ui/src/widgets/toast/mod.rs:72`:
+  ручной `impl Default for ToastManager` → `#[derive(Default)]`. Стало жёсткой
+  ошибкой только после того, как все upstream-крейты закомпилились чисто.
+  Фикс: `4beaf87`.
+
 ## crates.io S3: 404 на .crate-архивы (2026-11-14)
 
 `https://static.crates.io/light-fw-html/0.18.0/download` возвращает
