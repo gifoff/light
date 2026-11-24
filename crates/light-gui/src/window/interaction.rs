@@ -38,6 +38,17 @@ impl WindowState {
                     return;
                 }
                 self.dispatch_checked(key, DomEvent::Click);
+                // После клика гарантированно перерисовать кадр **синхронно**
+                // (в UI-потоке, где `&mut WindowState` доступен). `@click`-
+                // хендлер виджета (например `show_toast`) меняет состояние
+                // менеджерa в UI-потоке, но без этого вызова нет триггера
+                // `request_redraw()`: когда цикл событий спит (нет других
+                // событий ввода), тост/состояние оставались бы неперерисованными
+                // до следующего события. `Invalidate` через прокси здесь
+                // недостаточен: он лишь ставит флаг, но не будит цикл
+                // (см. `events.rs` — ветка `UserEvent::Command` не вызывает
+                // `request_redraw`).
+                self.invalidate();
             }
             Some(ClickAction::FocusField { key, value, caret }) => {
                 self.focused = Some(key.to_owned());

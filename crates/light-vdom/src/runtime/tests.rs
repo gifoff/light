@@ -198,29 +198,47 @@ mod v_if_tests {
     ///
     /// Это корректно: статика всегда согласована с текущим state.
     #[test]
-    fn parse_template_true_keeps_node_false_falls_back_to_static() {
-        // Истина → runtime-дерево построено, живой div на месте.
+    fn parse_template_true_keeps_node_false_skips_only_itself() {
+        let tpl = r#"<div direction="horizontal"><div v-if="show"></div><div>visible</div></div>"#;
+
+        // Истина → v-if-div и видимый сосед оба на месте (внутрь корневого div).
         let on = BoolComp { show: true };
-        let tree_on = parse_template(
-            r#"<div direction="horizontal"><div v-if="show"></div></div>"#,
-            &on,
-        )
-        .expect("истинный v-if не должен выключать runtime-рендер");
+        let root_on = parse_template(tpl, &on).expect("истинный v-if не должен выключить runtime");
+        let row_on = &root_on.children[0];
         assert_eq!(
-            tree_on.children.len(),
-            1,
-            "при show=true внутренний div обязан остаться в runtime-дереве"
+            row_on.children.len(),
+            2,
+            "при show=true оба дочерних div'а обязаны остаться"
         );
 
-        // Ложь → runtime-рендер возвращает None (статика возьмёт управление).
+        // Ложь → v-if-div пропущен, видимый сосед цел (шаблон НЕ None, корень жив).
         let off = BoolComp { show: false };
-        assert!(
-            parse_template(
-                r#"<div direction="horizontal"><div v-if="show"></div></div>"#,
-                &off
-            )
-            .is_none(),
-            "ложный v-if обязан откатить runtime на статическое дерево (None)"
+        let root_off = parse_template(tpl, &off)
+            .expect("ложный v-if обязан пропускать только себя, а не весь шаблон");
+        let row_off = &root_off.children[0];
+        assert_eq!(
+            row_off.children.len(),
+            1,
+            "при show=false остаётся ровно один (видимый) div; v-if-div пропущен"
+        );
+    }
+
+    /// Прямой тест фикса каскада (0.21.0): `v-if="false"` на одном ребёнке и
+    /// видимый сосед — сосед обязан отрендериться (до фикса он выпадал вместе
+    /// со всем деревом).
+    #[test]
+    fn v_if_false_skips_siblings_stay_rendered() {
+        let comp = BoolComp { show: false };
+        let root = parse_template(
+            r#"<div direction="vertical"><div v-if="show"></div><button>ok</button></div>"#,
+            &comp,
+        )
+        .expect("сосед v-if-div'а обязан рендериться");
+        let col = &root.children[0];
+        assert_eq!(col.children.len(), 1, "ровно один видимый элемент (button)");
+        assert_eq!(
+            col.children[0].tag, "button",
+            "это тот самый видимый button"
         );
     }
 
@@ -289,26 +307,107 @@ mod v_if_tests {
         );
     }
 
-    /// Интеграция через `parse_template`: метод-геттер в runtime.
+    /// Интеграция через `parse_template`: метод-геттер в runtime (0.21.0).
+    /// Ложный v-if на метод — тот же фикс каскада: узел пропускается, сосед
+    /// рендерится (раньше было fallback в None).
     #[test]
-    fn parse_template_v_if_method_true_keeps_false_falls_back() {
+    fn parse_template_v_if_method_true_keeps_false_skips_only_itself() {
+        let tpl = r#"<div direction="horizontal"><div v-if="is_active"></div><div>vis</div></div>"#;
+
         let on = MethodComp { active: true };
-        let tree_on = parse_template(
-            r#"<div direction="horizontal"><div v-if="is_active"></div></div>"#,
-            &on,
-        )
-        .expect("истинный v-if на метод не должен выключить runtime-рендер");
-        assert_eq!(tree_on.children.len(), 1, "узел обязан остаться");
+        let root_on = parse_template(tpl, &on)
+            .expect("истинный v-if на метод не должен выключить runtime-рендер");
+        assert_eq!(
+            root_on.children[0].children.len(),
+            2,
+            "при is_active=true оба дочерних div'а на месте"
+        );
 
         let off = MethodComp { active: false };
-        assert!(
-            parse_template(
-                r#"<div direction="horizontal"><div v-if="is_active"></div></div>"#,
-                &off
-            )
-            .is_none(),
-            "ложный v-if на метод обязан откатить runtime на статику (None)"
+        let root_off = parse_template(tpl, &off)
+            .expect("ложный v-if на метод обязан пропускать только себя, а не весь шаблон");
+        assert_eq!(
+            root_off.children[0].children.len(),
+            1,
+            "при is_active=false остаётся один видимый div"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Runtime-атрибут `pointer-events` (0.21.0, FIX 2): `"none"` →
+// `Style::pointer_events == Some(false)` (hit-тест пропускает узел),
+// `"auto"`/другое → `Some(true)` / обычный отклик. Не «строгий» атрибут:
+// неизвестное значение — не ошибка.
+// ---------------------------------------------------------------------------
+mod pointer_events_tests {
+    use crate::component::Component;
+    use crate::runtime::style::build_style;
+    use crate::vdom::intern_key;
+    use light_fw_html::{Attr, Element};
+
+    /// Компонент без полей (`_component` не используется).
+    struct Null;
+    impl Component for Null {
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+        fn render(&self) -> crate::vdom::VElement {
+            crate::vdom::VElement::container(
+                intern_key(""),
+                crate::vdom::NodeKind::Column,
+                Vec::new(),
+            )
+        }
+    }
+
+    fn el(attr_name: &str, attr_value: &str) -> Element {
+        Element {
+            name: "div".to_string(),
+            attrs: vec![Attr {
+                name: attr_name.to_string(),
+                value: attr_value.to_string(),
+            }],
+            children: Vec::new(),
+        }
+    }
+
+    /// Без атрибута → `None` (обычный отклик, hit-тест работает как раньше).
+    #[test]
+    fn no_attr_leaves_pointer_events_none() {
+        let e = Element {
+            name: "div".to_string(),
+            attrs: Vec::new(),
+            children: Vec::new(),
+        };
+        let s = build_style::<Null>("div", &e.attrs, None, &Null).unwrap();
+        assert_eq!(s.pointer_events, None);
+    }
+
+    /// `pointer-events="none"` → `Some(false)`.
+    #[test]
+    fn none_gives_some_false() {
+        let e = el("pointer-events", "none");
+        let s = build_style::<Null>("div", &e.attrs, None, &Null).unwrap();
+        assert_eq!(s.pointer_events, Some(false));
+    }
+
+    /// `pointer-events="auto"` → `Some(true)`.
+    #[test]
+    fn auto_gives_some_true() {
+        let e = el("pointer-events", "auto");
+        let s = build_style::<Null>("div", &e.attrs, None, &Null).unwrap();
+        assert_eq!(s.pointer_events, Some(true));
+    }
+
+    /// Регистр не важен; `NONE`/`false`/`0` тоже → `Some(false)`.
+    #[test]
+    fn case_insensitive_and_falsey_values() {
+        for v in ["NONE", "False", "0"] {
+            let e = el("pointer-events", v);
+            let s = build_style::<Null>("div", &e.attrs, None, &Null).unwrap();
+            assert_eq!(s.pointer_events, Some(false), "значение {v} → Some(false)");
+        }
     }
 }
 

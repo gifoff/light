@@ -116,7 +116,15 @@ thread_local! {
 pub fn show_toast(text: &str, duration_ms: u64) {
     let id = TOAST_MANAGER.with(|m| m.borrow_mut().push(text.to_owned(), duration_ms));
     // Немедленная перерисовка, чтобы vdom перерендерился и toast появился.
-    let _ = post_to_ui(|| request(WindowCommand::Invalidate));
+    //
+    // Основной механизм: `on_click` (window/interaction.rs) после доставки
+    // `@click`-хендлера вызывает `self.invalidate()` **синхронно в UI-потоке**
+    // — это и будит цикл (`request_redraw`), и перерисовывает кадр. Запрос
+    // `WindowCommand::Invalidate` здесь — страховочная сетка на случай, если
+    // `show_toast` вызывают не из клика (из другого обработчика/пути), где
+    // такой синхронный invalidate отсутствует. `post_to_ui` не подходит: он
+    // асинхронный и в UI-потоке может не сработать вовремя.
+    request(WindowCommand::Invalidate);
     if duration_ms == 0 {
         return; // вечноживущий toast (без автоскрытия).
     }
@@ -416,7 +424,10 @@ mod tests {
     #[test]
     fn toast_container_registered_in_distributed_slice() {
         let factory = lookup("toast-container");
-        assert!(factory.is_some(), "tag \"toast-container\" must be registered");
+        assert!(
+            factory.is_some(),
+            "tag \"toast-container\" must be registered"
+        );
         let factory = factory.expect("checked");
         assert_eq!(factory.crate_name, "light-ui");
         assert_eq!(factory.provides, &["toast-container"]);

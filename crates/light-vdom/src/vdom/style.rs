@@ -83,6 +83,13 @@ pub struct Style {
     pub required_indicator: RequiredIndicator,
     /// Порядок отрисовки и хит-теста (больше z — выше).
     pub z: i32,
+    /// Отклик на события мыши (`pointer-events`). `Some(false)` — узел и
+    /// все его потомки **не** участвуют в hit-тесте: «под курсором» он не
+    /// находится, поэтому не перехватывает `Mouseenter`/`Mousemove`/
+    /// `Mouseleave` (стандартное CSS-поведение: тултип поверх элемента не
+    /// вытесняет мышь с родителя). `None` (по умолчанию) / `Some(true)` —
+    /// обычный отклик.
+    pub pointer_events: Option<bool>,
 }
 
 impl Default for Style {
@@ -122,6 +129,7 @@ impl Default for Style {
             invalid: false,
             required_indicator: RequiredIndicator::Asterisk,
             z: 0,
+            pointer_events: None,
         }
     }
 }

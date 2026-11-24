@@ -36,9 +36,7 @@
 use std::str::FromStr;
 
 use light_fw_core::plugins::{CustomElement, CustomElementFactory, EventCtx};
-use light_fw_core::vdom::parse::{
-    parse_color, parse_position, parse_size_or_auto,
-};
+use light_fw_core::vdom::parse::{parse_color, parse_position, parse_size_or_auto};
 use light_fw_core::vdom::{Edges, Event, NodeKind, Style, VElement};
 
 /// Кастомный элемент `<tooltip>`: показывает подпись рядом с курсором /
@@ -169,11 +167,7 @@ impl CustomElement for Tooltip {
     /// `NodeKind::Custom("tooltip")`). Если `text` не задан, дочерний
     /// лист пуст — tooltip отрисует прозрачный, но занимающий место узел
     /// (чтобы позиция `v-if="false"` не «прыгала»).
-    fn render(
-        &self,
-        attrs: &[(&'static str, String)],
-        _children: &[VElement],
-    ) -> VElement {
+    fn render(&self, attrs: &[(&'static str, String)], _children: &[VElement]) -> VElement {
         let text = attrs
             .iter()
             .find_map(|(name, value)| (*name == "text").then_some(value.clone()))
@@ -181,6 +175,13 @@ impl CustomElement for Tooltip {
 
         let mut root = VElement::container("tooltip", NodeKind::Column, Vec::new());
         apply_style_attrs(&mut root.style, attrs);
+        // Тултип не перехватывает мышь (стандарт CSS `pointer-events: none`):
+        // иначе, оказавшись под курсором, он вытеснял бы мышь с родителя
+        // (`Mouseleave`) и исчезал сам. Hit-тест пропускает узлы с
+        // `pointer_events == Some(false)`, поэтому тултип и его дети
+        // «прозрачны» для указателя. Приоритет — над любым пользовательским
+        // атрибутом `pointer-events` тега (тултип по определению неинтерактивен).
+        root.style.pointer_events = Some(false);
 
         root.children.push(VElement::leaf(
             "tooltip-text",
@@ -294,11 +295,25 @@ mod tests {
         assert_eq!(rendered.style.background, Some(0x00_00_00_FF));
         assert_eq!(rendered.style.font_color, Some(0xFF_FF_FF_FF));
         assert_eq!(rendered.style.padding, Edges::all(5.0));
+        // Тултип не перехватывает мышь — иначе он вытеснял бы курсор с
+        // родителя и исчезал сам (см. pointer-events в hit-тесте).
+        assert_eq!(rendered.style.pointer_events, Some(false));
         assert_eq!(rendered.children.len(), 1);
         match &rendered.children[0].kind {
             NodeKind::Text { content } => assert_eq!(content, "Delayed Tooltip!"),
             other => panic!("expected Text child, got {other:?}"),
         }
+    }
+
+    /// Даже если пользователь явно передаст `pointer-events="auto"`,
+    /// tooltip остаётся неинтерактивным: приоритет у внутреннего
+    /// `Some(false)` (виджет по определению не «под курсором»).
+    #[test]
+    fn tooltip_render_forces_pointer_events_off_despite_attr() {
+        let t = Tooltip;
+        let attrs = vec![("pointer-events", "auto".to_string())];
+        let rendered = t.render(&attrs, &[]);
+        assert_eq!(rendered.style.pointer_events, Some(false));
     }
 
     /// `render` без `text` → дочерний Text пустой (tooltip прозрачен,

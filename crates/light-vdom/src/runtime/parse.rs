@@ -518,7 +518,13 @@ pub(crate) fn build_custom_element<C: Component + ?Sized>(
     key: &str,
     component: &C,
 ) -> Option<VElement> {
-    let factory = plugins::lookup(&element.name)?;
+    let factory = match plugins::lookup(&element.name) {
+        Some(f) => f,
+        None => {
+            parse_fail(&element.name, "<custom-element>", "");
+            return None;
+        }
+    };
     if let Err(msg) = plugins::check_core_version(factory.core_version_req) {
         parse_fail(&element.name, "core-version", &msg.to_string());
         return None;

@@ -51,6 +51,7 @@ pub(crate) fn build_style<C: Component + ?Sized>(
     let mut required = false;
     let mut required_indicator = RequiredIndicator::Asterisk;
     let mut z = 0i32;
+    let mut pointer_events = None;
 
     for attr in attrs {
         let name = attr.name.as_str();
@@ -161,6 +162,16 @@ pub(crate) fn build_style<C: Component + ?Sized>(
             "required" => required = !matches!(value, "false" | "0" | "no"),
             "required-indicator" => required_indicator = parse_required_indicator(value),
             "z" => z = strict_i32(name, value, value.trim().parse::<i32>().ok()).unwrap_or(0),
+            // `pointer-events="none"` — узел не перехватывает мышь (hit-тест
+            // его пропускает). `auto`/другое значение — обычный отклик. Не
+            // «строгий» атрибут: неизвестное значение не ошибка, а просто
+            // значит «обычный» (CSS-семантика).
+            "pointer-events" => {
+                pointer_events = Some(!matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "none" | "false" | "0"
+                ))
+            }
             other if other.starts_with(':') => {
                 parse_fail(tag, other, value);
                 return None;
@@ -205,6 +216,7 @@ pub(crate) fn build_style<C: Component + ?Sized>(
         invalid: false,
         required_indicator,
         z,
+        pointer_events,
     })
 }
 

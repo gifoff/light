@@ -175,6 +175,12 @@ impl super::base::Layout {
         stack: &mut Vec<&'a PlacedNode>,
     ) -> bool {
         let node = &self.nodes[index];
+        // `pointer-events="none"` — узел не «под курсором»: он и все
+        // потомки не попадают в hit-стек, поэтому не перехватывают мышь
+        // (стандартное CSS-поведение: тултип не вытесняет мышь с родителя).
+        if node.style.pointer_events == Some(false) {
+            return false;
+        }
         if !node.rect.contains(point) || node.clip_rect.is_some_and(|clip| !clip.contains(point)) {
             return false;
         }

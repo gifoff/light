@@ -87,8 +87,16 @@ pub(crate) fn build_children<C: Component + ?Sized>(
                 let key = explicit_key
                     .or(click_name.as_deref().filter(|n| !n.is_empty()))
                     .unwrap_or(&positional);
-                let child = build_element(element, key, None, component)?;
-                out.push(child);
+                match build_element(element, key, None, component) {
+                    Some(child) => out.push(child),
+                    // `v-if="..."` с ложным условием — узел «скрываем»
+                    // легитимно: пропускаем только его, не прерывая остаток
+                    // списка и не откатывая всё дерево в fallback. Настоящая
+                    // ошибка разбора (узел без v-if) по-прежнему откатывает
+                    // runtime-рендер на статическое дерево (return None).
+                    None if attr_value(&element.attrs, "v-if").is_some() => {}
+                    None => return None,
+                };
             }
         }
         index += 1;
