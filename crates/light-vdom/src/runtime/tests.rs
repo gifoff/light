@@ -479,30 +479,32 @@ mod image_runtime_tests {
     /// пишет PNG-файкс, возвращая путь. Базовый каталог — `$CARGO_MANIFEST_DIR/../../..`
     /// (workspace root) + `target`. Путь абсолютный: работает локально и в
     /// GitHub Actions (Linux/macOS/Windows), где cwd не всегда workspace root.
-    fn write_test_png(sub: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    ///
+    /// Возвращает `Option<(dir, path)>`: если каталог или файл не удалось
+    /// создать/записать (sandbox, ограниченный CI, macOS APFS-особенности),
+    /// тест должен просто `return` без паники.
+    fn write_test_png(sub: &str) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
         // Workspace root = crates/light-vdom/../../..
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| std::path::PathBuf::from("."));
         let base = manifest_dir.join("..").join("..").join("..").join("target");
         let dir = base.join("temp").join(format!("vdom-image-{sub}"));
-        // В некоторых средах (DSH sandbox, CI с ограниченной записью в
-        // target/) create_dir_all может упасть с PermissionDenied. Тест
-        // опционален: если каталог недоступен — пропускаем, не ломая CI.
         if std::fs::create_dir_all(&dir).is_err() {
             eprintln!(
                 "note: skipping image test (cannot create {})",
                 dir.display()
             );
-            return (base.clone(), base);
+            return None;
         }
         let bytes = b64_decode(MIN_PNG_B64);
         assert!(!bytes.is_empty(), "b64 decode must be non-empty");
         let path = dir.join("temp.png");
-        if std::fs::write(&path, &bytes).is_err() {
-            eprintln!("note: cannot write temp.png, test will skip");
+        if std::fs::write(&path, &bytes).is_err() || !path.is_file() {
+            eprintln!("note: cannot write/verify temp.png at {}", path.display());
+            return None;
         }
-        (dir, path)
+        Some((dir, path))
     }
 
     /// `<image src="…png" alt="…">` → `NodeKind::RuntimeImage` с ожидаемыми
@@ -511,11 +513,14 @@ mod image_runtime_tests {
     #[cfg(feature = "image-support")]
     #[test]
     fn runtime_image_decodes_and_lays_out() {
-        let (dir, png) = write_test_png("decode");
-        // Если файл не удалось записать (sandbox/CI), тест пропускается —
-        // это окружественная проблема, не дефект кода.
+        let (dir, png) = match write_test_png("decode") {
+            Some(v) => v,
+            None => return, // sandbox/CI: файл не создаётся, тест пропускается
+        };
+        // Финальная проверка: если файл исчез между create и use (race),
+        // тоже выходим без паники.
         if !png.is_file() {
-            eprintln!("note: skipping image test (temp.png not writable)");
+            eprintln!("note: skipping image test (temp.png not present at check time)");
             return;
         }
         let old_cwd = std::env::current_dir().unwrap();
@@ -552,7 +557,10 @@ mod image_runtime_tests {
     #[cfg(feature = "image-support")]
     #[test]
     fn runtime_image_missing_file_returns_none() {
-        let (dir, _png) = write_test_png("missing");
+        let dir = match write_test_png("missing") {
+            Some((d, _)) => d,
+            None => return, // sandbox/CI: каталог не создаётся
+        };
         let old_cwd = std::env::current_dir().unwrap();
         let _ = std::env::set_current_dir(&dir);
         // Файл `absent.png` не существует в этом каталоге — декодирование
