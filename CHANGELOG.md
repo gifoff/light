@@ -1,3 +1,45 @@
+## [0.21.0-alpha.1] - 2026-11-25
+
+### Added
+
+- **Tooltip и Toast виджеты** (`crates/light-ui/`).
+  Готовые элементы `light-ui` поверх `light-fw-core` + `light-gui`:
+  `<tooltip>` (позиционирование `position/top/right/bottom/left`, `z`,
+  `pointer-events="none"` по умолчанию) и `<toast>` (аналогичная семантика).
+  Зарегистрированы через Plugin API (`linkme::distributed_slice(REGISTERED_COMPONENTS)`),
+  подключаются в проекте через `[package.metadata.light.provides] elements = ["tooltip"]`.
+- **Флаг `light init --headless`**: порождает проект без GUI (зависимость только
+  `light-fw-core` с `default-features = false`), для чистой реактивной логики.
+- **Флаг `light dev --detach`**: фоновый запуск с DevTools-сессией; печатает JSON
+  `{ok, pid, devtools_port, web_port, log}` и возвращает терминал — агент может
+  затем использовать `light devtools` (shot / find / click / move / move-leave / state).
+- **Поддержка `pointer-events` в Layout** (`crates/light-vdom/`): атрибут
+  `pointer-events="none"` делает узел и его поддерево прозрачными для указателя
+  (хит-тесты их пропускают), что позволяет вкладывать кликабельный текст внутрь
+  неинтерактивного контейнера и наоборот.
+
+### Fixed
+
+- **z-порядок для тултипов** (`crates/light-ui/src/widgets/tooltip/mod.rs`):
+  корень `<tooltip>` теперь всегда получает `style.z = 1000` (виджетный дефолт
+  верхнего слоя; `reorder_by_z` в `Layout::build` уже делает устойчивую сортировку
+  братами по `style.z`, поэтому плоский paint-цикл рисует тултип последним — сверху).
+  Явный `z="…"` в HTML не переопределяет дефолт (политика виджета важнее, как и
+  для принудительного `pointer-events="none"`). Два unit-теста:
+  `tooltip_render_defaults_z_to_top_layer`,
+  `tooltip_render_ignores_explicit_z_attr_in_favor_of_default`.
+  Коммит: [`25d4e5e`](https://github.com/gifoff/light/commit/25d4e5e).
+- **`v-if` не ломает соседние узлы** (`crates/light-vdom/src/runtime/`):
+  условие `v-if="false"` теперь убирает только узел, а не смещает ключи братьев
+  (стабильные ключи в runtime-режиме: имя обработчика `@click`/`@mouseenter` →
+  позиция; см. `normalize_click` в `runtime/custom.rs`).
+- **`light devtools move` / `move-leave` для runtime-обработчиков**
+  (`crates/light-fw-cli-core/src/cmd_devtools.rs` + `crates/light-vdom/src/runtime/`):
+  команды `move --key <K>` / `move-leave --key <K>` теперь работают в режиме
+  `runtime-templates` — триггерятся `@mouseenter`/`@mouseleave` через
+  `invoke_handler`, а не только через `dispatch_custom_event` (это было единственной
+  возможностью проверить тултипы headless'ом до этой правки).
+
 ## [0.20.2] - 2026-11-21
 
 ### Fixed

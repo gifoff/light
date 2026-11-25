@@ -1,6 +1,6 @@
 [package]
 name = "light-vdom"
-version = "0.20.2"
+version = "0.21.0-alpha.1"
 edition = "2024"
 rust-version = "1.95"
 description = "VDOM, layout, DOM tree and runtime for the Light UI framework (stage 3 of the light-fw-core decomposition)"
