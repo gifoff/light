@@ -167,6 +167,17 @@ impl CustomElement for Tooltip {
     /// `NodeKind::Custom("tooltip")`). Если `text` не задан, дочерний
     /// лист пуст — tooltip отрисует прозрачный, но занимающий место узел
     /// (чтобы позиция `v-if="false"` не «прыгала»).
+    ///
+    /// **z-порядок (0.21.1):** корень всегда получает `style.z = 1000`.
+    /// Тултип рисуется верхним слоем поверх остальных элементов родителя:
+    /// `reorder_by_z` (`light_vdom::layout::flow`) делает устойчивую
+    /// сортировку поддеревьев братами по `style.z` прямо в `Layout::build`,
+    /// а рендер обходит плоский список в этом порядке — высокий `z`
+    /// гарантирует, что tooltip рисуется последним (сверху). Дефолт 1000
+    /// накладывается **всегда**: как и для `pointer-events`, виджетный
+    /// дефолт важнее политики приложения (и согласованно с тем, что `z`
+    /// не входит в контракт [`apply_style_attrs`] — HTML-атрибуты стиля
+    /// к корню кастомного элемента не применяются автоматически).
     fn render(&self, attrs: &[(&'static str, String)], _children: &[VElement]) -> VElement {
         let text = attrs
             .iter()
@@ -182,6 +193,14 @@ impl CustomElement for Tooltip {
         // «прозрачны» для указателя. Приоритет — над любым пользовательским
         // атрибутом `pointer-events` тега (тултип по определению неинтерактивен).
         root.style.pointer_events = Some(false);
+        // Дефолтный z-порядок: тултип — верхний слой (1000 > типичные
+        // значения потока). Вкладывается **всегда**, даже если в HTML есть
+        // явный `z="…"`: как и для `pointer-events`, виджетный дефолт
+        // важнее политики приложения; кроме того, `z` не входит в контракт
+        // [`apply_style_attrs`], поэтому HTML-атрибут всё равно не доходит
+        // до style корня (см. doc модуля и тест
+        // `tooltip_render_ignores_explicit_z_attr_in_favor_of_default`).
+        root.style.z = 1000;
 
         root.children.push(VElement::leaf(
             "tooltip-text",
@@ -338,5 +357,30 @@ mod tests {
         let factory = factory.expect("checked");
         assert_eq!(factory.crate_name, "light-ui");
         assert_eq!(factory.provides, &["tooltip"]);
+    }
+
+    /// `render` без явного `z`-атрибута → корень получает дефолтный
+    /// `style.z = 1000` (тултип — верхний слой, рисуется поверх остальных
+    /// элементов родителя через `reorder_by_z`).
+    #[test]
+    fn tooltip_render_defaults_z_to_top_layer() {
+        let t = Tooltip;
+        let attrs = vec![("text", "IT WORKS!".to_string())];
+        let rendered = t.render(&attrs, &[]);
+        assert_eq!(rendered.style.z, 1000);
+    }
+
+    /// Явный `z="500"` **не** переопределяет дефолт 1000: виджетный
+    /// дефолт (тултип — верхний слой) важнее политики приложения, как и
+    /// для `pointer-events`. Это согласованно с тем, что `z` не входит в
+    /// контракт `apply_style_attrs` (атрибуты стиля не распространяются на
+    /// корень кастомного элемента автоматически — см. doc модуля), поэтому
+    /// «явное z» из HTML всё равно не доходит до style корня.
+    #[test]
+    fn tooltip_render_ignores_explicit_z_attr_in_favor_of_default() {
+        let t = Tooltip;
+        let attrs = vec![("text", "t".to_string()), ("z", "500".to_string())];
+        let rendered = t.render(&attrs, &[]);
+        assert_eq!(rendered.style.z, 1000);
     }
 }
