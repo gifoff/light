@@ -388,12 +388,14 @@ impl App {
                     let _ = response_tx.send(Some("null".to_owned()));
                     return;
                 };
-                let result = match &window.tree {
-                    Some(tree) => {
-                        crate::devtools::find_element(tree.as_ref(), window.layout.as_ref(), &query)
-                    }
-                    None => None,
-                };
+                // TЗ 0.21.0: ищем по *runtime*-дереву (свежий результат
+                // `Component::render()`), а не по статическому VDOM из
+                // `window.tree` (compile-time). Это позволяет найти элементы
+                // в шаблонах, отрендеренных через `#[template]` + фича
+                // `runtime-templates` — там `window.tree` остаётся старым,
+                // а `render()` возвращает актуальное дерево с позициями.
+                let vroot = window.component.render();
+                let result = crate::devtools::find_element(&vroot, window.layout.as_ref(), &query);
                 let json = result
                     .map(|v| v.to_string())
                     .unwrap_or_else(|| "null".to_owned());
@@ -445,9 +447,14 @@ impl App {
                 let event = DomEvent::Mouseenter;
                 // 1. Статическая/макросная диспетчеризация.
                 // 2. Кастомный элемент плагина (Этап 5 — on_event).
+                // 3. TЗ 0.21.0: `invoke_handler` как fallback — работает в
+                //    режиме runtime-templates, где `@mouseenter` хранится в
+                //    табл. `handlers` сгенерированного макроса, а не в
+                //    статических ветках `dispatch`.
                 let handled = window.component.dispatch(&key, event.clone())
                     || window.component.dispatch_vmodel(&key, &event)
-                    || window.dispatch_custom_event(&key, &event);
+                    || window.dispatch_custom_event(&key, &event)
+                    || window.component.invoke_handler(&key, event.clone());
                 if handled {
                     window.invalidate();
                 }
@@ -467,9 +474,13 @@ impl App {
                     return;
                 };
                 let event = DomEvent::Mouseleave;
+                // TЗ 0.21.0: `invoke_handler` как fallback — см. комментарий
+                // в ветке `MoveEnter` выше (runtime-templates хранят
+                // `@mouseleave` в табл. handlers сгенерированного макроса).
                 let handled = window.component.dispatch(&key, event.clone())
                     || window.component.dispatch_vmodel(&key, &event)
-                    || window.dispatch_custom_event(&key, &event);
+                    || window.dispatch_custom_event(&key, &event)
+                    || window.component.invoke_handler(&key, event.clone());
                 if handled {
                     window.invalidate();
                 }

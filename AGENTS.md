@@ -506,20 +506,56 @@ cargo test  -p light-fw-core --lib window::icon
 
 ## Testing UI with DevTools (как агенту видеть и трогать UI)
 
-Light предоставляет headless-инструменты для автономного тестирования UI:
+Light предоставляет headless-инструменты для автономного тестирования UI.
+С версии **0.21.0** фоновый запуск встроен в CLI: флаг `--detach` сам спавнит
+процесс, печатает PID и сразу возвращает терминал — никакого PowerShell /
+`Start-Process` / win32 API не нужно.
 
-1. **Запуск с сессией:** `light dev --agent` — создаёт `.light/agent-sessions/<id>/` и пишет каждый вызов `light devtools` в `actions.jsonl`.
+1. **Фоновый запуск с сессией (рекомендуемый способ с 0.21.0):**
+   ```bash
+   light dev --agent --detach
+   ```
+   Вывод (JSON + человекочитаемые строки):
+   ```
+   {"ok":true,"pid":12345,"devtools_port":9229,"web_port":9228,"log":".light/agent-sessions/dev-detach.log"}
+   PID: 12345
+   DevTools port: 9229
+   Web UI: http://127.0.0.1:9228/
+   Log: .light/agent-sessions/dev-detach.log
+   Остановка: light devtools session stop   (или taskkill /PID 12345 на Windows)
+   ```
+   Внутри создаётся `.light/agent-sessions/<id>/`; каждый вызов
+   `light devtools` пишется в `actions.jsonl`. Подожди 3–5 секунд после
+   возврата из `--detach` (пока окно откроется), прежде чем вызывать
+   `light devtools`.
 2. **Скриншот:** `light devtools shot --path shots` → сохраняет PNG в `shots/<YYYYMMDD_HHMMSS>.png` (при указании каталога, имени без расширения или `.`; точный путь вида `out/frame.png` используется как есть). Без `--path` печатает сырой base64 в stdout — для редиректа (`light devtools shot > raw.b64`). Ошибки сервера (не запущен, unknown command) выводятся человекочитаемо и завершают команду с кодом 1.
-3. **Поиск элемента:** `light devtools find --tag button --text "+1"` → `{key, tag, rect}`.
+3. **Поиск элемента:** `light devtools find --tag button --text "+1"` → `{key, tag, rect}`. **С 0.21.0** поиск идёт по *runtime*-дереву (результат `render()` компонента), а не по статическому VDOM — шаблоны, отрендеренные через `#[template]` + `runtime-templates`, находятся корректно.
 4. **Клик:** `light devtools click --key 0.0.0`.
 5. **Ввод:** `light devtools type --key 0.0.1 "Hello"`.
 6. **Клавиша:** `light devtools key --key 0.0.1 Enter`.
-7. **Состояние:** `light devtools state` (JSON) и `light devtools tree`.
-8. **Завершение:** `light devtools session stop` → генерирует `summary.md`.
-9. **Центрирование заголовков:** `<h1>`–`<h5>` внутри `align-items=center` авторазмериваются (max-content) и центрируются. С версии 0.16.2 всегда (раньше получали width=0).
-10. **Браузерный UI:** `light dev` поднимает Web UI на `http://127.0.0.1:9228` (флаги `--no-web`, `--web-port`). Сервер — tiny_http (без tokio), SSE каждые 500 мс. Если приложение не запущено — бейдж «Ожидание приложения…».
-11. **⚠️ Важно (с 0.20.x):** Тег `<text>` — это поле ввода (text input), он требует `v-model` и не может содержать дочерних элементов. Для отображения текста используйте `<div>` или `<span>` с интерполяцией `{{ count }}`. (Полная таблица элементов — в [`docs/guide.md`](docs/guide.md).)
-12. **Сгенерированный `AGENT.md`:** Если вы тестируете пользовательский проект (созданный через `light init`), **прочитайте сгенерированный файл `AGENT.md`** в корне проекта. Он содержит шпаргалку по API и DevTools. Не читайте исходники ядра для выяснения синтаксиса.
+7. **Подсветка тупика:** `light devtools move --key tip_trigger` → триггерит `@mouseenter`. **С 0.21.0** работает в режиме `runtime-templates` (раньше обработка `MoveEnter`/`MoveLeave` была только через `dispatch_custom_event`, а runtime-компоненты идут через `invoke_handler`).
+8. **Состояние:** `light devtools state` (JSON) и `light devtools tree`.
+9. **Завершение:** `light devtools session stop` → генерирует `summary.md`. Если приложение упало до этого — останови процесс напрямую по PID, напечатанному при запуске: `taskkill /F /PID <pid>` (Windows) / `kill -9 <pid>` (Linux/macOS).
+10. **Центрирование заголовков:** `<h1>`–`<h5>` внутри `align-items=center` авторазмериваются (max-content) и центрируются. С версии 0.16.2 всегда (раньше получали width=0).
+11. **Браузерный UI:** `light dev` поднимает Web UI на `http://127.0.0.1:9228` (флаги `--no-web`, `--web-port`). Сервер — tiny_http (без tokio), SSE каждые 500 мс. Если приложение не запущено — бейдж «Ожидание приложения…».
+12. **⚠️ Важно (с 0.20.x):** Тег `<text>` — это поле ввода (text input), он требует `v-model` и не может содержать дочерних элементов. Для отображения текста используйте `<div>` или `<span>` с интерполяцией `{{ count }}`. (Полная таблица элементов — в [`docs/guide.md`](docs/guide.md).)
+13. **Сгенерированный `AGENT.md`:** Если вы тестируете пользовательский проект (созданный через `light init`), **прочитайте сгенерированный файл `AGENT.md`** в корне проекта. Он содержит шпаргалку по API и DevTools. Не читайте исходники ядра для выяснения синтаксиса.
+
+### Headless-проект (для AI-агентов, serverless-скриптов) — новый в 0.21.0
+
+Если тест не требует GUI (только реактивная логика), создавай headless-проект:
+
+```bash
+light init my-headless --headless
+cd my-headless
+cargo run
+```
+
+Порождённый проект:
+
+- зависит только от `light-fw-core = { version = "0.21", default-features = false }` — **без winit**, без окна, без GUI (проверка: `cargo tree | grep winit` → пусто);
+- `main.rs` содержит пример с `Property` + `watch` (реактивный счётчик, подписчик печатает новое значение);
+- нет `templates/`, нет `light.config.json`.
 
 > ⚠️ **КРИТИЧЕСКОЕ ПРАВИЛО: НЕ ЧИТАЙ ИСХОДНИКИ ФРЕЙМВОРКА.**
 > Если при тестировании пользовательского проекта (например,

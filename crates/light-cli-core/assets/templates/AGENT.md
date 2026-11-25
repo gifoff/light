@@ -16,16 +16,54 @@
 ## 2. Как запустить и протестировать (DevTools)
 **НИКОГДА** не используй `cargo run` и не блокируй терминал!
 
-1. Запусти в фоне (PowerShell):
-   `Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd .; light dev --agent"`
-2. Подожди 5-10 секунд (пока окно откроется).
-3. Используй команды `light devtools`:
-   - `light devtools shot --path shots` (сделать скриншот)
-   - `light devtools find --tag button --text "Click"` (найти элемент)
-   - `light devtools click --key <key>` (кликнуть)
-   - `light devtools state` (посмотреть JSON-состояние)
-   - `light devtools type --key <key> "text"` (ввести текст)
-4. Останови сессию: `light devtools session stop`.
+### С версии 0.21.0 (рекомендуемый способ — для AI-агентов)
+CLI сам спавнит процесс в фоне, печатает PID и сразу возвращает управление
+терминалу. **Никакого PowerShell / Start-Process / win32 API не нужно.**
+
+```bash
+# 1) Фоновый запуск (блокирует 500 мс, затем терминал свободен):
+light dev --agent --detach
+# stdout (пример):
+# {"ok":true,"pid":12345,"devtools_port":9229,"web_port":9228,"log":".light/agent-sessions/dev-detach.log"}
+# PID: 12345
+# DevTools port: 9229
+# Web UI: http://127.0.0.1:9228/
+# Log: .light/agent-sessions/dev-detach.log
+# Остановка: light devtools session stop   (или taskkill /PID 12345 на Windows)
+```
+
+Подожди 3–5 секунд (пока приложение соберётся и окно откроется). Затем:
+
+```bash
+light devtools shot --path shots           # скриншот
+light devtools find --tag button --text "Click"   # найти элемент
+light devtools move --key tip_trigger      # @mouseenter (подсветка тупика)
+light devtools click --key <key>           # клик
+light devtools type --key <key> "text"     # ввод текста
+light devtools key --key <key> Enter       # клавиша
+light devtools state                       # JSON-состояние
+light devtools tree                        # дерево элементов
+```
+
+Завершение сессии (сгенерирует `summary.md`):
+
+```bash
+light devtools session stop
+```
+
+Если по какой-то причине `session stop` недоступен (приложение упало),
+останови процесс напрямую по PID:
+
+```bash
+taskkill /F /PID <pid>        # Windows
+kill -9 <pid>                 # Linux/macOS
+```
+
+### Старый способ (≤ 0.20.x, только если нет `--detach`)
+```powershell
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd .; light dev --agent"
+```
+Далее шаги те же, что выше (pодождать, `light devtools`, `session stop`).
 
 ## 3. Документация
 Полное руководство: https://github.com/gifoff/light/blob/master/docs/guide.md

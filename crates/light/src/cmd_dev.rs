@@ -51,6 +51,14 @@ pub struct DevArgs {
     /// web-сервер включается даже если в конфиге `enabled: false`).
     #[arg(long)]
     pub web_port: Option<u16>,
+    /// ТЗ 0.21.0: фоновый запуск — CLI спавнит полный процесс `light dev`
+    /// (супервизор + приложение + web UI) через `std::process::Command`,
+    /// печатает его PID и порты DevTools в stdout и сразу возвращает управление
+    /// терминалу (exit 0). AI-агентам больше не нужен PowerShell/Start-Process.
+    /// Остановка: `light devtools session stop` (через TCP 9229) или `taskkill
+    /// /PID <pid>` на Windows.
+    #[arg(long, default_value_t = false)]
+    pub detach: bool,
     /// Дополнительные флаги cargo (включая `--`, если нужно передать аргументы
     /// самому приложению). Пример: `--release`.
     #[arg(trailing_var_arg = true)]
@@ -183,6 +191,18 @@ pub fn run(args: DevArgs) -> anyhow::Result<i32> {
         }
     }
 
+    // TЗ 0.21.0: `--detach` — фоновый запуск: респавним **себя** с теми же
+    // аргументами (кроме самого `--detach`) как отдельный процесс, накрываем
+    // stdout/stderr файлами-лечами (чтобы дочерний не перехватывал TTY),
+    // печатаем PID и порты в stdout и возвращаем управление терминалу (exit 0).
+    // Так агенту не нужен PowerShell/Start-Process/Win32 API, и весь
+    // функционал (hot-reload, web UI, agent session, hot-restart) работает
+    // без изменений — это ровно тот же бинарник, только спавнутый.
+    // Важно: проверяем ДО перемещения полей `args` (иначе partial-move error).
+    if args.detach {
+        return run_detached(&args, &project_root);
+    }
+
     let verbose = args.verbose;
     let mut raw: Vec<String> = Vec::new();
     if let Some(package) = &args.package {
@@ -207,6 +227,7 @@ pub fn run(args: DevArgs) -> anyhow::Result<i32> {
         raw.push(format!("--web-port={port}"));
     }
     raw.extend(args.extra_cargo_args);
+
     // Повторно разбираем через чистую функцию `parse_dev_command`, чтобы
     // поведение CLI полностью соответствовало логике библиотеки (и чтобы
     // тесты могли покрывать именно её).
@@ -258,4 +279,119 @@ pub fn run(args: DevArgs) -> anyhow::Result<i32> {
     }
 
     Ok(code)
+}
+
+/// ТЗ 0.21.0: фоновый запуск `light dev --detach`.
+///
+/// Спавнит **себя** (те же аргументы, но без `--detach`) как отдельный процесс
+/// с stdout/stderr, перенаправленными в файл-лог `.light/agent-sessions/dev-detach.log`
+/// (создаётся каталог при необходимости — он уже используется для
+/// `--agent`). Родитель сразу печатает JSON-ответ с PID и портами и выходит
+/// с кодом 0, не дожидаясь дочернего.
+///
+/// Выход через `std::process::exit(0)` намеренный: это terminal-операция
+/// (агент получает управление терминалом обратно); `anyhow::Result` не нужен,
+/// ошибки спавна обрабатываются отдельно.
+fn run_detached(args: &DevArgs, project_root: &Path) -> anyhow::Result<i32> {
+    use std::fs::OpenOptions;
+    use std::process::{Command, Stdio};
+
+    // Путь к текущему бинарнику (родительский процесс `light`).
+    let self_path = std::env::current_exe()?;
+
+    // Файл-лежачек для stdout+stderr дочернего: `.light/agent-sessions/dev-detach.log`.
+    // Каталог `.light/agent-sessions/` уже создаётся при `--agent`; при отсутствии
+    // `--agent` мы его создаём сами. Имя файла фиксированное (один dev-detach.log),
+    // т.к. одновременно может быть только один живой `light dev --detach` на порт 9229.
+    let sessions_dir = project_root.join(".light").join("agent-sessions");
+    std::fs::create_dir_all(&sessions_dir)?;
+    let log_path = sessions_dir.join("dev-detach.log");
+    // Дочерний пишет и stdout, и stderr в один и тот же файл (append-режим):
+    // открываем два отдельных ручья (file handles) на один путь — stdio не
+    // позволяет использовать один `File` для двух потоков одновременно.
+    let stdout_handle = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)?;
+    let stderr_handle = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)?;
+
+    // Аргументы дочернего: `dev` + все те же аргументы, кроме `--detach`.
+    // `--detach` исключён из argv (иначе рекурсивный detach).
+    let mut child_args: Vec<String> = vec!["dev".into()];
+    if let Some(p) = &args.package {
+        child_args.push(p.clone());
+    }
+    if args.verbose {
+        child_args.push("--verbose".into());
+    }
+    if args.clean {
+        child_args.push("--clean".into());
+    }
+    if args.preserve_state {
+        child_args.push("--preserve-state".into());
+    }
+    if args.agent {
+        child_args.push("--agent".into());
+    }
+    if args.no_auto_install {
+        child_args.push("--no-auto-install".into());
+    }
+    if args.no_web {
+        child_args.push("--no-web".into());
+    }
+    if let Some(port) = args.web_port {
+        child_args.push(format!("--web-port={port}"));
+    }
+    child_args.extend(args.extra_cargo_args.clone());
+
+    eprintln!(
+        "light dev: --detach — запускаю в фоне: {:?} (лог → {})",
+        child_args,
+        log_path.display()
+    );
+
+    // Запускаем. `kill_on_drop` не нужен: дочерний переживёт родителя
+    // (не привязан к его жизненному циклу), на Windows и Unix.
+    let mut cmd = Command::new(&self_path);
+    cmd.args(&child_args);
+    cmd.stdout(Stdio::from(stdout_handle));
+    cmd.stderr(Stdio::from(stderr_handle));
+    // Не наследуем stdin (чтобы дочерний не блокировался на prompt):
+    cmd.stdin(Stdio::null());
+    // Явно указываем cwd (родитель мог быть запущен из другого места).
+    cmd.current_dir(project_root);
+
+    let child = cmd.spawn()?;
+    let pid = child.id();
+
+    // Не ждём дочернего: агент должен получить управление терминалом сразу.
+    // Дочерний переживёт родителя (не привязан к его жизненному циклу).
+    drop(child);
+
+    // Вывод для агента: JSON с PID, портом DevTools, портом web UI, путём к логу.
+    // Это stdout (по ТЗ), stderr остаётся пустым (мы уже ничего там не печатали
+    // после eprintln выше — тот ушёл в TTY родителя).
+    println!(
+        "{{\"ok\":true,\"pid\":{},\"devtools_port\":9229,\"web_port\":{},\"log\":\"{}\"}}",
+        pid,
+        args.web_port.unwrap_or(9228),
+        log_path.display()
+    );
+    println!("PID: {pid}");
+    println!("DevTools port: 9229");
+    println!(
+        "Web UI: http://127.0.0.1:{}/",
+        args.web_port.unwrap_or(9228)
+    );
+    println!("Log: {}", log_path.display());
+    println!("Остановка: light devtools session stop   (или taskkill /PID {pid} на Windows)");
+    // Короткая пауза (500 мс): дочерний успевает создать сессию/сервер и
+    // занять порты; иначе первая команда агента (`light devtools shot`) может
+    // не застать сервер. Терминал возвращается сразу — это не блокирует.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    std::process::exit(0);
 }

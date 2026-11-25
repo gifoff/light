@@ -32,16 +32,29 @@ pub struct InitArgs {
     /// Готовый пример: `counter`, `todo` или `calculator`.
     #[arg(long, value_name = "TEMPLATE", value_parser = parse_template)]
     pub template: Option<InitTemplate>,
+
+    /// ТЗ 0.21.0: headless-проект (для AI-агентов и serverless-скриптов):
+    /// проект зависит только от `light-fw-core` (default-features = false) —
+    /// без winit/window; `main.rs` содержит пример с `Property` + `watch`;
+    /// не создаются `templates/` и `light.config.json`.
+    #[arg(long, default_value_t = false)]
+    pub headless: bool,
 }
 
 /// Создаёт скелет нового проекта Light.
 pub fn run(args: InitArgs) -> anyhow::Result<i32> {
+    if args.headless && args.template.is_some() {
+        eprintln!("light init: --headless и --template несовместимы (headless-проект без GUI)");
+        return Ok(1);
+    }
+
     let options = InitOptions {
         name: args.name,
         path: args.path,
         minimal: args.minimal,
         components: args.with,
         template: args.template,
+        headless: args.headless,
     };
 
     let report = apply(&SystemRunner, &options)?;

@@ -72,6 +72,7 @@ mod tests {
             name: "cool-app".to_string(),
             path: Some(dir.clone()),
             minimal: false,
+            headless: false,
             components: Vec::new(),
             template: None,
         };
@@ -109,6 +110,7 @@ mod tests {
                 name: "with-agent".to_string(),
                 path: None,
                 minimal: false,
+                headless: false,
                 components: Vec::new(),
                 template: None,
             },
@@ -116,6 +118,7 @@ mod tests {
                 name: "minimal-agent".to_string(),
                 path: None,
                 minimal: true,
+                headless: false,
                 components: Vec::new(),
                 template: Some(InitTemplate::Counter),
             },
@@ -143,6 +146,7 @@ mod tests {
             name: "tiny".to_string(),
             path: Some(root.join("tiny")),
             minimal: true,
+            headless: false,
             components: Vec::new(),
             template: None,
         };
@@ -166,6 +170,7 @@ mod tests {
             name: "busy".to_string(),
             path: Some(target),
             minimal: false,
+            headless: false,
             components: Vec::new(),
             template: None,
         };
@@ -283,6 +288,7 @@ mod tests {
             name: "todo-app".to_string(),
             path: Some(root.join("todo-app")),
             minimal: true,
+            headless: false,
             components: Vec::new(),
             template: Some(InitTemplate::Todo),
         };
@@ -334,6 +340,7 @@ mod tests {
             name: "my-app".to_string(),
             path: Some(dir.clone()),
             minimal: false,
+            headless: false,
             components: Vec::new(),
             template: None,
         };
@@ -365,6 +372,7 @@ mod tests {
             name: "tiny".to_string(),
             path: Some(dir.clone()),
             minimal: true,
+            headless: false,
             components: Vec::new(),
             template: None,
         };
@@ -383,6 +391,7 @@ mod tests {
             name: "nope".to_string(),
             path: Some(dir.clone()),
             minimal: false,
+            headless: false,
             components: Vec::new(),
             template: None,
         };

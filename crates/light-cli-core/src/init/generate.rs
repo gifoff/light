@@ -146,3 +146,81 @@ fn main() -> light_fw::Result<()> {
     }
     text
 }
+
+/// ТЗ 0.21.0: `Cargo.toml` headless-проекта. Зависимость только
+/// `light-fw-core` с `default-features = false` (нет winit/window), поэтому
+/// проект компилируется без GUI и подходит для AI-агентов и serverless-скриптов.
+/// `light-fw` (мета-крейт) НЕ используется — это прямой доступ к реактивности.
+///
+/// Версия `light-fw-core` зафиксирована как `"0.21"` по ТЗ (буквально); это
+/// не `minor_version()`, потому что:
+/// 1. Headless-режим (без winit) появляется только в 0.21.x — в 0.20.2
+///    `light-gui` является необязательной зависимостью, и `cargo tree | grep
+///    winit` найдёт результат даже при `default-features = false`.
+/// 2. `minor_version()` сегодня возвращает `"0.20"` (workspace version
+///    `0.20.2`) — если оставить его, порождаемый проект будет сломан
+///    (зависит от ещё не опубликованной фичи на версии, где она нет).
+///
+/// Буквальный текст ТЗ: «`light-fw-core = { version = "0.21",
+/// default-features = false }`». Если на момент публикации 0.21.0 нужно
+/// переключить на `minor_version()` — отдельный коммит `chore(cli):
+/// headless → dynamic version`.
+pub fn cargo_toml_headless(name: &str) -> String {
+    const HEADLESS_FW_CORE: &str = "0.21";
+    format!(
+        "[package]\n\
+         name = \"{name}\"\n\
+         version = \"0.1.0\"\n\
+         edition = \"2021\"\n\
+         \n\
+         [dependencies]\n\
+         light-fw-core = {{ version = \"{HEADLESS_FW_CORE}\", default-features = false }}\n\
+         \n\
+         [workspace]\n"
+    )
+}
+
+/// ТЗ 0.21.0: `main.rs` headless-проекта. Минимальный пример с `Property`
+/// (реактивная ячейка значения) и `watch` (подписка на изменения в стиле
+/// `watchEffect` из Vue 3) — без `#[template]`, без `run()`, без GUI.
+/// `watch` принимает замыкание без аргументов: каждое чтение `.get()` внутри
+/// него регистрируется как зависимость, а при любом изменении читаемых свойств
+/// замыкание выполняется заново.
+pub const HEADLESS_MAIN: &str = r#"//! Headless Light: реактивность без GUI.
+//!
+//! Пример `Property` + `watch` в `light-fw-core` (default-features = false).
+//! `Property<T>` — реактивная ячейка (аналог `ref` в Vue), `watch(f)` —
+//! подписка, которая исполняет `f` один раз, запоминает прочитанные свойства
+//! и повторяет `f` при их изменении (аналог `watchEffect`).
+//!
+//! Здесь обработчик печатает текущее значение счётчика; `set`/`update`
+//! уведомляют все зависимые эффекты и запрашивают перерисовку (в headless
+//! режиме — просто вызов, без окна).
+
+use light_fw_core::reactive::{watch, Property};
+
+fn main() {
+    // Реактивный счётчик.
+    let count = Property::new(0i64);
+
+    // Подписка: печатаем новое значение при каждом изменении.
+    // Клон `Property` разделяет ту же ячейку (Rc под капотом) — поэтому
+    // `move`-замыкание может захватить клон и жить в `Watcher`.
+    let _w = watch({
+        let count = count.clone();
+        move || {
+            // любое чтение здесь — зависимость эффекта
+            let value = count.get();
+            println!("count = {value}");
+        }
+    });
+
+    // Имитируем изменение (в реальном приложении это будет UI/команда/IO).
+    count.set(count.get() + 1);
+    count.update(|v| *v += 1);
+
+    // Явно останавливаем подписку (в конце main Watcher::drop тоже вызовет stop).
+    println!("done, final count = {}", count.peek());
+    std::mem::drop(_w);
+}
+"#;

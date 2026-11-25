@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use super::config::{AGENT_MD, CARGO_CONFIG, CLI_MD, GITIGNORE, GUIDE_MD, LIGHT_CONFIG};
 use super::generate::{
-    APP_HTML, cargo_toml, main_rs, normalized_components, project_dir, validate_name,
+    APP_HTML, HEADLESS_MAIN, cargo_toml, cargo_toml_headless, main_rs, normalized_components,
+    project_dir, validate_name,
 };
 use super::types::{InitOptions, InitPlan, InitReport};
 use crate::error::{Error, Result};
@@ -32,6 +33,30 @@ pub fn plan(options: &InitOptions) -> Result<InitPlan> {
     }
 
     let components = normalized_components(&options.components);
+
+    // ТЗ 0.21.0: headless-ветка — отдельный план, без GUI.
+    if options.headless {
+        let files = vec![
+            (
+                PathBuf::from("Cargo.toml"),
+                cargo_toml_headless(&options.name),
+            ),
+            (
+                PathBuf::from("src").join("main.rs"),
+                HEADLESS_MAIN.to_string(),
+            ),
+            // Шпаргалка для AI-агентов + локальная документация — те же.
+            (PathBuf::from("AGENT.md"), AGENT_MD.to_string()),
+            (PathBuf::from("docs").join("guide.md"), GUIDE_MD.to_string()),
+            (PathBuf::from("docs").join("cli.md"), CLI_MD.to_string()),
+        ];
+        return Ok(InitPlan {
+            directory,
+            files,
+            write_lockfile: false,
+        });
+    }
+
     let main = match options.template {
         Some(template) => template.main_rs().to_string(),
         None => main_rs(&components),

@@ -121,6 +121,9 @@ pub struct InitOptions {
     pub components: Vec<InitComponent>,
     /// Готовый шаблон приложения (`--template`).
     pub template: Option<InitTemplate>,
+    /// ТЗ 0.21.0: headless-проект — зависимость `light-fw-core` без GUI,
+    /// пример с `Property` + `watch`, без `templates/` и `light.config.json`.
+    pub headless: bool,
 }
 
 /// Что будет создано (результат [`plan`]).
