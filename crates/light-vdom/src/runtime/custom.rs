@@ -83,9 +83,15 @@ pub(crate) fn build_children<C: Component + ?Sized>(
                 let explicit_key = attr_value(&element.attrs, "key")
                     .map(str::trim)
                     .filter(|k| !k.is_empty() && !k.starts_with(':'));
-                let click_name = attr_value(&element.attrs, "@click").map(normalize_click);
+                // Имя обработчика для ключа: `@click` либо `@mouseenter` (0.21.0:
+                // чисто-мышиные шаблоны — tooltip при наведении, без единого клика —
+                // тоже обязаны иметь рабочее runtime-имя, иначе DevTools move/move-leave
+                // не найдёт узел). Нормализация общая (см. [`normalize_click`]).
+                let event_name = attr_value(&element.attrs, "@click")
+                    .or_else(|| attr_value(&element.attrs, "@mouseenter"))
+                    .map(normalize_click);
                 let key = explicit_key
-                    .or(click_name.as_deref().filter(|n| !n.is_empty()))
+                    .or(event_name.as_deref().filter(|n| !n.is_empty()))
                     .unwrap_or(&positional);
                 match build_element(element, key, None, component) {
                     Some(child) => out.push(child),
@@ -104,7 +110,7 @@ pub(crate) fn build_children<C: Component + ?Sized>(
     Some(out)
 }
 
-/// Имя обработчика `@click` для диспетчеризации по имени.
+/// Имя обработчика события (`@click`/`@mouseenter`) для диспетчеризации по имени.
 ///
 /// Убирает скобки вызова (`"increment()"` → `"increment"`), пробельные
 /// символы вокруг и ведущее `this.` — генерируемый макросом

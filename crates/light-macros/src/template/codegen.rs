@@ -9,7 +9,10 @@ use super::attrs::escape_format;
 use super::keys::KeyExpr;
 use super::keys::{child_key, condition_token, element_directive, has_attr, parse_for, static_key};
 use super::parser::Generator;
-use super::tokens::{is_plain_click_handler, normalize_click_name, split_path, to_ident};
+use super::tokens::{
+    is_plain_click_handler, is_plain_mouse_handler, normalize_click_name, normalize_mouse_name,
+    split_path, to_ident,
+};
 use super::validation::{attr_value, validate_a11y_attrs, validate_attrs};
 use super::window::parse_bool;
 use light_fw_html::{Element, Node, Segment};
@@ -418,6 +421,23 @@ impl Generator {
             let name = normalize_click_name(handler);
             let call = self.handler_call(handler, None)?;
             self.click_handlers.push((key.clone(), (call, name)));
+        }
+        // `@mouseenter`/`@mouseleave`: отдельный список (`mouse_handlers`) —
+        // мышиный обработчик без единого `@click` в шаблоне тоже обязан
+        // получать ветку `invoke_handler` (0.21.0). Имя нормализуется так же,
+        // как в `light-vdom::runtime` (атрибуты `data-event-enter`/`data-event-leave`),
+        // поэтому сопоставление с runtime-деревом точное. Дедупликация по имени:
+        // несколько узлов с одним именем — одна рабочая ветка.
+        for attr in ["@mouseenter", "@mouseleave"] {
+            if let Some(handler) = attr_value(&element.attrs, attr)
+                && is_plain_mouse_handler(handler)
+            {
+                let call = self.handler_call(handler, None)?;
+                let name = normalize_mouse_name(handler);
+                if !self.mouse_handlers.iter().any(|(n, _)| n == &name) {
+                    self.mouse_handlers.push((name, call));
+                }
+            }
         }
         Ok(())
     }

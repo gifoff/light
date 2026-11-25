@@ -364,6 +364,18 @@ fn run_detached(args: &DevArgs, project_root: &Path) -> anyhow::Result<i32> {
     // Явно указываем cwd (родитель мог быть запущен из другого места).
     cmd.current_dir(project_root);
 
+    // Windows: дочерний `light dev` не должен открывать консольное окно —
+    // иначе `--detach` в терминале агента (или в CI) поднимает второе окно
+    // наверх и засоряет вывод. `CREATE_NO_WINDOW` (0x08000000) запрещает
+    // создание console window у дочернего; stdout/stderr уже перенаправлены
+    // в лог, так что ничего не теряется.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
     let child = cmd.spawn()?;
     let pid = child.id();
 

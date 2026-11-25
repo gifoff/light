@@ -149,6 +149,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> 
         field_validators,
         form_validators,
         click_handlers,
+        mouse_handlers,
         vmodel_bindings,
         ..
     } = generator;
@@ -182,23 +183,18 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> 
     // дерева) и `invoke_handler`. Ключи могут быть произвольными выражениями
     // (`intern_key(format!(…))`), поэтому в `dispatch` — `if`-цепочка.
     //
-    // `invoke_handler` получает две ветки на каждый `@click`: по ИМЕНИ
-    // обработчика (так runtime-дерево дотянется при отсутствии явного `key`) и
-    // по КЛЮЧУ узла (явный `key="inc_btn"` — runtime key, ≠ имени). Дедупликация
-    // не нужна: два узла с одним и тем же именем дают одну рабочую ветку.
-    // Runtime-дерево использует имя обработчика (без скобок) как ключ узла,
-    // поэтому `invoke_handler` дублирует каждую ветку `@click` по имени и по
-    // ключу узла. Ключи могут быть произвольными выражениями
-    // (`intern_key(format!(…))`), поэтому в `dispatch` — `if`-цепочка
-    // (собранная в `arms` выше, в `push_events`).
-    // Ветки `invoke_handler`: две формы на каждый `@click`.
-    //   1. Имя обработчика (базовый, без скобок) — точный литерал:
-    //      runtime-дерево использует имя обработчика как ключ узла, если
-    //      явный `key` не задан (`@click="increment"` → runtime key "increment").
-    //   2. Ключ узла (token `&'static str`) — сравнение с аргументом:
-    //      покрывает случай явного `key="inc_btn"`, когда статический
-    //      `dispatch` уже обработал клик, а runtime-дерево всё равно хочет
-    //      диспетчеризовать по своему ключу (DevTools).
+    // Ветки `invoke_handler`:
+    //   1. `@click` — две формы на каждый: по ИМЕНИ обработчика (runtime-дерево
+    //      использует имя как ключ узла, если явный `key` не задан:
+    //      `@click="increment"` → runtime key "increment") и по КЛЮЧУ узла
+    //      (явный `key="inc_btn"` — DevTools шлёт свой ключ).
+    //   2. `@mouseenter`/`@mouseleave` (0.21.0) — одна форма на каждый вариант
+    //      события: runtime-парсер кладёт имена обоих обработчиков в отдельные
+    //      атрибуты узла `data-event-enter`/`data-event-leave`, ветка проверяет
+    //      соответствие варианта события и атрибуту и вызывает метод. Это
+    //      обходит двойственность «ключ узла = имя первого мышиного атрибута»:
+    //      оба обработчика вызываются независимо от ключа, по СВОИМ атрибутам
+    //      (см. баг 6-го раунда E2E: общий `data-event` читался только первый).
     //
     // `#call` возвращается из `handler_call` в двух формах:
     //   - аргументные  → полновесный вызов  `self.open('settings')`;
@@ -225,6 +221,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> 
         &field_fields,
         &arms,
         &click_handlers,
+        &mouse_handlers,
         &vmodel_bindings,
         &field_validators,
         &form_validators,

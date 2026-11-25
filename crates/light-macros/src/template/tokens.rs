@@ -297,6 +297,31 @@ pub(super) fn is_plain_click_handler(handler: &str) -> bool {
 /// ключом узла, а статический код макроса дотягивается до него через
 /// [`Component::invoke_handler`](crate::component::Component).
 pub(super) fn normalize_click_name(handler: &str) -> String {
+    normalize_event_handler(handler)
+}
+
+/// Обработчик мышиного события, подходящий для runtime-диспетчеризации:
+/// то же определение, что [`is_plain_click_handler`] (простой идентификатор
+/// без аргументов/`::`/пробелов, опционально с `this.` и/или пустыми
+/// скобками). Вынесено отдельно, потому что `@mouseenter`/`@mouseleave`
+/// регистрируются в `mouse_handlers`, а не в `click_handlers`.
+pub(super) fn is_plain_mouse_handler(handler: &str) -> bool {
+    is_plain_click_handler(handler)
+}
+
+/// Имя мышиного обработчика для runtime-диспетчеризации.
+///
+/// Точная нормализация, как в `light-vdom::runtime`
+/// (`data-event-enter="NAME"`/`data-event-leave="NAME"`):
+/// `"this.show_tip()"` → `"show_tip"`. Совпадение нормализации с парсером
+/// критично: ветка `invoke_handler` сопоставляет имя из атрибута узла
+/// runtime-дерева с этим именем.
+pub(super) fn normalize_mouse_name(handler: &str) -> String {
+    normalize_event_handler(handler)
+}
+
+/// Общая нормализация имени обработчика (`@click`, `@mouseenter`, …).
+fn normalize_event_handler(handler: &str) -> String {
     let trimmed = handler.trim();
     let trimmed = trimmed.strip_prefix("this.").unwrap_or(trimmed);
     trimmed

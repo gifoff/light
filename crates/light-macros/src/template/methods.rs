@@ -36,6 +36,7 @@ pub(super) fn build_methods(
     field_fields: &Vec<(Ident, &syn::Type)>,
     _arms: &Vec<TokenStream>,
     click_handlers: &[(TokenStream, (TokenStream, String))],
+    mouse_handlers: &[(String, TokenStream)],
     vmodel_bindings: &Vec<(String, String, Option<String>)>,
     field_validators: &[(String, TokenStream)],
     form_validators: &[(String, TokenStream)],
@@ -71,40 +72,43 @@ pub(super) fn build_methods(
         } });
     }
 
-    // Runtime-доставка мышиных событий на контейнеры (`div`/`span` с
-    // `@mouseenter`/`@mouseleave`, 0.21.0): runtime-парсер хранит имя
-    // обработчика в атрибуте `data-event="Variant:NAME"`. Здесь `invoke_handler`
-    // дополняется двумя ветками на каждый обработчик (Mouseenter и Mouseleave).
-    // Ветка инертна, пока дерево не содержит `data-event`: статический путь
-    // (макросные ветки `dispatch`) обрабатывает мышь до `invoke_handler`,
-    // а Click для кнопок — по имени обработчика; без data-атрибута обход
-    // возвращается false до вызова метода.
-    let mouse_arms: Vec<TokenStream> = click_handlers
-        .iter()
-        .flat_map(|(_, (call_tokens, name))| {
-            let name = name.clone();
-            ["Mouseenter", "Mouseleave"]
-                .into_iter()
-                .map(move |variant| {
-                    let call = call_tokens.clone();
-                    let variant_ident = syn::Ident::new(variant, Span::call_site());
-                    let suffix = format!(":{name}");
-                    let suffix_lit = LitStr::new(&suffix, Span::call_site());
-                    quote! {
-                        if let ::light_fw::vdom::Event::#variant_ident = __event_ref {
-                            if let Some(node) = __root.get(__handler)
-                                && let Some(data) = node.attr("data-event")
-                                && data.ends_with(#suffix_lit)
-                            {{
-                                #call();
-                                return true;
-                            }}
-                        }
-                    }
-                })
-        })
-        .collect();
-    let invoke_handler_method = if click_handlers.is_empty() {
+    // Runtime-доставка мышиных событий (`@mouseenter`/`@mouseleave`, 0.21.0):
+    // runtime-парсер хранит имена ВСЕХ обработчиков в ОТДЕЛЬНЫХ атрибутах узла
+    // `data-event-enter="NAME"` / `data-event-leave="NAME"` (один общий
+    // `data-event` не работает — `VElement::attr` читает только первую пару,
+    // см. баг 4-го раунда E2E). Каждая ветка: проверяем соответствие варианта
+    // события атрибуту и вызываем метод; если ветка не совпала (другой вариант
+    // или узла нет) — продолжаем обход.
+    //
+    // Источник — отдельный список `mouse_handlers` (codegen.rs регистрирует
+    // `@mouseenter`/`@mouseleave` независимо от `@click`): чисто-мышиный
+    // шаблон (tooltip при onhover, без единого клика) тоже получает ветку,
+    // иначе `light devtools move/move-leave` молча игнорируется. Два разных
+    // обработчика на одном элементе больше не конфликтуют: каждый вариант
+    // идёт в СВОЙ атрибут и вызывает СВОЙ метод.
+    let mut mouse_arms: Vec<TokenStream> = Vec::new();
+    for (name, call_tokens) in mouse_handlers.iter() {
+        let call = call_tokens.clone();
+        for (variant, attr) in [
+            ("Mouseenter", "data-event-enter"),
+            ("Mouseleave", "data-event-leave"),
+        ] {
+            let variant_ident = syn::Ident::new(variant, Span::call_site());
+            mouse_arms.push(quote! {
+                if let ::light_fw::vdom::Event::#variant_ident = __event_ref
+                    && let Some(node) = __root.get(__handler)
+                    && node.attr(#attr).is_some_and(|n| n == #name)
+                {
+                    #call();
+                    return true;
+                }
+            });
+        }
+    }
+    // Генерация метода: нужны ЛИБО кликовые (имена/ключи), ЛИБО мышиные
+    // обработчики — чисто-мышиные шаблоны тоже должны дотягиваться до
+    // обработчиков через invoke_handler.
+    let invoke_handler_method = if click_handlers.is_empty() && mouse_handlers.is_empty() {
         quote! {}
     } else {
         quote! {

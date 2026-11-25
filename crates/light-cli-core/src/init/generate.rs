@@ -152,21 +152,22 @@ fn main() -> light_fw::Result<()> {
 /// проект компилируется без GUI и подходит для AI-агентов и serverless-скриптов.
 /// `light-fw` (мета-крейт) НЕ используется — это прямой доступ к реактивности.
 ///
-/// Версия `light-fw-core` зафиксирована как `"0.21"` по ТЗ (буквально); это
-/// не `minor_version()`, потому что:
-/// 1. Headless-режим (без winit) появляется только в 0.21.x — в 0.20.2
-///    `light-gui` является необязательной зависимостью, и `cargo tree | grep
-///    winit` найдёт результат даже при `default-features = false`.
-/// 2. `minor_version()` сегодня возвращает `"0.20"` (workspace version
-///    `0.20.2`) — если оставить его, порождаемый проект будет сломан
-///    (зависит от ещё не опубликованной фичи на версии, где она нет).
+/// Версия `light-fw-core` — текущая минорная версия (`minor_version()`),
+/// чтобы порождаемые проекты собирались сразу после `light init`.
 ///
-/// Буквальный текст ТЗ: «`light-fw-core = { version = "0.21",
-/// default-features = false }`». Если на момент публикации 0.21.0 нужно
-/// переключить на `minor_version()` — отдельный коммит `chore(cli):
-/// headless → dynamic version`.
+/// ⚠️ Ограничение до публикации 0.21.0: headless-режим (без winit)
+/// появляется только в 0.21.x. В 0.20.x `light-gui` является НЕОПЦИОНАЛЬНОЙ
+/// зависимостью `light-fw-core`, поэтому даже с `default-features = false`
+/// дерево зависимостей содержит winit: `cargo tree | grep winit` НЕ будет
+/// пустым. После публикации 0.21.0 (когда workspace version станет 0.21.x
+/// и `light-gui` станет опциональной) `minor_version()` начнёт возвращать
+/// `"0.21"` — ограничение исчезнет само, без изменения кода.
+///
+/// Документация (AGENTS.md, assets/templates/AGENT.md) описывает целевое
+/// поведение 0.21.x; предупреждение об этом ограничении добавляется
+/// отдельным коммитом (Documentation-First: Propose & Approve).
 pub fn cargo_toml_headless(name: &str) -> String {
-    const HEADLESS_FW_CORE: &str = "0.21";
+    let fw_core = minor_version();
     format!(
         "[package]\n\
          name = \"{name}\"\n\
@@ -174,7 +175,7 @@ pub fn cargo_toml_headless(name: &str) -> String {
          edition = \"2021\"\n\
          \n\
          [dependencies]\n\
-         light-fw-core = {{ version = \"{HEADLESS_FW_CORE}\", default-features = false }}\n\
+         light-fw-core = {{ version = \"{fw_core}\", default-features = false }}\n\
          \n\
          [workspace]\n"
     )

@@ -38,12 +38,22 @@ light dev --agent --detach
 light devtools shot --path shots           # скриншот
 light devtools find --tag button --text "Click"   # найти элемент
 light devtools move --key tip_trigger      # @mouseenter (подсветка тупика)
+light devtools move-leave --key tip_trigger  # @mouseleave (убрать тупик)
 light devtools click --key <key>           # клик
 light devtools type --key <key> "text"     # ввод текста
 light devtools key --key <key> Enter       # клавиша
 light devtools state                       # JSON-состояние
 light devtools tree                        # дерево элементов
 ```
+
+> ⚠️ **Стабильные ключи (runtime-режим, 0.21.0).** Если элемент в шаблоне
+> имеет обработчик события (`@click`, `@mouseenter` и т. п.), то его ключ в
+> runtime-дереве — **имя обработчика**, а не позиционный ключ:
+> `<div @click="noop">` → key `"noop"`; `<span @mouseenter="show_tip">` →
+> key `"show_tip"`. Позиционные ключи вида `.0.1` / `0.0.1` в этом режиме
+> **не работают** для `move`/`click`/`type`. Всегда получай реальный ключ из
+> `light devtools find` (или `tree`) и используй именно его в `move`/`click`/
+> `move-leave`. Не угадывай ключи по структуре шаблона.
 
 Завершение сессии (сгенерирует `summary.md`):
 

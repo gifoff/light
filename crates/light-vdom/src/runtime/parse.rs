@@ -447,19 +447,28 @@ pub(crate) fn build_element<C: Component + ?Sized>(
     {
         attrs.push(("data-value", val.to_owned()));
     }
-    // Runtime-обработчики мыши (`@mouseenter`/`@mouseleave` на контейнерах
-    // `div`/`span`): имя сохраняется в узле как data-атрибут
-    // `data-event="variant:name"` (одна пара — один обработчик на элемент,
-    // второй атрибут того же вида перезаписывает первый). Окно доставляет
-    // его через `Component::invoke_handler` при Mouseenter/Mouseleave
-    // (0.21.0). `@click` не сохраняется: для кнопок работает существующий
-    // путь `dispatch_by_name` по имени.
-    for (attr, variant) in [("@mouseenter", "Mouseenter"), ("@mouseleave", "Mouseleave")] {
-        if let Some(handler) = attr_value(&element.attrs, attr) {
-            let name = normalize_event_handler(handler);
-            if !name.is_empty() {
-                attrs.push((intern_key("data-event"), format!("{variant}:{name}")));
-            }
+    // Runtime-обработчики мыши (`@mouseenter`/`@mouseleave`, 0.21.0): имена ВСЕХ
+    // существующих сохраняются в узле через ОТДЕЛЬНЫЕ атрибуты
+    // `data-event-enter="name"` / `data-event-leave="name"`. Общий атрибут
+    // `data-event` не работает: `VElement::attr` возвращает ПЕРВУЮ совпадающую
+    // пару, и второй обработчик (например `@mouseleave`) оставался невидимым
+    // (баг 6-го раунда E2E). Окно доставляет событие через
+    // `Component::invoke_handler` (devtools.rs L454–483), где сгенерированные
+    // ветки читают оба атрибута и вызывают СВОЙ метод по каждому варианту
+    // независимо от ключа узла. Два разных обработчика на одном элементе
+    // больше не конфликтуют: каждый вариант события идёт в свой атрибут.
+    // `@click` не сохраняется: для кнопок работает существующий путь
+    // `dispatch_by_name` по имени.
+    if let Some(handler) = attr_value(&element.attrs, "@mouseenter") {
+        let name = normalize_event_handler(handler);
+        if !name.is_empty() {
+            attrs.push((intern_key("data-event-enter"), name));
+        }
+    }
+    if let Some(handler) = attr_value(&element.attrs, "@mouseleave") {
+        let name = normalize_event_handler(handler);
+        if !name.is_empty() {
+            attrs.push((intern_key("data-event-leave"), name));
         }
     }
     let mut elem = leaf.with_style(style).with_tag(tag).with_attrs(attrs);

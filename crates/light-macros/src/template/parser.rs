@@ -154,6 +154,12 @@ pub(super) struct Generator {
     /// дерева, (вызов метода, имя обработчика без скобок)). Имя используется в
     /// `invoke_handler`, где runtime-дерево дотягивается до обработчика по имени.
     pub(super) click_handlers: Vec<(TokenStream, (TokenStream, String))>,
+    /// Обработчики `@mouseenter`/`@mouseleave` для runtime-диспетчеризации:
+    /// (имя без скобок, вызов метода). Отдельно от `click_handlers`:
+    /// mouse-only шаблоны (без единого `@click`) тоже получают ветку
+    /// `invoke_handler`, сопоставляющую `data-event-enter`/`data-event-leave`
+    /// из runtime-дерева (0.21.0).
+    pub(super) mouse_handlers: Vec<(String, TokenStream)>,
     /// Привязки v-model для runtime-writeback: (имя поля, тип поля, значение radio).
     /// Checkbox → (field, "bool", None); Radio → (field, "string", Some(value));
     /// Select → (field, "string", None). Используется в `dispatch_vmodel`,

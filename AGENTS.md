@@ -533,13 +533,14 @@ Light предоставляет headless-инструменты для авто
 4. **Клик:** `light devtools click --key 0.0.0`.
 5. **Ввод:** `light devtools type --key 0.0.1 "Hello"`.
 6. **Клавиша:** `light devtools key --key 0.0.1 Enter`.
-7. **Подсветка тупика:** `light devtools move --key tip_trigger` → триггерит `@mouseenter`. **С 0.21.0** работает в режиме `runtime-templates` (раньше обработка `MoveEnter`/`MoveLeave` была только через `dispatch_custom_event`, а runtime-компоненты идут через `invoke_handler`).
-8. **Состояние:** `light devtools state` (JSON) и `light devtools tree`.
-9. **Завершение:** `light devtools session stop` → генерирует `summary.md`. Если приложение упало до этого — останови процесс напрямую по PID, напечатанному при запуске: `taskkill /F /PID <pid>` (Windows) / `kill -9 <pid>` (Linux/macOS).
-10. **Центрирование заголовков:** `<h1>`–`<h5>` внутри `align-items=center` авторазмериваются (max-content) и центрируются. С версии 0.16.2 всегда (раньше получали width=0).
-11. **Браузерный UI:** `light dev` поднимает Web UI на `http://127.0.0.1:9228` (флаги `--no-web`, `--web-port`). Сервер — tiny_http (без tokio), SSE каждые 500 мс. Если приложение не запущено — бейдж «Ожидание приложения…».
-12. **⚠️ Важно (с 0.20.x):** Тег `<text>` — это поле ввода (text input), он требует `v-model` и не может содержать дочерних элементов. Для отображения текста используйте `<div>` или `<span>` с интерполяцией `{{ count }}`. (Полная таблица элементов — в [`docs/guide.md`](docs/guide.md).)
-13. **Сгенерированный `AGENT.md`:** Если вы тестируете пользовательский проект (созданный через `light init`), **прочитайте сгенерированный файл `AGENT.md`** в корне проекта. Он содержит шпаргалку по API и DevTools. Не читайте исходники ядра для выяснения синтаксиса.
+7. **Подсветка тупика:** `light devtools move --key tip_trigger` → триггерит `@mouseenter`; `light devtools move-leave --key tip_trigger` → `@mouseleave` (убирает тупик). **С 0.21.0** работает в режиме `runtime-templates` (раньше обработка `MoveEnter`/`MoveLeave` была только через `dispatch_custom_event`, а runtime-компоненты идут через `invoke_handler`).
+8. **⚠️ Стабильные ключи (runtime-режим, 0.21.0):** если элемент в шаблоне имеет обработчик события (`@click`, `@mouseenter` и т. п.), его ключ в runtime-дереве — **имя обработчика**, а не позиционный: `<div @click="noop">` → key `"noop"`; `<span @mouseenter="show_tip">` → key `"show_tip"`. Позиционные ключи `.0.1` / `0.0.1` в этом режиме **не работают** для `move`/`click`/`type`. Всегда получай реальный ключ из `light devtools find` (или `tree`) и используй именно его — не угадывай по структуре шаблона.
+9. **Состояние:** `light devtools state` (JSON) и `light devtools tree`.
+10. **Завершение:** `light devtools session stop` → генерирует `summary.md`. Если приложение упало до этого — останови процесс напрямую по PID, напечатанному при запуске: `taskkill /F /PID <pid>` (Windows) / `kill -9 <pid>` (Linux/macOS).
+11. **Центрирование заголовков:** `<h1>`–`<h5>` внутри `align-items=center` авторазмериваются (max-content) и центрируются. С версии 0.16.2 всегда (раньше получали width=0).
+12. **Браузерный UI:** `light dev` поднимает Web UI на `http://127.0.0.1:9228` (флаги `--no-web`, `--web-port`). Сервер — tiny_http (без tokio), SSE каждые 500 мс. Если приложение не запущено — бейдж «Ожидание приложения…».
+13. **⚠️ Важно (с 0.20.x):** Тег `<text>` — это поле ввода (text input), он требует `v-model` и не может содержать дочерних элементов. Для отображения текста используйте `<div>` или `<span>` с интерполяцией `{{ count }}`. (Полная таблица элементов — в [`docs/guide.md`](docs/guide.md).)
+14. **Сгенерированный `AGENT.md`:** Если вы тестируете пользовательский проект (созданный через `light init`), **прочитайте сгенерированный файл `AGENT.md`** в корне проекта. Он содержит шпаргалку по API и DevTools. Не читайте исходники ядра для выяснения синтаксиса.
 
 ### Headless-проект (для AI-агентов, serverless-скриптов) — новый в 0.21.0
 
