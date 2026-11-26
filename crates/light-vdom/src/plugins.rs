@@ -244,9 +244,16 @@ pub fn check_core_version(req: &str) -> Result<(), String> {
     }
 }
 
-/// Разбирает `MAJOR.MINOR.PATCH` в тройку чисел (без учёта суффиксов).
+/// Разбирает `MAJOR.MINOR.PATCH` в тройку чисел.
+///
+/// Pre-release (`-…`) и build-метаданные (`+…`) игнорируются для тройки
+/// совместимости: alpha-ядро `0.21.0-alpha.1` считается своим release-триплетом
+/// `(0, 21, 0)`. Это осознанное упрощение кастомного матчера (настоящая
+/// semver-семантика — отдельный ticket); формат требования остаётся
+/// `^MAJOR.MINOR[.PATCH]`.
 fn parse_triple(s: &str) -> Option<(u64, u64, u64)> {
-    let mut nums = s.split('.').take(3).map(str::trim);
+    let base = s.split(['-', '+']).next().unwrap_or(s);
+    let mut nums = base.split('.').take(3).map(str::trim);
     let major = nums.next()?.parse::<u64>().ok()?;
     let minor = nums.next()?.parse::<u64>().ok()?;
     let patch = nums.next()?.parse::<u64>().ok()?;
@@ -321,24 +328,98 @@ mod tests {
     }
 
     #[test]
+    fn parse_triple_strips_prerelease_and_build() {
+        // Pre-release и build-метаданные игнорируются для тройки совместимости.
+        assert_eq!(parse_triple("0.21.0-alpha.1"), Some((0, 21, 0)));
+        assert_eq!(parse_triple("1.2.3+build.5"), Some((1, 2, 3)));
+        assert_eq!(parse_triple("1.2.3"), Some((1, 2, 3)));
+        // Мусор (не число на первой позиции) → None.
+        assert_eq!(parse_triple("abc"), None);
+        // Пустая строка: нет ни major, ни minor → None.
+        assert_eq!(parse_triple(""), None);
+    }
+
+    /// Текущая версия ядра как тройка (без pre-release/build — см. doc `parse_triple`).
+    fn cur_version_triple() -> (u64, u64, u64) {
+        let v = env!("CARGO_PKG_VERSION");
+        parse_triple(v).unwrap_or_else(|| panic!("не удалось разобрать CARGO_PKG_VERSION {v:?}"))
+    }
+
+    #[test]
     fn check_core_version_accepts_compatible() {
-        // Текущая версия 0.18.x: ^0.18, ^0.17, ^0.0 должны проходить.
-        assert!(check_core_version("^0.18").is_ok());
-        assert!(check_core_version("^0.17").is_ok());
+        // Ожидания выводятся из текущей версии ядра (env! CARGO_PKG_VERSION),
+        // а не хардкодятся: после bump до 0.21.x старый хардкод ^0.18 падал.
+        let (cur_major, cur_minor, _) = cur_version_triple();
+        // ^MAJOR.MINOR текущей тройки — всегда совместимо (minor-floor совпадает).
+        let req_current = format!("^{cur_major}.{cur_minor}");
+        assert!(
+            check_core_version(&req_current).is_ok(),
+            "^{cur_major}.{cur_minor} должно пройти"
+        );
+        // ^0.0 проходит при любой 0.x версии (minor >= 0).
         assert!(check_core_version("^0.0").is_ok());
+        // Для 0.x с cur_minor > 0: предшествующий минор тоже совместим
+        // (minor-floor: cur_minor >= cur_minor - 1).
+        if cur_major == 0 && cur_minor > 0 {
+            let prev = format!("^0.{}", cur_minor - 1);
+            assert!(
+                check_core_version(&prev).is_ok(),
+                "{prev} должно проходить (0.x minor-floor)"
+            );
+        }
     }
 
     #[test]
     fn check_core_version_rejects_incompatible() {
-        assert!(check_core_version("^0.99").is_err());
-        assert!(check_core_version("0.18").is_err()); // без ^
+        let (cur_major, cur_minor, _) = cur_version_triple();
+        // Минор вперёд на один — несовместимо (требование выше текущей версии).
+        let ahead = format!("^{}.{cur_minor}", cur_major + 1);
+        assert!(check_core_version(&ahead).is_err());
+        // Для 0.x: требование следующего минора тоже несовместимо.
+        if cur_major == 0 {
+            let next = format!("^0.{}", cur_minor + 1);
+            assert!(
+                check_core_version(&next).is_err(),
+                "{next} должно ошибаться (0.x minor-floor)"
+            );
+        }
+        // ^1.0.0 при cur_major == 0: MAJOR не совпадает → несовместимо.
+        if cur_major == 0 {
+            assert!(check_core_version("^1.0.0").is_err());
+        }
+        // Без карета и пустая строка — неподдерживаемый формат.
+        assert!(check_core_version("0.18").is_err());
         assert!(check_core_version("").is_err());
     }
 
     #[test]
     fn check_core_version_cares_about_patch_for_nonzero_major() {
-        // При MAJOR > 0 patch учитывается.
-        // Текущая 0.18.0: ^1.0.0 → MAJOR 1 != 0 → несовместимо.
-        assert!(check_core_version("^1.0.0").is_err());
+        // При MAJOR > 0 patch учитывается: для 0.x ядра любое ^N.M.P (N >= 1)
+        // несовместимо из-за разницы MAJOR (patch-ветка недостижима при 0.x).
+        let (cur_major, _, _) = cur_version_triple();
+        if cur_major == 0 {
+            assert!(check_core_version("^1.0.0").is_err());
+            assert!(check_core_version("^2.3.4").is_err());
+        } else {
+            // Для N > 0: тот же major, меньший minor — несовместимо.
+            if cur_major >= 2 {
+                assert!(check_core_version(&format!("^{cur_major}.0")).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn check_core_version_tolerates_prerelease_kernel() {
+        // Regression-тест к BUG 0c: на pre-release ядре (например
+        // 0.21.0-alpha.1) parse_triple отдаёт release-триплет (0, 21, 0),
+        // поэтому "^0.21" должен проходить, хотя в строке есть "-alpha.1".
+        // Triple игнорирует pre-release — это осознанное упрощение матчера.
+        let (cur_major, cur_minor, _) = cur_version_triple();
+        let req = format!("^{cur_major}.{cur_minor}");
+        assert!(
+            check_core_version(&req).is_ok(),
+            "^{cur_major}.{cur_minor} должно проходить на ядре {cur:?} (pre-release игнорируется)",
+            cur = env!("CARGO_PKG_VERSION")
+        );
     }
 }

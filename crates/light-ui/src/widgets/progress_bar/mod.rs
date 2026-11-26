@@ -118,14 +118,15 @@ impl CustomElement for ProgressBar {
 /// Фабрика плагина: регистрирует кастомный элемент `progress`
 /// (distributed-slice). `const`: все поля — `&'static`/`fn pointer`.
 ///
-/// `core_version_req: "^0.20"` — согласовано с tooltip/toast-container/modal
-/// (одна линейка виджетов в light-ui). `^0.20` матчит любой `0.20.x`/`0.21.x`
-/// (caret на 0.x: minor >= req_minor); при alpha-версии ядра runtime сверяет
-/// только тройку `MAJOR.MINOR.PATCH` (см. `check_core_version` в
-/// `light-vdom/src/plugins.rs:201`).
+/// `core_version_req: "^0.21"` — согласовано с tooltip/toast-container/modal
+/// (одна линейка виджетов в light-ui). Кастомный матчер: для 0.x действует
+/// minor-floor (`^0.N` совместимо при `cur_minor >= N`, patch игнорируется);
+/// pre-release/build-метаданные ядра (например `0.21.0-alpha.1`) игнорируются
+/// `parse_triple` — alpha-ядро считается своим release-триплетом. См.
+/// `check_core_version` в `light-vdom/src/plugins.rs:201`.
 const PROGRESS_BAR: CustomElementFactory = CustomElementFactory {
     tag: "progress",
-    core_version_req: "^0.20",
+    core_version_req: "^0.21",
     crate_name: "light-ui",
     provides: &["progress"],
     factory: || Box::new(ProgressBar),
@@ -300,6 +301,6 @@ mod tests {
         assert_eq!(factory.tag, "progress");
         assert_eq!(factory.crate_name, "light-ui");
         assert_eq!(factory.provides, &["progress"]);
-        assert_eq!(factory.core_version_req, "^0.20");
+        assert_eq!(factory.core_version_req, "^0.21");
     }
 }

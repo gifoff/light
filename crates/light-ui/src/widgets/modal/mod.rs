@@ -198,7 +198,7 @@ impl CustomElement for Modal {
 /// (distributed-slice). `const`: все поля — `&'static`/`fn pointer`.
 const MODAL: CustomElementFactory = CustomElementFactory {
     tag: "modal",
-    core_version_req: "^0.20",
+    core_version_req: "^0.21",
     crate_name: "light-ui",
     provides: &["modal"],
     factory: || Box::new(Modal),

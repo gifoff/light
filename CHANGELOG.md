@@ -37,13 +37,21 @@
 ### Changed
 
 - **`light-ui` теперь регистрирует 4 компонента** (Tooltip, Toast, Modal,
-  ProgressBar) вместо 2 (до 0.21.0-alpha.1). Ядро (`core`) остаётся `"^0.20"` —
-  намеренное решение: alpha-ядро (0.21.0-alpha.1) ломает `check_core_version`
-  (parse_triple не разбирает pre-release "0-alpha"), поэтому все кастомные
-  элементы против alpha-ядра ошибаются. См. TODO: отдельный ticket в vdom.
+  ProgressBar) вместо 2 (до 0.21.0-alpha.1).
 
 ### Fixed
 
+- **Runtime-регистрация плагинов на pre-release ядре**
+  (`crates/light-vdom/src/plugins.rs`): `parse_triple` теперь игнорирует
+  pre-release (`-…`) и build-метаданные (`+…`) — alpha-ядро
+  `0.21.0-alpha.1` считается своим release-триплетом `(0, 21, 0)`. До фикса
+  `check_core_version` возвращал Err («не удалось разобрать версию ядра
+  "0.21.0-alpha.1"») и runtime выбрасывал ВСЕ кастомные элементы (progress,
+  modal, tooltip, toast). Ядро (`core`) в манифесте light-ui поднят до
+  `"^0.21"`, все 4 фабрики (`tooltip`, `toast-container`, `modal`,
+  `progress`) теперь требуют `^0.21`. Семантика матчера не изменилась:
+  формат требования остаётся `^MAJOR.MINOR[.PATCH]`, для 0.x действует
+  minor-floor, настоящий semver — отдельный ticket.
 - **z-порядок для тултипов** (`crates/light-ui/src/widgets/tooltip/mod.rs`):
   корень `<tooltip>` теперь всегда получает `style.z = 1000` (виджетный дефолт
   верхнего слоя; `reorder_by_z` в `Layout::build` уже делает устойчивую сортировку

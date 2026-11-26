@@ -299,7 +299,7 @@ impl CustomElement for ToastContainer {
 /// (distributed-slice). `const`: все поля — `&'static`/`fn pointer`.
 const TOAST_CONTAINER: CustomElementFactory = CustomElementFactory {
     tag: "toast-container",
-    core_version_req: "^0.20",
+    core_version_req: "^0.21",
     crate_name: "light-ui",
     provides: &["toast-container"],
     factory: || Box::new(ToastContainer),

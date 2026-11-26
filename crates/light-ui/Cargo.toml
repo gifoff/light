@@ -18,7 +18,7 @@ name = "light_ui"
 [package.metadata.light]
 kind = "widget"
 display-name = "Light UI Widgets"
-core = "^0.20"
+core = "^0.21"
 
 [package.metadata.light.provides]
 elements = ["tooltip", "toast-container", "modal", "progress"]

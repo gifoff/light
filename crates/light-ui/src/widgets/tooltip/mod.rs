@@ -218,7 +218,7 @@ impl CustomElement for Tooltip {
 /// (distributed-slice). `const`: все поля — `&'static`/`fn pointer`.
 const TOOLTIP: CustomElementFactory = CustomElementFactory {
     tag: "tooltip",
-    core_version_req: "^0.20",
+    core_version_req: "^0.21",
     crate_name: "light-ui",
     provides: &["tooltip"],
     factory: || Box::new(Tooltip),
