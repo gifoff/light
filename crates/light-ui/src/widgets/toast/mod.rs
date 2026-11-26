@@ -34,10 +34,11 @@ use std::cell::RefCell;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
+use crate::widgets::common::{parse_color_named, parse_z};
 use light_fw_core::async_runtime::{post_to_ui, spawn};
 use light_fw_core::control::{WindowCommand, request};
 use light_fw_core::plugins::{CustomElement, CustomElementFactory, EventCtx};
-use light_fw_core::vdom::parse::{parse_color, parse_position, parse_size_or_auto};
+use light_fw_core::vdom::parse::{parse_position, parse_size_or_auto};
 use light_fw_core::vdom::{Edges, Event, NodeKind, Style, VElement};
 
 /// Один активный toast.
@@ -167,28 +168,6 @@ fn parse_px(value: &str) -> Option<f32> {
     f32::from_str(num).ok()
 }
 
-/// Разбирает цвет: CSS-имена (через lower-case) + общие VDOM-форматы
-/// `#RRGGBB[AA]`/`0x…` (порядок байт — **`0xRRGGBBAA`**, т.е. alpha в
-/// младшем байте; совпадает с VDOM-тестами: `#FF0000` → `0xFF0000FF`).
-/// light-ui поддерживает **наименования** для удобного HTML-авторинга,
-/// которые runtime-шаблоны тоже понимают: `black`, `white`, `red`, `green`,
-/// `blue`, `yellow`, `orange`, `purple`, `gray`/`grey`. Всё остальное
-/// делегируется общему VDOM-парсеру [`parse_color`].
-fn parse_color_named(value: &str) -> Option<u32> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "black" => Some(0x00_00_00_FF),
-        "white" => Some(0xFF_FF_FF_FF),
-        "red" => Some(0xFF_00_00_FF),
-        "green" => Some(0x00_FF_00_FF),
-        "blue" => Some(0x00_00_FF_FF),
-        "yellow" => Some(0xFF_FF_00_FF),
-        "orange" => Some(0xFF_7F_00_FF),
-        "purple" => Some(0x80_00_80_FF),
-        "gray" | "grey" => Some(0x80_80_80_FF),
-        _ => parse_color(value),
-    }
-}
-
 /// Применяет стандартные атрибуты стиля тега к корню контейнера.
 ///
 /// Обрабатываемые атрибуты (все опциональные; по умолчанию — «прозрачный,
@@ -268,6 +247,14 @@ impl CustomElement for ToastContainer {
     fn render(&self, attrs: &[(&'static str, String)], _children: &[VElement]) -> VElement {
         let mut root = VElement::container("", NodeKind::Column, Vec::new());
         apply_container_style(&mut root.style, attrs);
+
+        // Дефолтный z-слой: 6000 (поверх dialog'ов с их 5000), применяется
+        // только если явный `z` отсутствует.
+        let explicit_z: Option<i32> = attrs
+            .iter()
+            .find_map(|(name, value)| (*name == "z").then(|| parse_z(value)))
+            .flatten();
+        root.style.z = explicit_z.unwrap_or(6000);
 
         // --- Активные toast'ы ---
         let toasts = TOAST_MANAGER.with(|m| m.borrow().toasts.clone());
@@ -423,5 +410,22 @@ mod tests {
         let factory = factory.expect("checked");
         assert_eq!(factory.crate_name, "light-ui");
         assert_eq!(factory.provides, &["toast-container"]);
+    }
+
+    /// `z` отсутствует → дефолт 6000.
+    #[test]
+    fn default_z_is_6000() {
+        let c = ToastContainer;
+        let rendered = c.render(&[], &[]);
+        assert_eq!(rendered.style.z, 6000);
+    }
+
+    /// Явный `z="7"` переопределяет дефолт 6000.
+    #[test]
+    fn explicit_z_overrides_default() {
+        let c = ToastContainer;
+        let attrs = vec![("z", "7".to_string())];
+        let rendered = c.render(&attrs, &[]);
+        assert_eq!(rendered.style.z, 7);
     }
 }

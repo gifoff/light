@@ -1,35 +1,36 @@
-//! Виджет **Modal** (0.21.0): модальное окно с заголовком и контентом.
+//! Виджет **Dialog** (0.21.0): диалоговое окно с заголовком и контентом.
 //!
 //! ## Модель
 //!
 //! Фреймворк — **механизм**, пользователь — **политика**:
 //!
-//! * `<modal title="…">контент</modal>` рендерит корневой `Column` с
+//! * `<dialog title="…">контент</dialog>` рендерит корневой `Column` с
 //!   белым фоном, рамкой 2px (`#888888`), padding 16, `z = 5000`
-//!   (модальное окно — поверх остальных элементов, включая tooltip'ы c
+//!   (диалоговое окно — поверх остальных элементов, включая tooltip'ы c
 //!   их дефолтом `z = 1000`) и **`position = absolute` по умолчанию**
 //!   (отступы `left`/`top` = 50px, чтобы окно не прилипало к краю).
-//!   Modal — оверлей по определению: без явного `position` оно **не**
+//!   Dialog — оверлей по определению: без явного `position` оно **не**
 //!   в потоке и не сдвигает контент. Явный атрибут `position="flow"`
 //!   переопределяет дефолт.
 //! * Атрибут `title` добавляет дочерний `Text`-лист; остальные атрибуты
 //!   (стиль) к корню **не** применяются автоматически (runtime просто
-//!   перекрашивает его в `NodeKind::Custom("modal")`) — как и для
+//!   перекрашивает его в `NodeKind::Custom("dialog")`) — как и для
 //!   [`tooltip`]/[`toast-container`], виджет задаёт свой стиль явно.
 //! * Закрытие окна — политика приложения: пользователь управляется
 //!   видимостью через `v-if`, как и у `tooltip`.
 
 use std::str::FromStr;
 
+use crate::widgets::common::{parse_color_named, parse_z};
 use light_fw_core::plugins::{CustomElement, CustomElementFactory, EventCtx};
-use light_fw_core::vdom::parse::{parse_color, parse_position, parse_size_or_auto};
+use light_fw_core::vdom::parse::{parse_position, parse_size_or_auto};
 use light_fw_core::vdom::{Edges, Event, NodeKind, Position, Style, VElement};
 
-/// Кастомный элемент `<modal>`: модальное окно с заголовком (`title`)
+/// Кастомный элемент `<dialog>`: диалоговое окно с заголовком (`title`)
 /// и произвольным контентом (дети шаблона). Инстанс состояния не хранит —
 /// `render` чистая функция от атрибутов.
 #[derive(Debug, Default)]
-pub struct Modal;
+pub struct Dialog;
 
 /// Разбирает числовое значение пиксельной координаты (`"40"`, `"40px"`).
 /// Пустое значение → `None`; нечисло → `None`.
@@ -42,25 +43,7 @@ fn parse_px(value: &str) -> Option<f32> {
     f32::from_str(number).ok()
 }
 
-/// Разбирает цвет: CSS-имена (через lower-case) + общие VDOM-форматы
-/// `#RRGGBB[AA]`/`0x…` (порядок байт — **`0xRRGGBBAA`**, т.е. alpha в
-/// младшем байте; совпадает с VDOM-тестами: `#FF0000` → `0xFF0000FF`).
-fn parse_color_named(value: &str) -> Option<u32> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "black" => Some(0x00_00_00_FF),
-        "white" => Some(0xFF_FF_FF_FF),
-        "red" => Some(0xFF_00_00_FF),
-        "green" => Some(0x00_FF_00_FF),
-        "blue" => Some(0x00_00_FF_FF),
-        "yellow" => Some(0xFF_FF_00_FF),
-        "orange" => Some(0xFF_7F_00_FF),
-        "purple" => Some(0x80_00_80_FF),
-        "gray" | "grey" => Some(0x80_80_80_FF),
-        _ => parse_color(value),
-    }
-}
-
-/// Применяет стандартные атрибуты стиля к корню modal'а.
+/// Применяет стандартные атрибуты стиля к корню Dialog'а.
 ///
 /// Обрабатываемые атрибуты (все опциональные; по умолчанию — «белый фон,
 /// рамка 2px, padding 16, z=5000»):
@@ -78,6 +61,9 @@ fn parse_color_named(value: &str) -> Option<u32> {
 /// | `width`       | `Style::width`        | `Size::Auto`        |
 /// | `height`      | `Style::height`       | `Size::Auto`        |
 /// | `font-size`   | `Style::font_size`    | `None`              |
+///
+/// Атрибут `z` не проходит через эту таблицу: он вытаскивается отдельно в
+/// [`render`] — явный `z` переопределяет дефолт 5000 (см. док `render`).
 fn apply_style_attrs(style: &mut Style, attrs: &[(&'static str, String)]) {
     for (name, value) in attrs {
         match *name {
@@ -126,46 +112,52 @@ fn apply_style_attrs(style: &mut Style, attrs: &[(&'static str, String)]) {
                     style.font_size = Some(px);
                 }
             }
-            // Остальные атрибуты игнорируются: modal сам задаёт рамку и z.
+            // Остальные атрибуты игнорируются: Dialog сам задаёт рамку и z.
             _ => {}
         }
     }
 }
 
-impl CustomElement for Modal {
+impl CustomElement for Dialog {
     /// Имя тега (для `downcast_custom` и диагностики).
     fn tag(&self) -> &'static str {
-        "modal"
+        "dialog"
     }
 
-    /// Рендерит modal: корневой `Column` с подданным стилем (см.
+    /// Рендерит dialog: корневой `Column` с подданным стилем (см.
     /// [`apply_style_attrs`]), заголовком из атрибута `title` и всеми
     /// дочерними узлами шаблона.
     ///
     /// Корневой тег остаётся `Column` (runtime перекрасит его в
-    /// `NodeKind::Custom("modal")`). Значения по умолчанию (рамка 2px
-    /// `#888888`, белый фон, padding 16, `z = 5000`) **вкладываются
-    /// всегда** — как и `pointer_events = false` у tooltip, виджетный
-    /// дефолт важнее политики приложения: модальное окно по определению
-    /// верхний слой поверх прочих элементов.
+    /// `NodeKind::Custom("dialog")`). Дефолты (рамка 2px `#888888`, белый
+    /// фон, padding 16, `z = 5000`) применяются, когда соответствующий
+    /// атрибут **отсутствует**; явные `z`/`background`/`padding` и пр.
+    /// переопределяют дефолты — пользовательская политика важнее, когда явно
+    /// задана (заведено `explicit_z` выше и через [`apply_style_attrs`]).
     ///
     /// **Позиция по умолчанию:** без явного атрибута `position` корень
     /// получает `Position::Absolute` со смещениями `abs_left`/`abs_top = 50px`
     /// (окно — оверлей, не в потоке; отступ, чтобы не прилипало к краю).
-    /// Явный `position="flow"` переопределяет дефолт (пользовательская
-    /// политика важнее, когда явно задана).
+    /// Явный `position="flow"` переопределяет дефолт.
     fn render(&self, attrs: &[(&'static str, String)], children: &[VElement]) -> VElement {
         let title = attrs
             .iter()
             .find_map(|(name, value)| (*name == "title").then_some(value.clone()))
             .unwrap_or_default();
 
-        let mut root = VElement::container("modal", NodeKind::Column, Vec::new());
-        // Дефолты модального окна: верхний слой (5000 > tooltip'ов 1000).
-        root.style.z = 5000;
+        // Явный `z` из HTML переопределяет дефолт 5000.
+        let explicit_z: Option<i32> = attrs
+            .iter()
+            .find_map(|(name, value)| (*name == "z").then(|| parse_z(value)))
+            .flatten();
+
+        let mut root = VElement::container("dialog", NodeKind::Column, Vec::new());
+        // Дефолтный z-слой: 5000 (поверх tooltip'ов с их 1000), применяется
+        // только если явный `z` отсутствует.
+        root.style.z = explicit_z.unwrap_or(5000);
         root.style.background = Some(0xFF_FF_FF_FF);
         root.style.border_size = 2.0;
-        root.style.border_color = Some(0xFF_88_88_88);
+        root.style.border_color = Some(0x88_88_88_FF);
         root.style.padding = Edges::all(16.0);
 
         // Без явного `position` — absolute-оверлей с отступом 50px от края.
@@ -178,7 +170,7 @@ impl CustomElement for Modal {
         apply_style_attrs(&mut root.style, attrs);
 
         if !title.is_empty() {
-            let title_node = VElement::leaf("modal-title", NodeKind::Text { content: title });
+            let title_node = VElement::leaf("dialog-title", NodeKind::Text { content: title });
             root.children.push(title_node);
         }
 
@@ -189,50 +181,78 @@ impl CustomElement for Modal {
         root
     }
 
-    /// События modal не обрабатываются: видимость управляется только
+    /// События Dialog не обрабатываются: видимость управляется только
     /// через `v-if` (пользовательский `@click` на кнопке закрытия в шаблоне).
     fn on_event(&mut self, _event: &Event, _ctx: &mut EventCtx<'_>) {}
 }
 
-/// Фабрика плагина: регистрирует кастомный элемент `modal`
+/// Фабрика плагина: регистрирует кастомный элемент `dialog`
 /// (distributed-slice). `const`: все поля — `&'static`/`fn pointer`.
-const MODAL: CustomElementFactory = CustomElementFactory {
-    tag: "modal",
+const DIALOG: CustomElementFactory = CustomElementFactory {
+    tag: "dialog",
     core_version_req: "^0.21",
     crate_name: "light-ui",
-    provides: &["modal"],
-    factory: || Box::new(Modal),
+    provides: &["dialog"],
+    factory: || Box::new(Dialog),
 };
 
 #[linkme::distributed_slice(light_fw_core::plugins::REGISTERED_COMPONENTS)]
-static MODAL_ENTRY: CustomElementFactory = MODAL;
+static DIALOG_ENTRY: CustomElementFactory = DIALOG;
 
 #[cfg(test)]
 mod tests {
-    //! Unit-тесты: контракт modal'а (атрибуты → style) и регистрация.
+    //! Unit-тесты: контракт Dialog'а (атрибуты → style) и регистрация.
 
     use super::*;
     use light_fw_core::plugins::lookup;
 
     /// Без атрибутов корень получает дефолты: белый фон, рамка 2px
-    /// `#888888` (→ `0xFF888888`), padding 16, `z = 5000` (верхний слой).
+    /// `#888888` (→ `0x888888FF`), padding 16, `z = 5000` (верхний слой).
     #[test]
-    fn modal_default_style_is_modal() {
-        let m = Modal;
+    fn dialog_default_style_is_correct() {
+        let m = Dialog;
         let rendered = m.render(&[], &[]);
         assert_eq!(rendered.style.background, Some(0xFF_FF_FF_FF));
         assert_eq!(rendered.style.border_size, 2.0);
-        assert_eq!(rendered.style.border_color, Some(0xFF_88_88_88));
+        assert_eq!(rendered.style.border_color, Some(0x88_88_88_FF));
         assert_eq!(rendered.style.padding, Edges::all(16.0));
         assert_eq!(rendered.style.z, 5000);
+    }
+
+    /// Значение рамки совпадает с VDOM-парсером: `#888888` → `0x888888FF`
+    /// (порядок байт RRGGBBAA, alpha в младшем байте).
+    #[test]
+    fn dialog_border_matches_parse_color() {
+        let border = 0x88_88_88_FF;
+        assert_eq!(
+            border,
+            light_fw_core::vdom::parse::parse_color("#888888").unwrap()
+        );
+    }
+
+    /// `z` отсутствует → дефолт 5000.
+    #[test]
+    fn default_z_is_5000() {
+        let m = Dialog;
+        let rendered = m.render(&[], &[]);
+        assert_eq!(rendered.style.z, 5000);
+    }
+
+    /// Явный `z="42"` переопределяет дефолт 5000.
+    #[test]
+    fn explicit_z_overrides_default() {
+        let m = Dialog;
+        let attrs = vec![("title", "T".to_string()), ("z", "42".to_string())];
+        let rendered = m.render(&attrs, &[]);
+        assert_eq!(rendered.style.z, 42);
     }
 
     /// Без атрибута `position` корень — **оверлей**: `Position::Absolute`,
     /// `z = 5000`, отступ 50px от верхнего левого угла (окно не прилипает
     /// к краю и не сдвигает контент в потоке).
     #[test]
-    fn modal_defaults_to_absolute_with_z_5000() {
-        let m = Modal;
+    fn dialog_defaults_to_absolute_with_z_5000() {
+        let m = Dialog;
         let rendered = m.render(&[], &[]);
         assert_eq!(rendered.style.position, Position::Absolute);
         assert_eq!(rendered.style.z, 5000);
@@ -245,8 +265,8 @@ mod tests {
     /// задана явно. При этом `z = 5000` сохраняется (виджетный слой —
     /// всегда верхний).
     #[test]
-    fn modal_explicit_position_flow_overrides_default() {
-        let m = Modal;
+    fn dialog_explicit_position_flow_overrides_default() {
+        let m = Dialog;
         let attrs = vec![("position", "flow".to_string())];
         let rendered = m.render(&attrs, &[]);
         assert_eq!(rendered.style.position, Position::Flow);
@@ -255,8 +275,8 @@ mod tests {
 
     /// `title="Hello"` → один дочерний Text с этим содержимым.
     #[test]
-    fn modal_render_produces_title_child() {
-        let m = Modal;
+    fn dialog_render_produces_title_child() {
+        let m = Dialog;
         let attrs = vec![("title", "Hello".to_string())];
         let rendered = m.render(&attrs, &[]);
         assert_eq!(rendered.children.len(), 1);
@@ -268,8 +288,8 @@ mod tests {
 
     /// Дочерние узлы шаблона сохраняются после заголовка.
     #[test]
-    fn modal_render_keeps_template_children() {
-        let m = Modal;
+    fn dialog_render_keeps_template_children() {
+        let m = Dialog;
         let attrs = vec![("title", "T".to_string())];
         let children = vec![VElement::leaf(
             "body",
@@ -290,8 +310,8 @@ mod tests {
 
     /// Без `title` заголовка нет — только дети шаблона.
     #[test]
-    fn modal_render_without_title_is_empty_title() {
-        let m = Modal;
+    fn dialog_render_without_title_is_empty_title() {
+        let m = Dialog;
         let rendered = m.render(&[], &[]);
         assert!(rendered.children.is_empty());
     }
@@ -299,7 +319,7 @@ mod tests {
     /// `background="black"` переопределяет дефолтный белый фон:
     /// CSS-имена интерпретируются в RRGGBBAA-порядке light.
     #[test]
-    fn modal_applies_background_attr() {
+    fn dialog_applies_background_attr() {
         let mut el = VElement::container("m", NodeKind::Column, vec![]);
         el.style.background = Some(0xFF_FF_FF_FF);
         let attrs = vec![("background", "black".to_string())];
@@ -309,7 +329,7 @@ mod tests {
 
     /// `padding="8"` → все четыре стороны `Edges::all(8.0)`.
     #[test]
-    fn modal_applies_padding_attr() {
+    fn dialog_applies_padding_attr() {
         let mut el = VElement::container("m", NodeKind::Column, vec![]);
         el.style.padding = Edges::all(16.0);
         let attrs = vec![("padding", "8".to_string())];
@@ -317,14 +337,14 @@ mod tests {
         assert_eq!(el.style.padding, Edges::all(8.0));
     }
 
-    /// Регистрация в distributed-slice: `lookup("modal")` возвращает
+    /// Регистрация в distributed-slice: `lookup("dialog")` возвращает
     /// фабрику light-ui (тег доступен в runtime-шаблонах без магии).
     #[test]
-    fn modal_registered_in_distributed_slice() {
-        let factory = lookup("modal");
-        assert!(factory.is_some(), "tag \"modal\" must be registered");
+    fn dialog_registered_in_distributed_slice() {
+        let factory = lookup("dialog");
+        assert!(factory.is_some(), "tag \"dialog\" must be registered");
         let factory = factory.expect("checked");
         assert_eq!(factory.crate_name, "light-ui");
-        assert_eq!(factory.provides, &["modal"]);
+        assert_eq!(factory.provides, &["dialog"]);
     }
 }

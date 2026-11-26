@@ -1,11 +1,11 @@
-//! Виджеты light-ui (0.21.0): Toast, Tooltip, Modal, ProgressBar.
+//! Виджеты light-ui (0.21.0): Toast, Tooltip, Dialog, ProgressBar.
 //!
 //! Toast — многозадачный: `show_toast(text, duration_ms)` добавляет toast в
 //! менеджер (`thread_local` [`toast::ToastManager`]), а `<toast-container>`
 //! рендерит **все** активные toast'ы вертикальным столбиком. Tooltip —
 //! кастомный элемент `<tooltip>` (прозрачный по умолчанию, видимость —
-//! через `v-if` + `@mouseenter`/`@mouseleave` в шаблоне). Modal —
-//! кастомный элемент `<modal title="…">контент</modal>`: модальное окно с
+//! через `v-if` + `@mouseenter`/`@mouseleave` в шаблоне). Dialog —
+//! кастомный элемент `<dialog title="…">контент</dialog>`: диалоговое окно с
 //! заголовком, белым фоном, рамкой 2px и `z = 5000` (верхний слой);
 //! видимость — через `v-if`. ProgressBar — кастомный элемент
 //! `<progress value="…" max="…" color="…" background="…" height="…">`:
@@ -17,7 +17,8 @@
 //! стандартными атрибутами стиля в HTML-шаблоне. Никаких «магических»
 //! атрибутов, которых нет в `docs/guide.md`.
 
-pub mod modal;
+pub(crate) mod common;
+pub mod dialog;
 pub mod toast;
 pub mod tooltip;
 
@@ -25,8 +26,8 @@ pub mod tooltip;
 pub mod progress_bar;
 
 // Публичные реэкспорты: демо-приложения пишут
-// `use light_ui::{show_toast, ToastContainer, Tooltip, ActiveToast, Modal};`.
-pub use modal::Modal;
+// `use light_ui::{show_toast, ToastContainer, Tooltip, ActiveToast, Dialog};`.
+pub use dialog::Dialog;
 pub use toast::{ActiveToast, ToastContainer, ToastManager, show_toast};
 pub use tooltip::Tooltip;
 

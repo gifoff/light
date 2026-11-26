@@ -17,13 +17,13 @@
   `pointer-events="none"` делает узел и его поддерево прозрачными для указателя
   (хит-тесты их пропускают), что позволяет вкладывать кликабельный текст внутрь
   неинтерактивного контейнера и наоборот.
-- **Modal виджет** (`crates/light-ui/src/widgets/modal/`). Готовый элемент
-  `<modal>` поверх `light-fw-core`: оверлей с `position=absolute`, по умолчанию
-  центрирован (50%/50%), белый фон, рамка 2px `#888888`, padding 16, z=5000
-  (не переопределяется явным `z`). Видимость через `v-if` (compile-time).
+- **Dialog виджет** (`crates/light-ui/src/widgets/dialog/`). Готовый элемент
+  `<dialog>` поверх `light-fw-core`: оверлей с `position=absolute`, по умолчанию
+  отступ 50px от верхнего левого угла, белый фон, рамка 2px `#888888`, padding 16,
+  z=5000 (явный `z="…"` переопределяет дефолт). Видимость через `v-if`.
   Позиционирование: `position/top/right/bottom/left` (явные атрибуты
-  переопределяют дефолтное центрирование). Зарегистрирован через Plugin API,
-  подключается через `[package.metadata.light.provides] elements = ["modal"]`.
+  переопределяют дефолтное позиционирование). Зарегистрирован через Plugin API,
+  подключается через `[package.metadata.light.provides] elements = ["dialog"]`.
   Требует `use light_ui as _;` в бинарнике (linkme gotcha).
 - **ProgressBar виджет** (`crates/light-ui/src/widgets/progress_bar/`). Готовый
   элемент `<progress>` с FLOW layout (fill растягивается на `value/max * 100%`
@@ -36,7 +36,7 @@
 
 ### Changed
 
-- **`light-ui` теперь регистрирует 4 компонента** (Tooltip, Toast, Modal,
+- **`light-ui` теперь регистрирует 4 компонента** (Tooltip, Toast, Dialog,
   ProgressBar) вместо 2 (до 0.21.0-alpha.1).
 
 ### Fixed
@@ -47,20 +47,17 @@
   `0.21.0-alpha.1` считается своим release-триплетом `(0, 21, 0)`. До фикса
   `check_core_version` возвращал Err («не удалось разобрать версию ядра
   "0.21.0-alpha.1"») и runtime выбрасывал ВСЕ кастомные элементы (progress,
-  modal, tooltip, toast). Ядро (`core`) в манифесте light-ui поднят до
-  `"^0.21"`, все 4 фабрики (`tooltip`, `toast-container`, `modal`,
+  dialog, tooltip, toast). Ядро (`core`) в манифесте light-ui поднят до
+  `"^0.21"`, все 4 фабрики (`tooltip`, `toast-container`, `dialog`,
   `progress`) теперь требуют `^0.21`. Семантика матчера не изменилась:
   формат требования остаётся `^MAJOR.MINOR[.PATCH]`, для 0.x действует
   minor-floor, настоящий semver — отдельный ticket.
 - **z-порядок для тултипов** (`crates/light-ui/src/widgets/tooltip/mod.rs`):
-  корень `<tooltip>` теперь всегда получает `style.z = 1000` (виджетный дефолт
-  верхнего слоя; `reorder_by_z` в `Layout::build` уже делает устойчивую сортировку
-  братами по `style.z`, поэтому плоский paint-цикл рисует тултип последним — сверху).
-  Явный `z="…"` в HTML не переопределяет дефолт (политика виджета важнее, как и
-  для принудительного `pointer-events="none"`). Два unit-теста:
-  `tooltip_render_defaults_z_to_top_layer`,
-  `tooltip_render_ignores_explicit_z_attr_in_favor_of_default`.
-  Коммит: [`25d4e5e`](https://github.com/gifoff/light/commit/25d4e5e).
+  корень `<tooltip>` получает `style.z = 1000` **только если атрибут `z` отсутствует**;
+  явный `z="…"` переопределяет дефолт (фреймворк — механизм, пользователь — политика).
+  `reorder_by_z` в `Layout::build` делает устойчивую сортировку братами по `style.z`,
+  поэтому плоский paint-цикл рисует элемент с высоким `z` последним — сверху.
+  Два unit-теста: `default_z_is_1000`, `explicit_z_overrides_default`.
 - **`v-if` не ломает соседние узлы** (`crates/light-vdom/src/runtime/`):
   условие `v-if="false"` теперь убирает только узел, а не смещает ключи братьев
   (стабильные ключи в runtime-режиме: имя обработчика `@click`/`@mouseenter` →

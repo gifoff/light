@@ -9,7 +9,7 @@
 //! `clamp(value, 0, max) / max * 100%` (проценты от родителя — [`Size::Percent`]).
 //!
 //! Атрибуты (все опциональные; дефолты виджета применяются всегда, явный
-//! атрибут переопределяет дефолт — та же логика, что у Modal по `position`):
+//! атрибут переопределяет дефолт — та же логика, что у Dialog по `position`):
 //!
 //! | атрибут        | поле                     | дефолт                 |
 //! |----------------|--------------------------|------------------------|
@@ -19,12 +19,12 @@
 //! | `background`   | `root.style.background`  | `#E5E7EB`              |
 //! | `height`       | `root.style.height`      | `10` (px)              |
 //!
-//! Парсинг: цвета — `parse_color` + CSS-имена (как в tooltip/modal/toast),
-//! размеры — `parse_size_or_auto` (не дублируем парсеры VDOM). Неверное
-//! числовое значение → `0.0`; `max <= 0` → `100.0`.
+//! Парсинг: цвета — `parse_color` + CSS-имена (как в tooltip/dialog/toast),
+//! размеры — собственный `parse_px` (px/число → f32). Неверное
+//! числовое значение → `0.0`; `max <= 0` → фолбэк `100.0`.
 //!
 //! Инвариант (ТЗ 0.21.0): ProgressBar — **в потоке**; `position`/`z` не
-//! устанавливаются (в отличие от Modal/Tooltip).
+//! устанавливаются (в отличие от Dialog/Tooltip).
 
 use light_fw_core::plugins::{CustomElement, CustomElementFactory, EventCtx};
 use light_fw_core::vdom::parse::parse_color;
@@ -91,11 +91,8 @@ impl CustomElement for ProgressBar {
         }
 
         // Узел заполнения: цвет `color`, ширина = clamp(value,0,max)/max*100%.
-        let ratio = if max <= 0.0 {
-            0.0
-        } else {
-            (value.clamp(0.0, max) / max) * 100.0
-        };
+        // (max всегда > 0 благодаря фолбэку выше; ветка max<=0 — dead code, удалена.)
+        let ratio = (value.clamp(0.0, max) / max) * 100.0;
         // Округляем до 3 знаков после запятой: убираем накопление float-шума
         // (например 60.0/200.0*100.0 = 30.000002), сохраняя 0.001% точности —
         // более чем достаточно для ширины полосы в пикселях.
@@ -118,7 +115,7 @@ impl CustomElement for ProgressBar {
 /// Фабрика плагина: регистрирует кастомный элемент `progress`
 /// (distributed-slice). `const`: все поля — `&'static`/`fn pointer`.
 ///
-/// `core_version_req: "^0.21"` — согласовано с tooltip/toast-container/modal
+/// `core_version_req: "^0.21"` — согласовано с tooltip/toast-container/dialog
 /// (одна линейка виджетов в light-ui). Кастомный матчер: для 0.x действует
 /// minor-floor (`^0.N` совместимо при `cur_minor >= N`, patch игнорируется);
 /// pre-release/build-метаданные ядра (например `0.21.0-alpha.1`) игнорируются
@@ -203,7 +200,7 @@ mod tests {
 
     /// Без атрибутов: `value=0`, `max=100`, `color=#22C55E`,
     /// `background=#E5E7EB`, `height=10px`, `width=100%` (полоса в потоке,
-    /// `position=Flow` по умолчанию — НЕ абсолютный оверлей, как Modal).
+    /// `position=Flow` по умолчанию — НЕ абсолютный оверлей, как Dialog).
     #[test]
     fn default_values() {
         let root = render_with(&[]);
@@ -281,7 +278,7 @@ mod tests {
     }
 
     /// Инвариант: ProgressBar **в потоке** — `position` остаётся `Flow`
-    /// (дефолт `Style`), `z` = 0 (дефолт) — в отличие от Modal (absolute)
+    /// (дефолт `Style`), `z` = 0 (дефолт) — в отличие от Dialog (absolute)
     /// и Tooltip (z=1000).
     #[test]
     fn progress_is_flow_not_overlay() {

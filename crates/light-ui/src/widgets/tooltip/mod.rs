@@ -35,8 +35,9 @@
 
 use std::str::FromStr;
 
+use crate::widgets::common::{parse_color_named, parse_z};
 use light_fw_core::plugins::{CustomElement, CustomElementFactory, EventCtx};
-use light_fw_core::vdom::parse::{parse_color, parse_position, parse_size_or_auto};
+use light_fw_core::vdom::parse::{parse_position, parse_size_or_auto};
 use light_fw_core::vdom::{Edges, Event, NodeKind, Style, VElement};
 
 /// Кастомный элемент `<tooltip>`: показывает подпись рядом с курсором /
@@ -55,28 +56,6 @@ fn parse_px(value: &str) -> Option<f32> {
     }
     let number = value.strip_suffix("px").unwrap_or(value).trim();
     f32::from_str(number).ok()
-}
-
-/// Разбирает цвет: CSS-имена (через lower-case) + общие VDOM-форматы
-/// `#RRGGBB[AA]`/`0x…` (порядок байт — **`0xRRGGBBAA`**, т.е. alpha в
-/// младшем байте; совпадает с VDOM-тестами: `#FF0000` → `0xFF0000FF`).
-/// light-ui поддерживает **наименования** для удобного HTML-авторинга,
-/// которые runtime-шаблоны тоже понимают: `black`, `white`, `red`, `green`,
-/// `blue`, `yellow`, `orange`, `purple`, `gray`/`grey`. Всё остальное
-/// делегируется общему VDOM-парсеру [`parse_color`].
-fn parse_color_named(value: &str) -> Option<u32> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "black" => Some(0x00_00_00_FF),
-        "white" => Some(0xFF_FF_FF_FF),
-        "red" => Some(0xFF_00_00_FF),
-        "green" => Some(0x00_FF_00_FF),
-        "blue" => Some(0x00_00_FF_FF),
-        "yellow" => Some(0xFF_FF_00_FF),
-        "orange" => Some(0xFF_7F_00_FF),
-        "purple" => Some(0x80_00_80_FF),
-        "gray" | "grey" => Some(0x80_80_80_FF),
-        _ => parse_color(value),
-    }
 }
 
 /// Применяет стандартные атрибуты стиля к корню tooltip'а.
@@ -168,21 +147,25 @@ impl CustomElement for Tooltip {
     /// лист пуст — tooltip отрисует прозрачный, но занимающий место узел
     /// (чтобы позиция `v-if="false"` не «прыгала»).
     ///
-    /// **z-порядок (0.21.1):** корень всегда получает `style.z = 1000`.
+    /// **z-порядок (0.21.0):** дефолт `style.z = 1000` применяется **только**
+    /// если атрибут `z` отсутствует; явный `z="…"` переопределяет дефолт.
     /// Тултип рисуется верхним слоем поверх остальных элементов родителя:
     /// `reorder_by_z` (`light_vdom::layout::flow`) делает устойчивую
     /// сортировку поддеревьев братами по `style.z` прямо в `Layout::build`,
     /// а рендер обходит плоский список в этом порядке — высокий `z`
-    /// гарантирует, что tooltip рисуется последним (сверху). Дефолт 1000
-    /// накладывается **всегда**: как и для `pointer-events`, виджетный
-    /// дефолт важнее политики приложения (и согласованно с тем, что `z`
-    /// не входит в контракт [`apply_style_attrs`] — HTML-атрибуты стиля
-    /// к корню кастомного элемента не применяются автоматически).
+    /// гарантирует, что tooltip рисуется последним (сверху). Философия:
+    /// фреймворк — механизм, пользователь — политика.
     fn render(&self, attrs: &[(&'static str, String)], _children: &[VElement]) -> VElement {
         let text = attrs
             .iter()
             .find_map(|(name, value)| (*name == "text").then_some(value.clone()))
             .unwrap_or_default();
+
+        // Явный `z` из HTML переопределяет дефолт 1000.
+        let explicit_z: Option<i32> = attrs
+            .iter()
+            .find_map(|(name, value)| (*name == "z").then(|| parse_z(value)))
+            .flatten();
 
         let mut root = VElement::container("tooltip", NodeKind::Column, Vec::new());
         apply_style_attrs(&mut root.style, attrs);
@@ -193,14 +176,8 @@ impl CustomElement for Tooltip {
         // «прозрачны» для указателя. Приоритет — над любым пользовательским
         // атрибутом `pointer-events` тега (тултип по определению неинтерактивен).
         root.style.pointer_events = Some(false);
-        // Дефолтный z-порядок: тултип — верхний слой (1000 > типичные
-        // значения потока). Вкладывается **всегда**, даже если в HTML есть
-        // явный `z="…"`: как и для `pointer-events`, виджетный дефолт
-        // важнее политики приложения; кроме того, `z` не входит в контракт
-        // [`apply_style_attrs`], поэтому HTML-атрибут всё равно не доходит
-        // до style корня (см. doc модуля и тест
-        // `tooltip_render_ignores_explicit_z_attr_in_favor_of_default`).
-        root.style.z = 1000;
+        // Дефолтный z-порядок: 1000, применяется только если явный `z` нет.
+        root.style.z = explicit_z.unwrap_or(1000);
 
         root.children.push(VElement::leaf(
             "tooltip-text",
@@ -370,17 +347,21 @@ mod tests {
         assert_eq!(rendered.style.z, 1000);
     }
 
-    /// Явный `z="500"` **не** переопределяет дефолт 1000: виджетный
-    /// дефолт (тултип — верхний слой) важнее политики приложения, как и
-    /// для `pointer-events`. Это согласованно с тем, что `z` не входит в
-    /// контракт `apply_style_attrs` (атрибуты стиля не распространяются на
-    /// корень кастомного элемента автоматически — см. doc модуля), поэтому
-    /// «явное z» из HTML всё равно не доходит до style корня.
+    /// Без явного `z` — дефолт 1000 (тултип — верхний слой по умолчанию).
     #[test]
-    fn tooltip_render_ignores_explicit_z_attr_in_favor_of_default() {
+    fn default_z_is_1000() {
+        let t = Tooltip;
+        let attrs = vec![("text", "t".to_string())];
+        let rendered = t.render(&attrs, &[]);
+        assert_eq!(rendered.style.z, 1000);
+    }
+
+    /// Явный `z="500"` переопределяет дефолт 1000.
+    #[test]
+    fn explicit_z_overrides_default() {
         let t = Tooltip;
         let attrs = vec![("text", "t".to_string()), ("z", "500".to_string())];
         let rendered = t.render(&attrs, &[]);
-        assert_eq!(rendered.style.z, 1000);
+        assert_eq!(rendered.style.z, 500);
     }
 }
