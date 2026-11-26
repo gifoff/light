@@ -56,6 +56,42 @@ DevTools-команды диспетчируют событие через `comp
   ошибкой только после того, как все upstream-крейты закомпилились чисто.
   Фикс: `4beaf87`.
 
+## Pre-existing CI failures в light-cli-core: версия 0.21.0-alpha.1 vs захардкоженное 0.20 (2026-11-26)
+
+**Симптом:** 3 теста в `crates/light-cli-core` падают на всех 3 OS (Ubuntu, macOS, Windows):
+
+- `init::tests::tests::apply_creates_project_and_lockfile`
+  (`src/init/tests.rs:361`) — `assert_eq!(lock.core, expected_core)` где
+  `expected_core = format!("{}.0", minor_version())`, а фактический `lock.core`
+  содержит pre-release метку ядра (`0.21.0-alpha.1`).
+
+- `metadata::tests::tests::validate_ok_for_compatible_component`
+  (`src/metadata/tests.rs:188`) — манифест с `core = "^0.20"` ожидает `Ok`, но
+  `LIGHT_CORE_VERSION = "0.21.0-alpha.1"` → semver `^0.20` не удовлетворяет
+  `0.21.0-alpha.1` (по формальному semver pre-release ниже release).
+
+- `metadata::tests::tests::validate_empty_provides_is_warning_not_fatal`
+  (`src/metadata/tests.rs:246`) — аналогично: `core = "^0.20"` → IncompatibleCore
+  вместо ожидаемого Warning(EmptyProvides).
+
+**Причина:** те же 3 теста были красными **до** фикса `a090a2e`
+(runs 45796590578 от 09:56, 45780448198 от 08:06). Fails в крейте, который **не
+затрагивался** FIX1 (7 файлов: CHANGELOG.md, light-ui×5, light-vdom — ни одного
+ref'а на light-cli-core). Корневая причина: bump версий до `0.21.0-alpha.1`
+(commit `897e032`) не обновил захардкоженные `"0.20"`/`"0.20.0"` в тестах
+cli-core и логику `validate_metadata`, которая использует строгий `semver::VersionReq`
+(там pre-release имеет семантику «ниже release», в отличие от loose-matcher'а в
+`light-vdom` parse_triple).
+
+**Предлагаемое исправление (отдельный тикет, НЕ часть FIX1):**
+1. В `crates/light-cli-core/src/metadata/` — заменить `semver::VersionReq`
+   сравнение на ту же loose-логику, что в `light-vdom` (parse_triple + minor-floor),
+   ИЛИ явно игнорировать pre-release в `validate_metadata`.
+2. В `crates/light-cli-core/src/init/tests.rs:361` — учесть pre-release в expected.
+3. Проверить рассинхрон версий cli-core vs ядра (Cargo.toml).
+
+**Приоритет:** высокий — блокирует зелёный CI на release/0.21.0.
+
 ## crates.io S3: 404 на .crate-архивы (2026-11-14)
 
 `https://static.crates.io/light-fw-html/0.18.0/download` возвращает
