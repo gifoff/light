@@ -175,6 +175,7 @@ light-fw = "0.20" # default = ["elements-basic", "window", "softbuffer-backend",
 | `light-render-cpu`          | Программная отрисовка через `softbuffer` (CPU-бэкенд). Вынесен из `light-gui` (0.20.0, этап 5)        | фича `softbuffer-backend` |
 | `light-render-gpu`          | Аппаратная отрисовка через `pixels` (wgpu/naga). Вынесен из `light-gui` (0.20.0, этап 5)             | фича `wgpu-backend` |
 | `light-fw`                  | Мета-крейт: реэкспортирует ядро, макросы и подключённые компоненты                                    | обычная зависимость |
+| `light-ui`                  | Готовые виджеты: `<tooltip>`, `<toast>`, `<modal>`, `<progress>` (Plugin API)                          | фичи крейта (`async-runtime`, `widget-progress`) + `use light_ui as _;` |
 | `light-fw-element-form`      | Компонент-элемент: `<checkbox>`, `<radio>`, `<select>`/`<option>`                                      | фича `elements-form` или прямая зависимость |
 | `light-fw-behavior-validation` | Компонент-поведение: `required`, `:validator`, `@validate`                                             | фича `validation` или прямая зависимость |
 
@@ -899,6 +900,72 @@ if let Some(path) = light_fw::file_dialog::pick_image_file() {
 
 Обратите внимание, что `position-x`/`position-y` работают как выравнивание внутри **контентной области** родителя (а не окна): `<div position-x="right">` прижмёт узел к правому краю родителя. Для свободного позиционирования используйте `position-offset-x`/`position-offset-y` после выбора стороны — сдвиг применяется уже после выравнивания и тоже отсчитывается от контентной области родителя (в процентах — по соответствующей оси).
 
+## ProgressBar
+
+`<progress>` — горизонтальная полоса прогресса (FLOW layout: fill растягивается на `value/max * 100%` ширины). Виджет из крейта `light-ui`, включён по умолчанию (фича `widget-progress`).
+
+### Подключение
+
+В `Cargo.toml`:
+
+```toml
+[dependencies]
+light-fw = { path = "crates/light-fw", features = ["softbuffer-backend"] }
+light-ui = { version = "0.21" }
+```
+
+В `main.rs` (обязательно, иначе линкер вырежет registration из `distributed_slice`):
+
+```rust
+use light_fw::prelude::*;
+use light_ui as _;  // ← linkme gotcha: без этой строки <progress> не зарегистрируется
+
+fn main() -> light_fw::Result<()> {
+    run(App::new())
+}
+```
+
+В манифесте `[package.metadata.light.provides]` укажите элемент:
+
+```toml
+[package.metadata.light.provides]
+elements = ["progress"]
+```
+
+### Атрибуты
+
+| Атрибут      | Тип   | Дефолт     | Описание                              |
+| ------------ | ----- | ---------- | ------------------------------------- |
+| `value`      | f32   | `0.0`      | Текущее значение (0..=max)            |
+| `max`        | f32   | `100.0`    | Максимум (если ≤ 0 — fill = 0%)       |
+| `color`      | color | `#22C55E`  | Цвет заполненной части (CSS-имена + hex) |
+| `background` | color | `#E5E7EB`  | Цвет трека (незаполненная часть)      |
+| `height`     | px    | `10`       | Высота полосы (px)                    |
+
+Пример:
+
+```html
+<div direction="vertical" padding="20">
+    <!-- Дефолтная полоса (value=25, max=100) -->
+    <progress value="25" />
+
+    <!-- Кастомный цвет + высота -->
+    <progress value="60" color="#EF4444" background="#111111" height="20" />
+
+    <!-- Реактивная полоса ({{val}} из состояния) -->
+    <progress value="{{val}}" />
+</div>
+```
+
+### Расчёт fill
+
+Заполнение вычисляется как `ratio = clamp(value, 0, max) / max * 100`. Если `max <= 0`, fill = 0%. Значение округляется до 3 знаков после запятой (чтобы избежать f32-шума).
+
+### Ограничения
+
+- Виджет работает только в compile-time режиме (без `runtime-templates`). В runtime-режиме Plugin API не поддерживается (см. TODO: отдельный ticket).
+- Фича `widget-progress` включена по умолчанию; чтобы отключить — `light-ui = { features = ["default", "widget-progress"] }` → `"default"` (убрать `widget-progress`).
+
 ## Кнопки
 
 `<button>` — такой же контейнер, как `<div>`, но с рамкой и интерактивностью. Его содержимое (голый текст, `<span>`, `<div>`, `<h1>`… и т. д.) выкладывается **по горизонтали** и **центрируется по обеим осям** внутри кнопки:
@@ -1203,6 +1270,98 @@ struct App {}
 ```
 
 Пока модальный ребёнок открыт, **родительское окно не принимает ввод** (модальность логическая: события мыши и клавиатуры родителя игнорируются). Одновременно может быть открыто не более одного такого окна: повторный вызов `open_modal()` не делает ничего. Компонент дочернего окна создаётся заново на каждое открытие; если `modal()` не задан, `open_modal()` тоже ничего не делает.
+
+### Виджет `<modal>` (light-ui)
+
+В отличие от системного модального окна (отдельное окно с блокировкой ввода), виджет `<modal>` из крейта `light-ui` — это **оверлей внутри текущего окна** (position=absolute). Он не блокирует ввод родителя и не создаёт новое окно.
+
+#### Подключение
+
+В `Cargo.toml`:
+
+```toml
+[dependencies]
+light-fw = { path = "crates/light-fw", features = ["softbuffer-backend"] }
+light-ui = { version = "0.21" }
+```
+
+В `main.rs` (обязательно):
+
+```rust
+use light_fw::prelude::*;
+use light_ui as _;  // ← linkme gotcha
+
+fn main() -> light_fw::Result<()> {
+    run(App::new())
+}
+```
+
+В манифесте:
+
+```toml
+[package.metadata.light.provides]
+elements = ["modal"]
+```
+
+#### Атрибуты
+
+| Атрибут   | Тип     | Дефолт       | Описание                              |
+| --------- | ------- | ------------ | ------------------------------------- |
+| `title`   | string  | —            | Заголовок (текст в шапке)             |
+| `position` | string  | `absolute`   | Позиционирование (`absolute`/`fixed`) |
+| `top`     | px/%    | `50%`        | Отступ сверху (если position=absolute) |
+| `right`   | px/%    | —            | Отступ справа                         |
+| `bottom`  | px/%    | —            | Отступ снизу                          |
+| `left`    | px/%    | `50%`        | Отступ слева (если position=absolute) |
+
+#### Дефолты
+
+- Фон: белый (`#FFFFFF`)
+- Рамка: 2px `#888888`
+- Padding: 16px
+- Z-index: **5000** (не переопределяется явным `z` — политика виджета)
+- Центрирование: по умолчанию `top=50%`, `left=50%` (если не заданы `position`/`top`/`left`)
+
+#### Видимость
+
+Управляется через `v-if` (compile-time):
+
+```html
+<button @click="toggle_modal">Открыть</button>
+<modal v-if="show_modal" title="Привет">Содержимое модала</modal>
+```
+
+⚠️ **Ограничение:** `v-if` на `<modal>` работает только в compile-time режиме (без `runtime-templates`). В runtime-режиме Plugin API не поддерживается (см. TODO).
+
+#### Пример
+
+```html
+<div direction="vertical" padding="20">
+    <button @click="toggle_modal">Показать модал</button>
+    
+    <!-- Модал: по умолчанию скрыт (show_modal=false), кнопка открывает -->
+    <modal v-if="show_modal" title="Диалог">
+        <div direction="vertical" padding="10">
+            <p>Текст диалога.</p>
+            <button @click="close_modal">Закрыть</button>
+        </div>
+    </modal>
+</div>
+```
+
+### Z-слои (порядок отрисовки)
+
+Оверлеи (tooltip, modal, toast) рендерятся в порядке возрастания `style.z`. Дефолтные значения:
+
+| Виджет      | Z-index | Примечание                              |
+| ----------- | ------- | --------------------------------------- |
+| `<toast>`   | `0`     | Базовый слой (под tooltip/modal)        |
+| `<tooltip>` | `1000`  | Тултипы поверх контента                 |
+| `<modal>`   | `5000`  | Модальные оверлеи поверх всего          |
+
+Явный `z="…"` в HTML **не переопределяет** дефолт для tooltip/modal (политика виджета важнее). Для toast `z` можно задать явно (дефолт 0).
+
+См. также: [Tooltip](#tooltip), [Modal](#виджет-modal-light-ui), [ProgressBar](#progressbar).
 
 ## Второе главное окно и общее состояние
 

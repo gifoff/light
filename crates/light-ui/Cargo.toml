@@ -10,26 +10,31 @@ description = "Light UI: готовые виджеты (Tooltip, Toast, Modal, P
 [lib]
 name = "light_ui"
 
-# Кастомные теги, разрешённые в HTML-шаблонах (ТЗ 0.19.0 Этап 4, Plugin API).
-# Демо объявляет эти теги, чтобы `#[template]` генерировал `NodeKind::Custom`,
-# а runtime доставлял их плагинной фабрике (distributed-slice в light-ui).
-# `kind = "widget"` + `display-name` обязательны для парсинга `[package.metadata.light]`
-# (иначе `light check`/`light dev` пропускают пакет и считают `<tooltip>` «неизвестным»).
+# Манифест light: `kind`/`display-name` обязательны для парсинга
+# `[package.metadata.light]` (иначе `light check`/`light dev` пропускают
+# пакет и считают кастомные теги «неизвестными»). `provides.elements` —
+# список тегов, разрешённых потребителю; макрос `#[template]` берёт их из
+# манифеста ЗАВИСИМОСТИ (см. docs/cli.md, «Кастомные элементы»).
 [package.metadata.light]
 kind = "widget"
 display-name = "Light UI Widgets"
 core = "^0.20"
 
 [package.metadata.light.provides]
-elements = ["tooltip", "toast-container"]
+elements = ["tooltip", "toast-container", "modal", "progress"]
 
 [features]
 # Асинхронный рантайм (spawn/post_to_ui) — используется `show_toast` для
-# автоскрытия через 3 секунды. В 0.21.0 включён по умолчанию: без него
-# виджет Toast не может работать. Для headless-сборок можно отключить
+# автоскрытия через 3 секунды. Без него виджет Toast мёртв, поэтому
+# `async-runtime` остаётся в `default`. Для headless-сборок можно отключить
 # через `default-features = false` (тогда `show_toast` будет no-op).
-default = ["async-runtime"]
+default = ["async-runtime", "widget-progress"]
 async-runtime = ["light-fw-core/async-runtime"]
+# ProgressBar: виджет `<progress>`. Гейтится фичей (инвариант ТЗ 0.21.0:
+# только используемый код в бинарнике), но включён в `default` — тег
+# доступен в типичных сборках. Отключение: `default-features = false,
+# features = ["async-runtime"]`.
+widget-progress = []
 
 [dependencies]
 # Базовый фреймворк: элементы/поведения/VDOM, на которых строятся виджеты.

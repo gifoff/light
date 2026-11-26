@@ -17,6 +17,30 @@
   `pointer-events="none"` делает узел и его поддерево прозрачными для указателя
   (хит-тесты их пропускают), что позволяет вкладывать кликабельный текст внутрь
   неинтерактивного контейнера и наоборот.
+- **Modal виджет** (`crates/light-ui/src/widgets/modal/`). Готовый элемент
+  `<modal>` поверх `light-fw-core`: оверлей с `position=absolute`, по умолчанию
+  центрирован (50%/50%), белый фон, рамка 2px `#888888`, padding 16, z=5000
+  (не переопределяется явным `z`). Видимость через `v-if` (compile-time).
+  Позиционирование: `position/top/right/bottom/left` (явные атрибуты
+  переопределяют дефолтное центрирование). Зарегистрирован через Plugin API,
+  подключается через `[package.metadata.light.provides] elements = ["modal"]`.
+  Требует `use light_ui as _;` в бинарнике (linkme gotcha).
+- **ProgressBar виджет** (`crates/light-ui/src/widgets/progress_bar/`). Готовый
+  элемент `<progress>` с FLOW layout (fill растягивается на `value/max * 100%`
+  ширины). Атрибуты: `value` (f32, дефолт 0.0), `max` (f32, дефолт 100.0),
+  `color` (цвет fill, CSS-имена + hex, дефолт `#22C55E`), `background` (цвет
+  трека, дефолт `#E5E7EB`), `height` (px, дефолт 10). Feature flag:
+  `widget-progress` (включён по умолчанию). Зарегистрирован через Plugin API,
+  подключается через `[package.metadata.light.provides] elements = ["progress"]`.
+  Требует `use light_ui as _;` в бинарнике.
+
+### Changed
+
+- **`light-ui` теперь регистрирует 4 компонента** (Tooltip, Toast, Modal,
+  ProgressBar) вместо 2 (до 0.21.0-alpha.1). Ядро (`core`) остаётся `"^0.20"` —
+  намеренное решение: alpha-ядро (0.21.0-alpha.1) ломает `check_core_version`
+  (parse_triple не разбирает pre-release "0-alpha"), поэтому все кастомные
+  элементы против alpha-ядра ошибаются. См. TODO: отдельный ticket в vdom.
 
 ### Fixed
 

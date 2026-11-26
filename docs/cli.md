@@ -1,6 +1,6 @@
 # CLI Light
 
-Версия справочника: **0.20.x** (примеры команд актуальны для `light` 0.20+;
+Версия справочника: **0.21.0** (примеры команд актуальны для `light` 0.21.0-alpha.1+;
 ранние примеры из 0.17.0 удалены).
 
 `light` — основной интерфейс работы с проектами Light: инициализация,
@@ -14,16 +14,20 @@ cargo install light
 
 ## Команды
 
-### `light init ИМЯ [--path PATH] [--minimal] [--template NAME] [--with COMPONENT]`
+### `light init ИМЯ [--path PATH] [--minimal] [--headless] [--template NAME] [--with COMPONENT]`
 
 Создаёт новый проект Light (`ИМЯ` — имя проекта и крейта). Флаг `--with`
 подключает компоненты (форм, валидации), `--template` — готовый showcase-шаблон,
-`--minimal` — только `Cargo.toml` и `src/main.rs`.
+`--minimal` — только `Cargo.toml` и `src/main.rs`. **`--headless` (0.21.0)** —
+порождает проект без GUI: зависимость только `light-fw-core = { version = "0.21", default-features = false }`
+(без winit, без окна), `main.rs` содержит пример с `Property` + `watch` (реактивный
+счётчик, подписчик печатает новое значение). Для чистой реактивной логики.
 
 ```bash
 light init my-app                            # пустой проект
 light init my-app --template counter         # шаблон counter
 light init my-app --with form --with validation
+light init my-headless --headless            # headless-проект (без GUI)
 ```
 
 Доступные showcase-шаблоны: `counter`, `todo`, `calculator`. Готовые примеры
@@ -37,6 +41,11 @@ light init my-app --with form --with validation
 недостающих компонентов.
 
 - `--agent` — создаёт сессию для автономного тестирования UI через `light devtools`;
+- `--detach` — **фоновый запуск** (0.21.0): спавнит процесс, печатает JSON
+  `{ok, pid, devtools_port, web_port, log}` и сразу возвращает терминал — агент
+  может затем использовать `light devtools` (shot / find / click / move / move-leave / state).
+  Лог пишется в `.light/agent-sessions/dev-detach.log`. Остановка:
+  `light devtools session stop` или `taskkill /PID <pid>` (Windows) / `kill -9 <pid>` (Linux/macOS);
 - `--verbose` — подробные логи (debounce, hash-dedup, notify events);
 - `--clean` — полный сброс кэша dev-сборки перед стартом;
 - `--preserve-state` — сохранять `state.json` между всеми запусками;
@@ -50,9 +59,16 @@ light init my-app --with form --with validation
 ```bash
 light dev              # hot-reload
 light dev --agent      # + сессия агента
+light dev --agent --detach  # фоновый запуск с сессией (JSON + PID, терминал свободен)
 light dev --release    # debug-запуск в release-режиме
 light dev --no-web     # без Web UI (только TCP DevTools на 9229)
 light dev --web-port 8080  # Web UI на кастомном порту
+```
+
+Пример вывода `--detach`:
+
+```json
+{"ok":true,"pid":12345,"devtools_port":9229,"web_port":9228,"log":".light/agent-sessions/dev-detach.log"}
 ```
 
 ### `light build [ПУТЬ] [-r|--release] [--no-release] [-f FEATURES] [--no-default-features] [--no-auto-install] [EXTRA...]`
@@ -219,6 +235,8 @@ light search light-fw --json       # JSON для скриптов
 | `light devtools state` | JSON-состояние приложения |
 | `light devtools find --tag button --text "+1"` | Поиск элемента → ключ + rect |
 | `light devtools click --key 0.0.0` | Клик |
+| `light devtools move --key tip_trigger` | Триггер `@mouseenter` (0.21.0: работает в runtime-режиме) |
+| `light devtools move-leave --key tip_trigger` | Триггер `@mouseleave` (убирает тупик) |
 | `light devtools type --key 0.0.1 "Hello"` | Ввод текста |
 | `light devtools key --key 0.0.1 Enter` | Клавиша (Enter/Tab/Escape) |
 | `light devtools shot --path shots` | Скриншот → PNG (без `--path` — base64 на stdout) |
