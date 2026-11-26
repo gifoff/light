@@ -342,6 +342,14 @@ pub(super) fn collect_interpolations(nodes: &[Node]) -> std::collections::HashSe
     for node in nodes {
         match node {
             Node::Element(element) => {
+                // BUG 0e: интерполяции в атрибутах кастомных элементов
+                // (`<progress value="{{val}}">`) тоже должны попадать в
+                // `eval_field`, иначе runtime не сможет их разрешить.
+                for attr in &element.attrs {
+                    if let Some(field) = extract_attr_interpolation(&attr.value) {
+                        out.insert(field);
+                    }
+                }
                 out.extend(collect_interpolations(&element.children));
             }
             Node::Text(segments) => {
@@ -354,6 +362,21 @@ pub(super) fn collect_interpolations(nodes: &[Node]) -> std::collections::HashSe
         }
     }
     out
+}
+
+/// Извлекает простое имя поля из значения атрибута, если оно содержит ровно
+/// один `{{ … }}`-блок (BUG 0e). Возвращает `None` для статических значений
+/// и сложных выражений (с точками, несколькими блоками и т.п.).
+fn extract_attr_interpolation(value: &str) -> Option<String> {
+    let (start, end) = match (value.find("{{"), value.find("}}")) {
+        (Some(s), Some(e)) if s < e && !value[e + 2..].contains("{{") => (s, e),
+        _ => return None,
+    };
+    let field = value[start + 2..end].trim();
+    if field.is_empty() || field.contains('.') {
+        return None;
+    }
+    Some(field.to_owned())
 }
 
 /// Все имена переменных `v-for` в шаблоне. Эти идентификаторы — локальные

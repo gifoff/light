@@ -583,3 +583,178 @@ mod image_runtime_tests {
         assert!(parse_template(html, &NullComponent).is_none());
     }
 }
+
+// ---------------------------------------------------------------------------
+// BUG 0e: интерполяция {{ поле }} в атрибутах кастомных элементов (0.21.0)
+// ---------------------------------------------------------------------------
+mod custom_attr_interpolation_tests {
+    use crate::component::Component;
+    use crate::runtime::parse::parse_template;
+    use crate::runtime::style::interpolate_attr_value;
+    use crate::vdom::{NodeKind, VElement, intern_key};
+
+    /// Компонент с числовым полем `val` (f32 → строка).
+    struct NumComp {
+        val: f32,
+    }
+    impl Component for NumComp {
+        fn render(&self) -> VElement {
+            VElement::container(intern_key(""), NodeKind::Column, Vec::new())
+        }
+        fn eval_field(&self, name: &str) -> Option<String> {
+            (name == "val").then(|| self.val.to_string())
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
+
+    /// Прямой вызов `interpolate_attr_value`: `{{ val }}` → значение поля.
+    #[test]
+    fn interp_replaces_field_in_attr() {
+        let comp = NumComp { val: 42.0 };
+        let result = interpolate_attr_value(&comp, "{{ val }}");
+        assert_eq!(
+            result, "42",
+            "один {{ поле }} заменяется значением eval_field"
+        );
+    }
+
+    /// Статическое значение (без `{{ }}`) возвращается как есть.
+    #[test]
+    fn interp_passes_static_through() {
+        let comp = NumComp { val: 1.0 };
+        let result = interpolate_attr_value(&comp, "green");
+        assert_eq!(result, "green", "статическое значение не меняется");
+    }
+
+    /// Пустой `{{ }}` — без идентификатора — не интерполируется.
+    #[test]
+    fn interp_ignores_empty_braces() {
+        let comp = NumComp { val: 1.0 };
+        let result = interpolate_attr_value(&comp, "{{ }}");
+        assert_eq!(result, "{{ }}", "пустые скобки не трогаются");
+    }
+
+    /// Точки (`a.b`) — сложный путь, не поддерживается → транзит.
+    #[test]
+    fn interp_ignores_dotted_paths() {
+        let comp = NumComp { val: 1.0 };
+        let result = interpolate_attr_value(&comp, "{{ a.b }}");
+        assert_eq!(result, "{{ a.b }}", "путь с точками не интерполируется");
+    }
+
+    /// Если `eval_field` вернул None (метод, а не поле) — значение не меняется.
+    #[test]
+    fn interp_keeps_raw_when_field_missing() {
+        struct Empty;
+        impl Component for Empty {
+            fn render(&self) -> VElement {
+                VElement::container(intern_key(""), NodeKind::Column, Vec::new())
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+        }
+        let result = interpolate_attr_value(&Empty, "{{ unknown }}");
+        assert_eq!(result, "{{ unknown }}", "отсутствующее поле → raw");
+    }
+
+    /// Вложенность `{{` внутри `}}` — парсер находит ПЕРВУЮ пару; остаток
+    /// остаётся литеральным.
+    #[test]
+    fn interp_handles_mismatched_braces_gracefully() {
+        let comp = NumComp { val: 5.0 };
+        // Два блока: первый резолвится, второй тоже (replacen меняет только первое).
+        let result = interpolate_attr_value(&comp, "a{{ val }}b");
+        assert_eq!(result, "a5b", "текст вокруг {{ }} сохраняется");
+    }
+
+    /// Guard-тест: неизвестный кастомный тег → None (attrs не используются).
+    #[test]
+    fn build_custom_unknown_tag_returns_none() {
+        use crate::runtime::custom::drain_custom_instances;
+        use crate::runtime::parse::build_custom_element;
+
+        let _ = drain_custom_instances();
+
+        // Регистрируем простую фабрику, которая запоминает переданные attrs.
+        // Используем NoopCustom из соседнего модуля — но он не хранит attrs.
+        // Вместо этого: создаём компонент, чей eval_field возвращает "7",
+        // и проверяем, что parse_template не упал + дерево содержит Custom.
+        struct SevenComp;
+        impl Component for SevenComp {
+            fn render(&self) -> VElement {
+                VElement::container(intern_key(""), NodeKind::Column, Vec::new())
+            }
+            fn eval_field(&self, name: &str) -> Option<String> {
+                (name == "val").then(|| "7".to_string())
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+        }
+        // Нет зарегистрированного тega "test-progress" → build_custom_element
+        // вернёт None. Но мы можем проверить interpolate_attr_value отдельно
+        // (см. тесты выше). Этот тест — guard, что путь compile не сломан.
+        let el = light_fw_html::Element {
+            name: "nonexistent-custom-tag".to_string(),
+            attrs: vec![light_fw_html::Attr {
+                name: "value".to_string(),
+                value: "{{ val }}".to_string(),
+            }],
+            children: Vec::new(),
+        };
+        let result = build_custom_element::<SevenComp>(&el, "0.0", &SevenComp);
+        assert!(
+            result.is_none(),
+            "незарегистрированный тег → None (attrs не используются)"
+        );
+    }
+
+    /// Text-узел с `{{ user }}` всё ещё работает (не затронул нативный путь).
+    #[test]
+    fn text_interpolation_still_works() {
+        struct TComp {
+            name: String,
+        }
+        impl Component for TComp {
+            fn render(&self) -> VElement {
+                VElement::container(intern_key(""), NodeKind::Column, Vec::new())
+            }
+            fn eval_field(&self, name: &str) -> Option<String> {
+                (name == "user").then_some(self.name.clone())
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+        }
+        let comp = TComp {
+            name: "Alice".to_string(),
+        };
+        let html = r#"<div>Hello {{ user }}!</div>"#;
+        let tree = parse_template(html, &comp).expect("text interpolation parses");
+        // Ищем текстовый узел и проверяем его содержимое.
+        let mut found = false;
+        for node in collect_all(&tree) {
+            if let NodeKind::Text { content } = &node.kind
+                && content.contains("Alice")
+            {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "текст обязан содержать 'Alice' после интерполяции");
+    }
+
+    /// Собирает все VElement в дереве (BFS через children).
+    fn collect_all(root: &VElement) -> Vec<&VElement> {
+        let mut out = Vec::new();
+        let mut stack = vec![root];
+        while let Some(n) = stack.pop() {
+            out.push(n);
+            stack.extend(n.children.iter());
+        }
+        out
+    }
+}

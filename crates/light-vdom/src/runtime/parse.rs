@@ -22,7 +22,7 @@ use super::custom::{build_children, store_custom_instance};
 use super::fields::{ROOT_KEY, build_checkbox, build_radio, build_select, build_text_field};
 use super::style::{
     attr_value, build_style, build_window_config, collect_meta, eval_simple,
-    is_unsupported_directive, resolve_button_type, resolve_disabled,
+    interpolate_attr_value, is_unsupported_directive, resolve_button_type, resolve_disabled,
 };
 
 #[cfg_attr(not(feature = "runtime-templates"), allow(dead_code))]
@@ -538,15 +538,22 @@ pub(crate) fn build_custom_element<C: Component + ?Sized>(
         parse_fail(&element.name, "core-version", &msg.to_string());
         return None;
     }
-    // Атрибуты тега (имя + значение) передаются плагину как есть. Директивы
-    // (`@click`/`:attr`/`v-if`) не поддерживаются в runtime-шаблонах и уже
-    // отсеяны вызывающим кодом — сюда доходят только простые атрибуты.
-    // `v-model` (если задан) уже присутствует в списке — плагин может
-    // использовать его как имя поля в `on_event` (Этап 5).
+    // Атрибуты тега (имя + значение) передаются плагину; значения с
+    // `{{ поле }}` интерполируются через [`interpolate_attr_value`] (BUG 0e,
+    // 0.21.0) — кастомные атрибуты обязаны обновляться так же, как нативные
+    // (инвариант ТЗ). Директивы (`@click`/`:attr`/`v-if`) не поддерживаются
+    // в runtime-шаблонах и уже отсеяны вызывающим кодом — сюда доходят только
+    // простые атрибуты. `v-model` (если задан) уже присутствует в списке —
+    // плагин может использовать его как имя поля в `on_event` (Этап 5).
     let attrs: Vec<(&'static str, String)> = element
         .attrs
         .iter()
-        .map(|a| (intern_key(&a.name), a.value.clone()))
+        .map(|a| {
+            (
+                intern_key(&a.name),
+                interpolate_attr_value(component, &a.value),
+            )
+        })
         .collect();
     // Дочерние узлы разбираем с обычным компонентом: тексты с `{{ }}`
     // интёрполируются геттером компонента, элементы — рекурсивно. Кастомный

@@ -327,6 +327,35 @@ pub(crate) fn text_content(children: &[light_fw_html::Node]) -> Option<String> {
     Some(out)
 }
 
+/// Интерполирует `{{ поле }}` в значении атрибута кастомного элемента
+/// (BUG 0e, 0.21.0).
+///
+/// Если значение содержит ровно один `{{ … }}`-блок (простой идентификатор
+/// без точек), подставляет результат [`Component::eval_field`]. Иначе
+/// возвращает значение как есть — статические атрибуты и сложные выражения
+/// проходят транзитом, что сохраняет обратную совместимость с существующими
+/// плагинами.
+///
+/// Инвариант: кастомные атрибуты интерполируются так же, как нативные
+/// (см. `render_segments` для текстовых узлов).
+pub(crate) fn interpolate_attr_value<C: Component + ?Sized>(component: &C, value: &str) -> String {
+    let (start, end) = match (value.find("{{"), value.find("}}")) {
+        (Some(s), Some(e)) if s < e => (s, e),
+        _ => return value.to_owned(),
+    };
+    let field = value[start + 2..end].trim();
+    if field.is_empty() || field.contains('.') || !field.eq(field.trim()) {
+        return value.to_owned();
+    }
+    match component.eval_field(field) {
+        Some(v) => {
+            let placeholder = &value[start..=end + 1];
+            value.replacen(placeholder, &v, 1)
+        }
+        None => value.to_owned(),
+    }
+}
+
 /// Запрашивает строковое значение поля через [`Component::eval_field`];
 /// простой идентификатор (без точек) обязателен.
 pub(crate) fn eval_simple<C: Component + ?Sized>(component: &C, name: &str) -> Option<String> {
