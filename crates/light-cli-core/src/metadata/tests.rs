@@ -2,6 +2,8 @@
 // ────────────────────────────── Тесты ─────────────────────────────────────────
 #[cfg(test)]
 mod tests {
+    #[cfg(test)]
+    use crate::metadata::compatible_core_req;
     use crate::metadata::installed::extract_cargo_toml;
     use crate::metadata::*;
     use std::io::Write;
@@ -29,7 +31,13 @@ mod tests {
         gz.finish().expect("finish gz")
     }
 
-    const VALID_MANIFEST: &str = r#"
+    /// Манифест, который **должен** пройти валидацию при любой версии ядра.
+    ///
+    /// `core` — динамическое требование, гарантированно совместимое с текущей
+    /// `LIGHT_CORE_VERSION` (см. [`compatible_core_req`](super::compatible_core_req)).
+    /// Без этой правки альфа-ядро (`0.21.0-alpha.1`) не матчит формальный
+    /// `^0.20`/`^0.21`, и фикстура падает с `IncompatibleCore`.
+    const VALID_MANIFEST_TEMPLATE: &str = r#"
 [package]
 name = "light-widget-datepicker"
 version = "0.20.0"
@@ -38,10 +46,17 @@ edition = "2021"
 [package.metadata.light]
 kind = "widget"
 display-name = "Date Picker"
-core = "^0.20"
+core = "{CORE_REQ}"
 [package.metadata.light.provides]
 elements = ["datepicker"]
 "#;
+
+    /// Возвращает `VALID_MANIFEST_TEMPLATE` с подстановкой актуального
+    /// `core`-требования (динамически из `LIGHT_CORE_VERSION`).
+    fn valid_manifest() -> String {
+        let req = compatible_core_req();
+        VALID_MANIFEST_TEMPLATE.replace("{CORE_REQ}", &req)
+    }
 
     const PLAIN_MANIFEST: &str = r#"
 [package]
@@ -54,6 +69,7 @@ edition = "2021"
     /// опубликованный компонент и обычный крейт без метаданных.
     #[test]
     fn load_installed_from_json_reads_light_metadata() {
+        let valid_manifest = valid_manifest();
         let dir = std::env::temp_dir().join("light-fw-cli-meta-load");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("app")).unwrap();
@@ -63,7 +79,7 @@ edition = "2021"
         std::fs::write(dir.join("app/Cargo.toml"), PLAIN_MANIFEST).unwrap();
         std::fs::write(
             dir.join("light-widget-datepicker/Cargo.toml"),
-            VALID_MANIFEST,
+            &valid_manifest,
         )
         .unwrap();
         std::fs::write(
@@ -174,13 +190,20 @@ elements = ["checkbox", "radio", "select", "option"]
 
     #[test]
     fn validate_ok_for_compatible_component() {
-        let result = validate_metadata(VALID_MANIFEST, "light-widget-datepicker");
+        let valid_manifest = valid_manifest();
+        let expected_req = compatible_core_req();
+        let result = validate_metadata(&valid_manifest, "light-widget-datepicker");
         match result {
             ValidationResult::Ok(meta) => {
                 assert_eq!(meta.crate_name, "light-widget-datepicker");
                 assert_eq!(meta.version, "0.20.0");
                 assert_eq!(meta.kind.as_deref(), Some("widget"));
-                assert_eq!(meta.core_version_req.as_deref(), Some("^0.20"));
+                // `core`-requirement в метаданных — то же динамическое
+                // требование, которое мы подставили в фикстуру (см. valid_manifest).
+                assert_eq!(
+                    meta.core_version_req.as_deref(),
+                    Some(expected_req.as_str())
+                );
                 assert_eq!(meta.provides_elements, vec!["datepicker"]);
                 assert!(meta.provides_attributes.is_empty());
                 assert!(meta.requires_components.is_empty());
@@ -226,7 +249,13 @@ attributes = ["data-focus"]
 
     #[test]
     fn validate_empty_provides_is_warning_not_fatal() {
-        let toml = r#"
+        // Pre-release-ядро (`0.21.0-alpha.1`) требует pre-release в req,
+        // иначе формальный semver вернёт IncompatibleCore. Используем хелпер
+        // compatible_core_req(), который динамически строит совместимое
+        // требование из `LIGHT_CORE_VERSION`.
+        let req = compatible_core_req();
+        let toml = format!(
+            r#"
 [package]
 name = "light-subsystem-a11y"
 version = "0.1.0"
@@ -235,9 +264,10 @@ edition = "2021"
 [package.metadata.light]
 kind = "subsystem"
 display-name = "A11y"
-core = "^0.20"
-"#;
-        let result = validate_metadata(toml, "light-subsystem-a11y");
+core = "{req}"
+"#
+        );
+        let result = validate_metadata(&toml, "light-subsystem-a11y");
         match result {
             ValidationResult::Warning { metadata, warning } => {
                 assert_eq!(warning, ValidationError::EmptyProvides);
@@ -271,7 +301,7 @@ elements = ["x"]
 
     #[test]
     fn extract_cargo_toml_from_crate_archive() {
-        let bytes = crate_bytes(VALID_MANIFEST);
+        let bytes = crate_bytes(&valid_manifest());
         let toml = extract_cargo_toml(&bytes).expect("extract");
         assert!(toml.contains("[package.metadata.light]"));
         assert!(toml.contains("light-widget-datepicker"));
@@ -308,5 +338,78 @@ elements = ["x"]
         .message();
         assert!(conflict.contains("datepicker"));
         assert!(conflict.contains("light-widget-datepicker"));
+    }
+
+    /// Статический фиксатор правила semver 2.0 про pre-release:
+    /// pre-release-версия **не матчит** release-requirement без pre-release.
+    ///
+    /// Это **отдельный** тест от динамических фикстур выше — он фиксирует
+    /// конкретное поведение формального матчера, которое может меняться при
+    /// смене версии крейта `semver` (теоретически) или при ошибочной правке
+    /// `check_core`. Все строки выводятся из `LIGHT_CORE_VERSION` — нет
+    /// хардкода эпохи.
+    #[test]
+    fn semver_prerelease_rule_pinned() {
+        use crate::metadata::types::LIGHT_CORE_VERSION;
+        // Строим «голый» caret на текущем major.minor: `^MAJOR.MINOR` (без
+        // pre-release). Это requirement, который formальный semver НЕ должен
+        // матчить на pre-release-ядре (и матчит на stable).
+        let parts: Vec<&str> = LIGHT_CORE_VERSION.split('.').collect();
+        let bare_caret = if parts.len() >= 2 {
+            format!("{}.{}", parts[0], parts[1])
+        } else {
+            LIGHT_CORE_VERSION.to_string()
+        };
+
+        // Фиксируем: формальный semver — pre-release не матчит без pre в req.
+        let req = semver::VersionReq::parse(&bare_caret).expect("parse req");
+        let cur = semver::Version::parse(LIGHT_CORE_VERSION).expect("parse current");
+        let is_prerelease = !cur.pre.is_empty();
+        if is_prerelease {
+            // Если ядро сейчас pre-release — bare caret НЕ матчит.
+            assert!(
+                !req.matches(&cur),
+                "formal semver: {bare_caret} должно НЕ матчить {LIGHT_CORE_VERSION} (pre-release)"
+            );
+        } else {
+            // Если ядро stable — bare caret матчит (caret-семантика).
+            assert!(
+                req.matches(&cur),
+                "formal semver: {bare_caret} должно матчить stable {LIGHT_CORE_VERSION}"
+            );
+        }
+
+        // Хелпер [`compatible_core_req`](super::compatible_core_req) —
+        // гарантированно совместим с текущей версией.
+        let helper_req = compatible_core_req();
+        let helper_req = semver::VersionReq::parse(&helper_req).expect("parse helper req");
+        assert!(
+            helper_req.matches(&cur),
+            "compatible_core_req() = {helper_req:?} должно матчить {LIGHT_CORE_VERSION}"
+        );
+
+        // validate_metadata с bare caret: pre-release → IncompatibleCore;
+        // stable → Ok (или Warning, если provides пуст — но у нас есть elements).
+        let manifest = VALID_MANIFEST_TEMPLATE.replace("{CORE_REQ}", &bare_caret);
+        let result = validate_metadata(&manifest, "light-widget-datepicker");
+        if is_prerelease {
+            match result {
+                ValidationResult::Fatal(ValidationError::IncompatibleCore {
+                    required,
+                    current,
+                }) => {
+                    assert_eq!(required, bare_caret);
+                    assert_eq!(current, LIGHT_CORE_VERSION);
+                }
+                other => {
+                    panic!("ожидался Fatal(IncompatibleCore) на pre-release, получен {other:?}")
+                }
+            }
+        } else {
+            assert!(
+                matches!(result, ValidationResult::Ok(_)),
+                "stable ядро + bare caret: ожидался Ok, получен {result:?}"
+            );
+        }
     }
 }

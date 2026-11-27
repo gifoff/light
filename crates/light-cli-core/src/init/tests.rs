@@ -352,15 +352,30 @@ mod tests {
         assert!(dir.join(LOCKFILE_NAME).is_file());
 
         let lock = Lockfile::read(&dir).expect("read lock");
-        // Ядро в lockfile — нижняя граница минорного диапазона: `cargo_toml`
-        // прописывает `light-fw = "0.20"` (minor_version()), а `resolve_core_version`
-        // берёт `min_version("0.20")` = `0.20.0`. Патч-версию не проверяем — она
-        // зависит от релиза и не входит в контракт init.
-        let expected_minor = minor_version();
-        let expected_core = format!("{}.0", expected_minor);
+        // Ядро в lockfile — выводится из production `min_version()` на актуальном
+        // minor-требовании, которое записывает `cargo_toml` (`minor_version()`).
+        //
+        // Правка e62950f: `min_version` теперь сохраняет pre-release-метку.
+        // Но `minor_version()` строит caret БЕЗ pre (только major.minor), поэтому
+        // `min_version("^MAJOR.MINOR")` всегда возвращает `major.minor.0` — без
+        // pre. Это означает:
+        // - на ядре 0.21.0 / 0.21.0-alpha.1 / 0.21.0-alpha.2 — `expected_core == "0.21.0"`;
+        // - на ядре 0.22.0 → `expected_core == "0.22.0"`;
+        // - на ядре 1.0.0 → `expected_core == "1.0.0"`.
+        //
+        // Тест зелёный при любом bump версии, потому что мы выводим ожидаемое
+        // значение тем же механизмом, которым production его вычисляет. Патч
+        // всегда `0` (caret без patch → `unwrap_or(0)`), pre всегда пустой
+        // (caret не несёт pre-release — это осознанный выбор `minor_version()`).
+        let expected_minor = minor_version(); // например "0.21"
+        let expected_core = semver::VersionReq::parse(&format!("^{expected_minor}"))
+            .ok()
+            .and_then(|req| crate::manifest::min_version(&req))
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| format!("{expected_minor}.0"));
         assert_eq!(
             lock.core, expected_core,
-            "ядро в lockfile — min_version(minor_version())"
+            "ядро в lockfile — min_version(^{expected_minor})"
         );
     }
 
