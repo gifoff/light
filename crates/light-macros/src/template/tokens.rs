@@ -366,7 +366,8 @@ pub(super) fn collect_interpolations(nodes: &[Node]) -> std::collections::HashSe
 
 /// Извлекает простое имя поля из значения атрибута, если оно содержит ровно
 /// один `{{ … }}`-блок (BUG 0e). Возвращает `None` для статических значений
-/// и сложных выражений (с точками, несколькими блоками и т.п.).
+/// и сложных выражений (с точками, несколькими блоками, не-идентификаторами
+/// и т.п.).
 fn extract_attr_interpolation(value: &str) -> Option<String> {
     let (start, end) = match (value.find("{{"), value.find("}}")) {
         (Some(s), Some(e)) if s < e && !value[e + 2..].contains("{{") => (s, e),
@@ -374,6 +375,15 @@ fn extract_attr_interpolation(value: &str) -> Option<String> {
     };
     let field = value[start + 2..end].trim();
     if field.is_empty() || field.contains('.') {
+        return None;
+    }
+    // D4: только валидные идентификаторы Rust: [A-Za-z0-9_], не начинаются
+    // с цифры. Это синхронизирует extractor с runtime `interpolate_attr_value`,
+    // который передаёт поле в `eval_field` — методы с пробелами/знаками
+    // не должны доходить до runtime.
+    if !field.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        || field.starts_with(|c: char| c.is_ascii_digit())
+    {
         return None;
     }
     Some(field.to_owned())
@@ -511,4 +521,90 @@ pub(super) fn text_segments(children: &[Node], element: &str) -> syn::Result<Vec
         }
     }
     Ok(segments)
+}
+
+#[cfg(test)]
+mod extract_attr_interpolation_tests {
+    use super::extract_attr_interpolation;
+
+    #[test]
+    fn single_block_extracts_field() {
+        assert_eq!(
+            extract_attr_interpolation("{{ val }}").as_deref(),
+            Some("val"),
+            "один {{ поле }} → имя"
+        );
+    }
+
+    #[test]
+    fn static_value_returns_none() {
+        assert_eq!(
+            extract_attr_interpolation("green"),
+            None,
+            "статическое значение без {{ }} → None"
+        );
+    }
+
+    #[test]
+    fn empty_braces_returns_none() {
+        assert_eq!(
+            extract_attr_interpolation("{{ }}"),
+            None,
+            "пустые скобки → None"
+        );
+    }
+
+    #[test]
+    fn dotted_path_returns_none() {
+        assert_eq!(
+            extract_attr_interpolation("{{ a.b }}"),
+            None,
+            "путь с точками → None (сложное выражение)"
+        );
+    }
+
+    #[test]
+    fn multi_block_returns_none() {
+        assert_eq!(
+            extract_attr_interpolation("{{ a }}{{ b }}"),
+            None,
+            "два блока в одном атрибуте → None"
+        );
+    }
+
+    #[test]
+    fn space_in_field_returns_none() {
+        assert_eq!(
+            extract_attr_interpolation("{{ foo bar }}"),
+            None,
+            "пробел внутри идентификатора → None"
+        );
+    }
+
+    #[test]
+    fn plus_sign_returns_none() {
+        assert_eq!(
+            extract_attr_interpolation("{{ x+1 }}"),
+            None,
+            "знак арифметики внутри блока → None"
+        );
+    }
+
+    #[test]
+    fn digit_start_returns_none() {
+        assert_eq!(
+            extract_attr_interpolation("{{ 1foo }}"),
+            None,
+            "идентификатор, начинающийся с цифры → None"
+        );
+    }
+
+    #[test]
+    fn valid_identifier_with_underscore() {
+        assert_eq!(
+            extract_attr_interpolation("{{ my_val_2 }}"),
+            Some("my_val_2".to_owned()),
+            "валидный идентификатор с подчёркиваниями и цифрами → Some"
+        );
+    }
 }

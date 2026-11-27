@@ -336,15 +336,25 @@ pub(crate) fn text_content(children: &[light_fw_html::Node]) -> Option<String> {
 /// проходят транзитом, что сохраняет обратную совместимость с существующими
 /// плагинами.
 ///
-/// Инвариант: кастомные атрибуты интерполируются так же, как нативные
-/// (см. `render_segments` для текстовых узлов).
+/// Инвариант: кастомные атрибуты интерполируются так же, как текстовые узлы
+/// (см. `render_segments` для text-сегментов). Нативные атрибуты (`bg`,
+/// `text` и т.п. в `<div>`/`<button>`) НЕ интерполируются — они обрабатываются
+/// отдельно через `collect_meta`, который клонирует сырое значение без
+/// интерполяции. Это осознанное ограничение, зафиксированное в known-issues.
 pub(crate) fn interpolate_attr_value<C: Component + ?Sized>(component: &C, value: &str) -> String {
     let (start, end) = match (value.find("{{"), value.find("}}")) {
         (Some(s), Some(e)) if s < e => (s, e),
         _ => return value.to_owned(),
     };
+    // D2: если после первого `}}` есть ещё один `{{` — много-блок → raw.
+    // Макрос отклоняет такие значения на этапе компиляции; runtime должен
+    // вести себя идентично, иначе factory получит RESOLVED-значения,
+    // которых не было в compile-time.
+    if value[end + 2..].contains("{{") {
+        return value.to_owned();
+    }
     let field = value[start + 2..end].trim();
-    if field.is_empty() || field.contains('.') || !field.eq(field.trim()) {
+    if field.is_empty() || field.contains('.') {
         return value.to_owned();
     }
     match component.eval_field(field) {
