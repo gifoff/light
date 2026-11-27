@@ -503,4 +503,24 @@ elements = ["x"]
             "unified rule: bare caret {bare_caret} на {LIGHT_CORE_VERSION} должно быть Ok, получен {result:?}"
         );
     }
+
+    /// Release-gate: реальный манифест `crates/light-ui/Cargo.toml` (с
+    /// `core = "^0.21"` и 4 элементами) должен проходить валидацию против
+    /// текущей версии ядра (`LIGHT_CORE_VERSION`). До FIX7 это было
+    /// `Fatal(IncompatibleCore)` из-за формального semver; после — `Ok`.
+    /// Тест падает, если кто-то изменит `core` в light-ui на несовместимое
+    /// значение или сломает единственное правило pre-release в `check_core`.
+    #[test]
+    fn own_light_ui_manifest_validates_against_current_core() {
+        let p = concat!(env!("CARGO_MANIFEST_DIR"), "/../light-ui/Cargo.toml");
+        let text = std::fs::read_to_string(p).unwrap_or_else(|e| {
+            panic!("не удалось прочитать light-ui/Cargo.toml по пути {p}: {e}")
+        });
+        let result = validate_metadata(&text, "light-ui");
+        assert!(
+            matches!(result, ValidationResult::Ok(_)),
+            "light-ui manifest (core = \"^0.21\") должен быть Ok на ядре {}, получен {result:?}",
+            crate::metadata::types::LIGHT_CORE_VERSION
+        );
+    }
 }
