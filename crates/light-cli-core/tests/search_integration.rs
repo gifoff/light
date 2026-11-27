@@ -215,7 +215,26 @@ async fn prefix_filter_excludes_non_light() {
 async fn download_and_validate_ok_manifest() {
     let server = MockServer::start().await;
 
-    let cargo_toml = r#"
+    // Фикстура core-версии выводится из версии крейта (env! CARGO_PKG_VERSION):
+    // pre-release (0.21.0-alpha.1) → ^0.21-0 (карет на уровне major.minor),
+    // stable (0.21.0) → ^0.21.
+    // Семан: ^0.21-0 = >=0.21-0 < 0.22.0, и все pre-release'ы 0.21.x
+    // (alpha, beta, rc…) попадают в диапазон. См. semver 2.0 pre-release rule.
+    let crate_version = env!("CARGO_PKG_VERSION");
+    let core_req = if crate_version.contains('-') {
+        let parts: Vec<&str> = crate_version.split('.').collect();
+        if parts.len() >= 2 {
+            format!("^{}.{}-0", parts[0], parts[1])
+        } else {
+            format!("^{crate_version}-0")
+        }
+    } else {
+        let parts: Vec<&str> = crate_version.split('.').collect();
+        format!("^{}.{}", parts[0], parts[1])
+    };
+
+    let cargo_toml = format!(
+        r#"
 [package]
 name = "light-widget-datepicker"
 version = "0.20.0"
@@ -226,7 +245,7 @@ edition = "2024"
 [package.metadata.light]
 kind = "widget"
 display-name = "Datepicker"
-core = "^0.20"
+core = "{core_req}"
 
 [package.metadata.light.provides]
 elements = ["datepicker"]
@@ -235,7 +254,8 @@ directives = []
 
 [package.metadata.light.requires]
 components = []
-"#;
+"#
+    );
     let archive = crate_bytes(cargo_toml);
 
     Mock::given(method("GET"))

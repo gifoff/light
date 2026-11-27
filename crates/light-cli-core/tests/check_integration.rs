@@ -239,13 +239,27 @@ edition = "2021"
 "#
         );
         if is_light {
-            toml.push_str(
+            // Фикстура core-версии выводится из версии крейта (env! CARGO_PKG_VERSION):
+            // pre-release (0.21.0-alpha.1) → ^0.21-0, stable (0.21.0) → ^0.21.
+            let crate_version = env!("CARGO_PKG_VERSION");
+            let core_req = if crate_version.contains('-') {
+                let parts: Vec<&str> = crate_version.split('.').collect();
+                if parts.len() >= 2 {
+                    format!("^{}.{}-0", parts[0], parts[1])
+                } else {
+                    format!("^{crate_version}-0")
+                }
+            } else {
+                let parts: Vec<&str> = crate_version.split('.').collect();
+                format!("^{}.{}", parts[0], parts[1])
+            };
+            toml.push_str(&format!(
                 r#"
 
 [package.metadata.light]
 kind = "widget"
 display-name = "Datepicker"
-core = "^0.20"
+core = "{core_req}"
 
 [package.metadata.light.provides]
 elements = ["datepicker"]
@@ -254,8 +268,8 @@ directives = []
 
 [package.metadata.light.requires]
 components = []
-"#,
-            );
+"#
+            ));
         }
         std::fs::write(d.join("Cargo.toml"), toml).unwrap();
     }
