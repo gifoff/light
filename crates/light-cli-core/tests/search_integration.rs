@@ -256,7 +256,7 @@ directives = []
 components = []
 "#
     );
-    let archive = crate_bytes(cargo_toml);
+    let archive = crate_bytes(&cargo_toml);
 
     Mock::given(method("GET"))
         .and(path_regex(r"/light-widget-datepicker/0\.20\.0/download.*"))
