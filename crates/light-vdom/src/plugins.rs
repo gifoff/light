@@ -393,18 +393,54 @@ mod tests {
     }
 
     #[test]
-    fn check_core_version_cares_about_patch_for_nonzero_major() {
-        // При MAJOR > 0 patch учитывается: для 0.x ядра любое ^N.M.P (N >= 1)
-        // несовместимо из-за разницы MAJOR (patch-ветка недостижима при 0.x).
-        let (cur_major, _, _) = cur_version_triple();
+    fn check_core_version_semantics_by_major() {
+        // Семантика матчера `check_core_version` (loose, не formальный semver):
+        //
+        //   major == 0 (0.x):     cur_minor >= req_minor
+        //   major >= 1 (N.x):     same major && (cur_minor > req_minor ||
+        //                           (cur_minor == req_minor && cur_patch >= req_patch))
+        //
+        // Тест строится без хардкода версий: все значения выводятся из
+        // `CARGO_PKG_VERSION` через `cur_version_triple()`.
+        let (cur_major, cur_minor, cur_patch) = cur_version_triple();
+
         if cur_major == 0 {
-            assert!(check_core_version("^1.0.0").is_err());
-            assert!(check_core_version("^2.3.4").is_err());
+            // 0.x: любое ^N.M.P (N >= 1) — несовместимо из-за разности major.
+            assert!(
+                check_core_version("^1.0.0").is_err(),
+                "0.x ядро: ^1.0.0 должно быть err"
+            );
+            assert!(
+                check_core_version("^2.3.4").is_err(),
+                "0.x ядро: ^2.3.4 должно быть err"
+            );
+            // Текущий minor — совместим (cur_minor >= cur_minor).
+            assert!(
+                check_core_version(&format!("^{cur_major}.{cur_minor}")).is_ok(),
+                "0.x ядро: ^{cur_major}.{cur_minor} должно быть ok"
+            );
         } else {
-            // Для N > 0: тот же major, меньший minor — несовместимо.
-            if cur_major >= 2 {
-                assert!(check_core_version(&format!("^{cur_major}.0")).is_err());
-            }
+            // N.x (major >= 1):
+            let req_minor = cur_minor + 1;
+            let req_patch = cur_patch + 1;
+            // 1. `^{M}.{cur_minor+1}.0` — req_minor > cur_minor → err.
+            assert!(
+                check_core_version(&format!("^{cur_major}.{req_minor}.0")).is_err(),
+                "N.x ядро: ^{cur_major}.{req_minor}.0 должно быть err (req_minor > cur_minor)"
+            );
+            // 2. `^{M}.{cur_minor}.{cur_patch+1}` — req_patch > cur_patch → err (floor по patch).
+            assert!(
+                check_core_version(&format!("^{cur_major}.{cur_minor}.{req_patch}")).is_err(),
+                "N.x ядро: ^{cur_major}.{cur_minor}.{req_patch} должно быть err (req_patch > cur_patch)"
+            );
+
+            // 3. `^{M}.0` — req = M.0.0: cur_minor > 0 → cur_minor > req_minor(0) → ok;
+            //    cur_minor == 0 (т.е. 1.0.0) → cur_minor == req_minor, cur_patch >= 0 → тоже ok.
+            //    Поэтому при ЛЮБОМ cur_minor этот запрос совместим.
+            assert!(
+                check_core_version(&format!("^{cur_major}.0")).is_ok(),
+                "N.x ядро: ^{cur_major}.0 должно быть ok (cur_minor >= 0 всегда)"
+            );
         }
     }
 
