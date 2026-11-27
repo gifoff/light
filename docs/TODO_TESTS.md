@@ -1,19 +1,14 @@
 # Известные проблемы с тестами
 
-## macOS: `measure_excludes_line_gap` — латентный дефект, раскрыт в 880a48d (2026-11-27, OPEN)
+## macOS: `measure_excludes_line_gap` — латентный дефект, раскрыт в 880a48d (2026-11-27, FIXED)
 
 **Симптом:** CI run 46032897413 на macos-latest красный на одном тесте
 (`window::font::tests::measure_excludes_line_gap`, `font.rs:357`):
 `assertion failed: (scaled.height() - height - scaled.line_gap()).abs() < 0.01`.
 Всё остальное зелёное (light-gui lib 269 passed; 7 paint-тестов + canary — green).
 
-**Статус: латентный, НЕ pre-existing.** Корректная классификация: до `880a48d`
-(включение macOS-путей в `FontMetrics::load`) тест **молча пропускался** на
-macOS через early-return `else { return; }` в `FontMetrics::load() -> Err`.
-То есть «падал» он только после того, как мы починили загрузку шрифтов и он
-начал реально выполняться. Формулировка «pre-existing failure» неверна и
-отозвана: это наш дефект, замаскированный silent-skip'ом, а не проблема
-окружения или платформы. (См. FIX6b-отчёт: `target/temp/FIX6-REPORT.md`.)
+**Статус: FIXED (5cf9e12).** Тест переписан под реальный контракт `measure()`
+(не ослаблен), см. ниже. CI 46047811493 — 15/15 success (macOS зелёный).
 
 **Причина (диагностика, чтение исходников ab_glyph 0.2.32 + ttf-parser):**
 старый assertion строка 357 `(scaled.height() - height - scaled.line_gap())`
