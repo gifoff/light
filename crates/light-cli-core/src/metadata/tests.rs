@@ -340,76 +340,167 @@ elements = ["x"]
         assert!(conflict.contains("light-widget-datepicker"));
     }
 
-    /// Статический фиксатор правила semver 2.0 про pre-release:
-    /// pre-release-версия **не матчит** release-requirement без pre-release.
+    /// Единое правило pre-release (FIX7): pre-release и build-метаданные
+    /// версии *ядра* игнорируются при проверке `core`-требования.
     ///
-    /// Это **отдельный** тест от динамических фикстур выше — он фиксирует
-    /// конкретное поведение формального матчера, которое может меняться при
-    /// смене версии крейта `semver` (теоретически) или при ошибочной правке
-    /// `check_core`. Все строки выводятся из `LIGHT_CORE_VERSION` — нет
-    /// хардкода эпохи.
+    /// Это согласует CLI-валидацию (`check_core`) с runtime-матчером
+    /// `light-vdom::plugins::check_core_version` (parse_triple, FIX1),
+    /// который уже срезает pre-release. Тест строится без хардкода версий:
+    /// все значения выводятся из `LIGHT_CORE_VERSION`.
+    ///
+    /// **До** FIX7 (формальный semver): `^0.21` НЕ матчил `0.21.0-alpha.1`,
+    /// потому что semver 2.0 запрещает матч pre-release-версии release-req'ом.
+    /// **После** FIX7: `check_core` срезает pre-release у current до матча,
+    /// поэтому `^0.21` матчит `0.21.0` (effective) и валидация проходит.
+    #[test]
+    fn unified_prerelease_rule() {
+        use crate::metadata::types::LIGHT_CORE_VERSION;
+        use semver::Version;
+
+        let cur = Version::parse(LIGHT_CORE_VERSION).expect("parse LIGHT_CORE_VERSION");
+        let is_prerelease = !cur.pre.is_empty();
+
+        // Вычисляем major/minor из LIGHT_CORE_VERSION (без pre-release).
+        let base = LIGHT_CORE_VERSION
+            .split(['-', '+'])
+            .next()
+            .unwrap_or(LIGHT_CORE_VERSION);
+        let parts: Vec<&str> = base.split('.').collect();
+        assert!(parts.len() >= 2, "LIGHT_CORE_VERSION must have major.minor");
+        let (major, minor) = (parts[0].to_string(), parts[1].to_string());
+
+        // 1. ^MAJOR.MINOR — совместимо (основной кейс light-ui: core = "^0.21").
+        let current_caret = format!("^{major}.{minor}");
+        if is_prerelease {
+            // До FIX7 это было Fatal; после — Ok (или Warning, если provides пуст).
+            let manifest = VALID_MANIFEST_TEMPLATE.replace("{CORE_REQ}", &current_caret);
+            let result = validate_metadata(&manifest, "light-widget-datepicker");
+            assert!(
+                matches!(result, ValidationResult::Ok(_)),
+                "unified rule: {current_caret} должно пройти на {LIGHT_CORE_VERSION} (pre-release ядра игнорируется), получен {result:?}"
+            );
+        }
+
+        // 2. ^0.(MINOR-1) — несовместимо (негатив сохранён).
+        if major == "0" {
+            let m: u32 = minor.parse().expect("minor is numeric");
+            if m > 0 {
+                let prev_caret = format!("^0.{}", m - 1);
+                let manifest = VALID_MANIFEST_TEMPLATE.replace("{CORE_REQ}", &prev_caret);
+                let result = validate_metadata(&manifest, "light-widget-datepicker");
+                match result {
+                    ValidationResult::Fatal(ValidationError::IncompatibleCore {
+                        required,
+                        current,
+                    }) => {
+                        assert_eq!(required, prev_caret);
+                        // В ошибке — оригинальный current (с pre-release), а не effective.
+                        assert_eq!(current, LIGHT_CORE_VERSION);
+                    }
+                    other => panic!(
+                        "unified rule: {prev_caret} должно быть IncompatibleCore, получен {other:?}"
+                    ),
+                }
+            }
+        }
+
+        // 3. ^(MAJOR+1).MINOR или ^0.(MINOR+1) — несовместимо (требование выше текущей).
+        let ahead_caret = if major == "0" {
+            let m: u32 = minor.parse().expect("minor is numeric");
+            format!("^0.{}", m + 1)
+        } else {
+            let mj: u32 = major.parse().expect("major is numeric");
+            format!("^{}.{}", mj + 1, minor)
+        };
+        let manifest = VALID_MANIFEST_TEMPLATE.replace("{CORE_REQ}", &ahead_caret);
+        let result = validate_metadata(&manifest, "light-widget-datepicker");
+        match result {
+            ValidationResult::Fatal(ValidationError::IncompatibleCore { required, .. }) => {
+                assert_eq!(required, ahead_caret);
+            }
+            other => panic!(
+                "unified rule: {ahead_caret} должно быть IncompatibleCore, получен {other:?}"
+            ),
+        }
+
+        // 4. "not-a-req" — недопустимое значение в TOML. `parse_manifest_from_text`
+        //    возвращает `Ok(None)` (секция `[package.metadata.light]` не распознана),
+        //    и `validate_metadata` возвращает `Fatal(NoMetadata)` **до** вызова
+        //    `check_core`. Это фиксирует порядок: манифест-парсинг первичен,
+        //    semver-валидация вторична.
+        let manifest = VALID_MANIFEST_TEMPLATE.replace("{CORE_REQ}", "not-a-req");
+        let result = validate_metadata(&manifest, "light-widget-datepicker");
+        assert!(
+            matches!(result, ValidationResult::Fatal(ValidationError::NoMetadata)),
+            "unified rule: \"not-a-req\" должно быть Fatal(NoMetadata) (TOML-ошибка), получен {result:?}"
+        );
+    }
+
+    /// Фиксатор правила semver 2.0 про pre-release (до FIX7):
+    /// формальный semver **не матчит** pre-release-версию release-requirement'ом
+    /// без pre-release. После FIX7 `check_core` срезает pre-release у current,
+    /// поэтому bare caret ПРОХОДИТ — этот тест фиксирует, что формальный матчер
+    /// по-прежнему несовместим (для понимания, почему срезка необходима).
+    ///
+    /// Все строки выводятся из `LIGHT_CORE_VERSION` — нет хардкода эпохи.
     #[test]
     fn semver_prerelease_rule_pinned() {
         use crate::metadata::types::LIGHT_CORE_VERSION;
-        // Строим «голый» caret на текущем major.minor: `^MAJOR.MINOR` (без
-        // pre-release). Это requirement, который formальный semver НЕ должен
-        // матчить на pre-release-ядре (и матчит на stable).
-        let parts: Vec<&str> = LIGHT_CORE_VERSION.split('.').collect();
+        use semver::{BuildMetadata, Prerelease, Version, VersionReq};
+
+        // Строим «голый» caret на текущем major.minor (без pre-release).
+        let base = LIGHT_CORE_VERSION
+            .split(['-', '+'])
+            .next()
+            .unwrap_or(LIGHT_CORE_VERSION);
+        let parts: Vec<&str> = base.split('.').collect();
         let bare_caret = if parts.len() >= 2 {
             format!("{}.{}", parts[0], parts[1])
         } else {
             LIGHT_CORE_VERSION.to_string()
         };
 
-        // Фиксируем: формальный semver — pre-release не матчит без pre в req.
-        let req = semver::VersionReq::parse(&bare_caret).expect("parse req");
-        let cur = semver::Version::parse(LIGHT_CORE_VERSION).expect("parse current");
+        // Формальный semver: pre-release не матчит без pre в req.
+        let req = VersionReq::parse(&bare_caret).expect("parse req");
+        let cur = Version::parse(LIGHT_CORE_VERSION).expect("parse current");
         let is_prerelease = !cur.pre.is_empty();
         if is_prerelease {
-            // Если ядро сейчас pre-release — bare caret НЕ матчит.
             assert!(
                 !req.matches(&cur),
                 "formal semver: {bare_caret} должно НЕ матчить {LIGHT_CORE_VERSION} (pre-release)"
             );
         } else {
-            // Если ядро stable — bare caret матчит (caret-семантика).
             assert!(
                 req.matches(&cur),
                 "formal semver: {bare_caret} должно матчить stable {LIGHT_CORE_VERSION}"
             );
         }
 
+        // Единое правило (FIX7): effective = current без pre/build → caret матчит.
+        let mut effective = cur.clone();
+        effective.pre = Prerelease::EMPTY;
+        effective.build = BuildMetadata::EMPTY;
+        assert!(
+            req.matches(&effective),
+            "unified rule: {bare_caret} должно матчить effective {effective:?}"
+        );
+
         // Хелпер [`compatible_core_req`](super::compatible_core_req) —
         // гарантированно совместим с текущей версией.
         let helper_req = compatible_core_req();
-        let helper_req = semver::VersionReq::parse(&helper_req).expect("parse helper req");
+        let helper_req = VersionReq::parse(&helper_req).expect("parse helper req");
         assert!(
             helper_req.matches(&cur),
             "compatible_core_req() = {helper_req:?} должно матчить {LIGHT_CORE_VERSION}"
         );
 
-        // validate_metadata с bare caret: pre-release → IncompatibleCore;
-        // stable → Ok (или Warning, если provides пуст — но у нас есть elements).
+        // validate_metadata с bare caret: ПОСЛЕ FIX7 — всегда Ok
+        // (pre-release ядра игнорируется единым правилом).
         let manifest = VALID_MANIFEST_TEMPLATE.replace("{CORE_REQ}", &bare_caret);
         let result = validate_metadata(&manifest, "light-widget-datepicker");
-        if is_prerelease {
-            match result {
-                ValidationResult::Fatal(ValidationError::IncompatibleCore {
-                    required,
-                    current,
-                }) => {
-                    assert_eq!(required, bare_caret);
-                    assert_eq!(current, LIGHT_CORE_VERSION);
-                }
-                other => {
-                    panic!("ожидался Fatal(IncompatibleCore) на pre-release, получен {other:?}")
-                }
-            }
-        } else {
-            assert!(
-                matches!(result, ValidationResult::Ok(_)),
-                "stable ядро + bare caret: ожидался Ok, получен {result:?}"
-            );
-        }
+        assert!(
+            matches!(result, ValidationResult::Ok(_)),
+            "unified rule: bare caret {bare_caret} на {LIGHT_CORE_VERSION} должно быть Ok, получен {result:?}"
+        );
     }
 }
