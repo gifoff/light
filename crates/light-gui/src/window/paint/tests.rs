@@ -48,12 +48,30 @@ fn render_tree(root: &VElement, w: u32, h: u32) -> Vec<u8> {
     let mut pixels = vec![0u8; (w * h * 4) as usize];
     let region = light_vdom::layout::Rect::new(0.0, 0.0, w as f32, h as f32);
     let mut canvas = Canvas::new(&mut pixels, w, h, region);
-    let Ok(font) = FontMetrics::load() else {
-        return pixels;
-    };
+    // FIX6: больше не возвращаем молча нулевой буфер при ошибке загрузки
+    // шрифта — паникуем с внятным сообщением, чтобы будущая поломка
+    // загрузки давала ОДНУ причину, а не 7 пиксельных диффов.
+    let font = FontMetrics::load().expect(
+        "FontMetrics::load() failed — paint tests require a system font; \
+         проверь, что хотя бы один из CANDIDATES (font.rs) существует \
+         на этой ОС (Windows/Linux/macOS)",
+    );
     let interaction = Interaction::default();
     render(&layout, &mut canvas, &font, 1.0, interaction, rgb(0, 0, 0));
     pixels
+}
+
+/// Canary-тест (FIX6): если будущая поломка загрузки шрифта снова даст
+/// пустой буфер, этот тест упадёт первой строкой с внятным сообщением,
+/// а не все 7 pixel-diff-тестов ниже одновременно.
+#[test]
+fn rendered_buffer_is_not_empty() {
+    let root = column("", vec![]);
+    let pixels = render_tree(&root, 16, 16);
+    assert!(
+        pixels.iter().any(|&b| b != 0),
+        "rendered buffer is all-zero — font load silently skipped or render did nothing"
+    );
 }
 
 #[test]

@@ -13,7 +13,7 @@ use crate::Error;
 use light_vdom::layout::TextMetrics;
 
 /// Шрифты, которые пробуются по порядку: сначала типовые для Windows,
-/// затем для Linux/Unix.
+/// затем для Linux/Unix, затем macOS-названия.
 const CANDIDATES: &[&str] = &[
     "segoeui.ttf",
     "arial.ttf",
@@ -21,6 +21,17 @@ const CANDIDATES: &[&str] = &[
     "verdana.ttf",
     "DejaVuSans.ttf",
     "LiberationSans-Regular.ttf",
+    // macOS (корень /System/Library/Fonts + Supplemental):
+    "Geneva.ttf",
+    "Monaco.ttf",
+    "Arial.ttf",
+    "Verdana.ttf",
+    "Tahoma.ttf",
+    "GENEVA.TTF",
+    "MONACO.TTF",
+    "ARIAL.TTF",
+    "VERDANA.TTF",
+    "TAHOMA.TTF",
 ];
 
 /// Цветные эмодзи-файлы, которые ищутся после основного шрифта.
@@ -44,10 +55,18 @@ fn font_dirs() -> Vec<PathBuf> {
     dirs.push(PathBuf::from("/usr/share/fonts/truetype/liberation"));
     dirs.push(PathBuf::from("/usr/share/fonts/TTF"));
     dirs.push(PathBuf::from("/usr/share/fonts"));
+    // 0.21.0: на macOS Arial/Verdana/Tahoma лежат в Supplemental, а не в
+    // корне /System/Library/Fonts — добавляем оба каталога (по приоритету).
+    dirs.push(PathBuf::from("/System/Library/Fonts"));
+    dirs.push(PathBuf::from("/System/Library/Fonts/Supplemental"));
     dirs
 }
 
-/// Каталог macOS-шрифтов (если доступен).
+/// Каталог macOS-шрифтов (если доступен) — корень `/System/Library/Fonts`.
+///
+/// `Supplemental` (Arial/Verdana/Tahoma) уже включён в [`font_dirs`]
+/// (0.21.0), поэтому эта функция осталась для emoji fallback и старых
+/// сборок, где Supplemental мог отсутствовать.
 fn macos_font_dir() -> Option<PathBuf> {
     PathBuf::from("/System/Library/Fonts")
         .exists()
