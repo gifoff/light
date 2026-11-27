@@ -775,28 +775,39 @@ mod custom_attr_interpolation_tests {
     // D3: unit-тест зарегистрированной фабрики из distributed-slice
     // -----------------------------------------------------------------------
 
-    /// Д3: проверка, что зарегистрированная в distributed-slice фабрика
+    /// D3: проверка, что зарегистрированная в distributed-slice фабрика
     /// получает RESOLVED-атрибуты (интерполированные), а не raw.
     ///
     /// Создаём простой кастомный элемент, регистрируем его в
     /// `REGISTERED_COMPONENTS`, вызываем `parse_template` с шаблоном
-    /// `<test-progress value="{{val}}">` и проверяем, что attrs в дереве
-    /// содержат `("value", "42")` — т.е. интерполяция прошла.
+    /// `<test-progress value="{{val}}">` и проверяем, что attrs, которые
+    /// фабрика получила через `render()`, содержат `("value", "42")`.
     struct TestProgress;
     impl crate::plugins::CustomElement for TestProgress {
         fn tag(&self) -> &'static str {
             "test-progress"
         }
-        fn render(&self, _attrs: &[(&'static str, String)], _children: &[VElement]) -> VElement {
+        fn render(&self, attrs: &[(&'static str, String)], _children: &[VElement]) -> VElement {
+            // Записываем attrs в thread-local для проверки тестом.
+            RECEIVED_ATTRS.with(|m| {
+                *m.borrow_mut() = attrs.to_vec();
+            });
             VElement::container(intern_key(""), NodeKind::Column, Vec::new())
         }
+    }
+
+    // Thread-local storage for received attrs (avoids cross-test interference).
+    thread_local! {
+        static RECEIVED_ATTRS: std::cell::RefCell<Vec<(&'static str, String)>> =
+            const { std::cell::RefCell::new(Vec::new()) };
     }
 
     #[linkme::distributed_slice(crate::plugins::REGISTERED_COMPONENTS)]
     static TEST_PROGRESS: crate::plugins::CustomElementFactory =
         crate::plugins::CustomElementFactory {
             tag: "test-progress",
-            core_version_req: "^0.1",
+            // Обновлять при major-bump (release checklist): текущий core 0.21.
+            core_version_req: "^0.21",
             crate_name: "test-progress",
             provides: &["test-progress"],
             factory: || Box::new(TestProgress),
@@ -823,9 +834,18 @@ mod custom_attr_interpolation_tests {
         );
         let tree = tree.unwrap();
 
-        // Ищем узел с NodeKind::Custom("test-progress"). Атрибуты не сохраняются
-        // в дереве (они передаются фабрике через render()); сам факт успешного
-        // парсинга подтверждает, что фабрика получила attrs без ошибок.
+        // Дрейним attrs, которые фабрика получила через render().
+        let received = RECEIVED_ATTRS.with(|m| m.borrow().clone());
+
+        // Проверяем, что attrs интерполированы: ("value", "42"), а не raw "{{ val }}".
+        assert_eq!(received.len(), 1, "фабрика должна получить ровно 1 атрибут");
+        assert_eq!(received[0].0, "value", "имя атрибута должно быть 'value'");
+        assert_eq!(
+            received[0].1, "42",
+            "значение атрибута должно быть '42' (резолвлено из {{ val }})"
+        );
+
+        // Дополнительно: узел Custom("test-progress") должен быть в дереве.
         let mut found = false;
         for node in collect_all(&tree) {
             if let NodeKind::Custom(tag) = &node.kind
