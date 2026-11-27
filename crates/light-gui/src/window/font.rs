@@ -344,17 +344,55 @@ pub fn line_height(font: &FontVec, font_size: f32) -> f32 {
 mod tests {
     use super::*;
 
+    /// Контракт [`measure`]: высота строки — типографская `ascent - descent`
+    /// БЕЗ `line-gap` (см. doc-комментарий к `measure`, строки 315-319);
+    /// ширина — сумма горизонтальных шагов глифов. Проверяем эти два факта
+    /// независимо: ожидаемые значения считаем напрямую из того же основного
+    /// шрифта (`metrics.font()` = `fonts[0]`), а не через `measure()`.
+    ///
+    /// FIX6b: раньше тест дополнительно утверждал
+    /// `|scaled.height() - height - scaled.line_gap()| < 0.01`. Поскольку
+    /// `ab_glyph::Font::height()` по определению равна `ascent - descent`
+    /// (и никогда не включает `line_gap`), это тождество вырождается в
+    /// `|line_gap| < 0.01` — проверку конкретного загруженного шрифта, а не
+    /// контракта `measure()`. На Windows (Segoe UI) `line_gap == 0`, поэтому
+    /// оно проходило; на macOS загруженный шрифт имеет ненулевой `line_gap`,
+    /// и тест падал. Это латентный дефект, а не pre-existing: до 880a48d
+    /// тест молча пропускался на macOS (см. docs/TODO_TESTS.md).
     #[test]
     fn measure_excludes_line_gap() {
         let Ok(metrics) = FontMetrics::load() else {
+            eprintln!(
+                "SKIP: system font unavailable ({}); measure() contract not checked on this platform",
+                std::env::consts::OS
+            );
             return;
         };
         let size = 20.0;
-        let scaled = metrics.font().as_scaled(PxScale::from(size));
-        let (_, height) = metrics.measure("Ag", size);
+        let text = "Ag";
+        let font = metrics.font();
+        let scaled = font.as_scaled(PxScale::from(size));
 
-        assert!((height - (scaled.ascent() - scaled.descent())).abs() < 0.01);
-        assert!((scaled.height() - height - scaled.line_gap()).abs() < 0.01);
+        // Реальный контракт высоты: ascent - descent, без line_gap.
+        let expected_height = scaled.ascent() - scaled.descent();
+        // Реальный контракт ширины: сумма h_advance по символам.
+        let expected_width: f32 = text
+            .chars()
+            .map(|ch| scaled.h_advance(font.glyph_id(ch)))
+            .sum();
+
+        let (width, height) = metrics.measure(text, size);
+
+        assert!(
+            (height - expected_height).abs() < 0.01,
+            "measure() height {height} must equal ascent - descent \
+             ({expected_height}) of the primary font, excluding line_gap"
+        );
+        assert!(
+            (width - expected_width).abs() < 0.01,
+            "measure() width {width} must equal sum of glyph advances \
+             ({expected_width})"
+        );
     }
 
     /// ТЗ 0.14.3 Task 6.3: на Windows 🔥 должен резолвиться в один из
@@ -388,6 +426,10 @@ mod tests {
     #[test]
     fn whitespace_uses_primary_font() {
         let Ok(m) = FontMetrics::load() else {
+            eprintln!(
+                "SKIP: system font unavailable ({}); whitespace-primary-font check not run",
+                std::env::consts::OS
+            );
             return;
         };
         for ch in [' ', '\t', '\u{00A0}'] {
