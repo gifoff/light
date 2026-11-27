@@ -222,15 +222,17 @@ async fn download_and_validate_ok_manifest() {
     // (alpha, beta, rc…) попадают в диапазон. См. semver 2.0 pre-release rule.
     let crate_version = env!("CARGO_PKG_VERSION");
     let core_req = if crate_version.contains('-') {
+        // Pre-release: базовая часть до первого `-` + `-0`.
+        let base = crate_version.split('-').next().unwrap_or(crate_version);
+        format!("{base}-0")
+    } else {
+        // Stable: major.minor (caret).
         let parts: Vec<&str> = crate_version.split('.').collect();
         if parts.len() >= 2 {
-            format!("^{}.{}-0", parts[0], parts[1])
+            format!("^{}.{}", parts[0], parts[1])
         } else {
-            format!("^{crate_version}-0")
+            crate_version.to_string()
         }
-    } else {
-        let parts: Vec<&str> = crate_version.split('.').collect();
-        format!("^{}.{}", parts[0], parts[1])
     };
 
     let cargo_toml = format!(
