@@ -1,5 +1,71 @@
 # Известные проблемы с тестами
 
+## macOS: `measure_excludes_line_gap` — латентный дефект, раскрыт в 880a48d (2026-11-27, OPEN)
+
+**Симптом:** CI run 46032897413 на macos-latest красный на одном тесте
+(`window::font::tests::measure_excludes_line_gap`, `font.rs:357`):
+`assertion failed: (scaled.height() - height - scaled.line_gap()).abs() < 0.01`.
+Всё остальное зелёное (light-gui lib 269 passed; 7 paint-тестов + canary — green).
+
+**Статус: латентный, НЕ pre-existing.** Корректная классификация: до `880a48d`
+(включение macOS-путей в `FontMetrics::load`) тест **молча пропускался** на
+macOS через early-return `else { return; }` в `FontMetrics::load() -> Err`.
+То есть «падал» он только после того, как мы починили загрузку шрифтов и он
+начал реально выполняться. Формулировка «pre-existing failure» неверна и
+отозвана: это наш дефект, замаскированный silent-skip'ом, а не проблема
+окружения или платформы. (См. FIX6b-отчёт: `target/temp/FIX6-REPORT.md`.)
+
+**Причина (диагностика, чтение исходников ab_glyph 0.2.32 + ttf-parser):**
+старый assertion строка 357 `(scaled.height() - height - scaled.line_gap())`
+вырождается в `|line_gap| < 0.01`, потому что `ab_glyph::Font::height()` по
+определению равен `ascent - descent` (и никогда не включает `line_gap`)
+(`ab_glyph-0.2.32/src/scale.rs:118–127`, `src/font.rs:90–95`), а `height`
+(второе значение `measure()`) = `ascent - descent` (`font.rs:320`). На Windows
+(SEgoe UI) `line_gap == 0` → проверка тривиально проходила; на macOS загруженный
+шрифт имеет ненулевой `line_gap` → проверка падала. Это проверка конкретного
+загруженного шрифта, а не контракта `measure()`.
+
+**Починено (тест переписан под реальный контракт, не ослаблен):**
+`test(gui): assert real measure() contract instead of font-specific algebra`
+(commit `5cf9e12`). Новый тест независимо (не через `measure()`) вычисляет
+ожидаемую высоту как `scaled.ascent() - scaled.descent()` и ожидаемую ширину
+как сумму `h_advance` по символам основного шрифта, и сравнивает их с фактическим
+результатом `measure()`. Без tautology, без числового identity на `line_gap`.
+Локально (Windows): 81 passed / 0 failed, включая все 7 paint-тестов + canary.
+Окончательное подтверждение на macOS придёт со следующим CI-run'ом.
+
+## Открытые items из FIX6/FIX6b (2026-11-27)
+
+- **OPEN — молчаливый skip в `font.rs:349` (закрыто коммитом `932beb2`/`5cf9e12`).**
+  Все 4 font-dependent теста, которые молчаливо возвращались при недоступности
+  системного шрифта, теперь печатают явную строку `SKIP: …` (с названием ОС)
+  перед `return`. Места: `font.rs` `measure_excludes_line_gap` (в рамках
+  `5cf9e12`), `font.rs` `whitespace_uses_primary_font` (в рамках `5cf9e12`),
+  `menu.rs` `text_fits_vertical_line_box` + `ellipsized_text_fits_width`
+  (в рамках `932beb2`). Тихие скипы запрещены инвариантом FIX6b.
+
+- **Наблюдение (НЕ установленный баг) — Windows-лоадер подтягивает emoji/symbol-шрифты.**
+  При диагностике измерений локально (Windows, Segoe UI) выяснилось, что
+  `FontMetrics::load()` на Windows дополнительно подтягивает эмодзи/символьные
+  fallback-шрифты (2 fallback'а в `fonts[]`). Это ожидаемое поведение
+  (CANDIDATES + EMOJI_CANDIDATES), не баг — зафиксировано как наблюдение для
+  осведомлённости, приоритет низкий.
+
+- **OPEN — ticket «bundle font», `app.rs:81` (`Error::Font`).**
+  Решение об бандлинге шрифта в крейт (вместо зависимости от системного)
+  требует архитектурного решения: оставить ошибку `Error::Font` как есть,
+  либо добавить bundled-шрифт как fallback. Пока architect не примет решение —
+  item открыт, production-код не меняется (scope-gate FIX6).
+
+## macOS font-discovery fix: `880a48d` (2026-11-27, закрывает root-cause CI-red)
+
+`crates/light-gui/src/window/font.rs` — `FontMetrics::load()` теперь включает
+macOS-пути (`/System/Library/Fonts`, `/System/Library/Fonts/Supplemental`) и
+соответствующие кандидаты в списки поиска, поэтому на macos-latest системный
+шрифт успешно закладывается. Это сняло root-cause красноты CI 46032897413.
+Отдельно от этого фикса тест `measure_excludes_line_gap` имел собственную
+латентную проблему (см. раздел выше) — она исправлена в `5cf9e12`.
+
 ## `light devtools move` / `move-leave` не работают с runtime-templates (known issue, цель — 0.22.0) (2026-11-24)
 
 **Симптом:** при включённой фиче `runtime-templates` команды
