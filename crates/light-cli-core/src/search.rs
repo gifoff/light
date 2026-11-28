@@ -117,15 +117,33 @@ pub const LIGHT_PREFIXES: &[&str] = &[
     "light-subsystem-",
 ];
 
-/// Оставляет только крейты с Light-префиксами (по имени).
+/// Точное имя ядра Light, которое не начинается ни с одного префикса из
+/// [`LIGHT_PREFIXES`], но должно проходить фильтр: `light` (фреймворк и
+/// сама утилита).
+///
+/// Расширение до «всё, что начинается с `light`» намеренно НЕ сделано:
+/// в выдаче crates.io есть чужие крейты (`light-account`, `light-sdk`,
+/// `light-macros`, ...) — они обязаны оставаться отсечёнными.
+const LIGHT_CORE_NAME: &str = "light";
+
+/// Имя является Light-крейтом: ровно `light` (ядро) либо один из
+/// префиксов [`LIGHT_PREFIXES`] (`light-fw-*` и остальные семейства).
+///
+/// Сокращение `starts_with("light")` оптимизирует проверку; семантику задаёт
+/// точное имя + перечисленные префиксы.
+pub fn is_light_crate_name(name: &str) -> bool {
+    name == LIGHT_CORE_NAME || LIGHT_PREFIXES.iter().any(|p| name.starts_with(p))
+}
+
+/// Оставляет только крейты Light (по имени).
+///
+/// `light search light` должен находить сам CLI `light`; чужие крейты
+/// вроде `light-account` отсечены тем, что не равны `light` и не несут
+/// `light-fw-`/`light-widget-`/... префиксов.
 pub fn filter_by_prefix(results: &[CrateSearchResult]) -> Vec<CrateSearchResult> {
     results
         .iter()
-        .filter(|r| {
-            LIGHT_PREFIXES
-                .iter()
-                .any(|prefix| r.name.starts_with(prefix))
-        })
+        .filter(|r| is_light_crate_name(&r.name))
         .cloned()
         .collect()
 }
@@ -219,9 +237,14 @@ mod tests {
     }
 
     fn result(name: &str, description: Option<&str>) -> CrateSearchResult {
+        crate_result(name, "0.3.0", description)
+    }
+
+    /// [`CrateSearchResult`] с произвольной версией (для ТЗ-тестов).
+    fn crate_result(name: &str, version: &str, description: Option<&str>) -> CrateSearchResult {
         CrateSearchResult {
             name: name.to_string(),
-            version: "0.3.0".to_string(),
+            version: version.to_string(),
             description: description.map(str::to_string),
             url: format!("https://crates.io/crates/{name}"),
             downloads: 0,
@@ -369,6 +392,177 @@ mod tests {
         let results = vec![result("my-datepicker", None)];
         let filtered = filter_by_prefix(&results);
         assert!(filtered.is_empty());
+    }
+
+    // ─── FIX8: `light search light` должен находить сам CLI `light` ──────
+
+    /// ТЗ: запрос `light` через mock-реестр содержит `light 0.21.0-alpha.1`.
+    ///
+    /// Набор результатов имитирует живой ответ crates.io на `q=light`
+    /// (проба `fix8-t0-prefilter.txt`): `light`, `seiza-stacking`,
+    /// `light-account`, `native-theme-gpui`, `light-sdk`, ...
+    #[test]
+    fn search_light_query_finds_core_cli_crate() {
+        let remote = MockRemote {
+            results: vec![
+                crate_result("light", "0.21.0-alpha.1", Some("Утилита light")),
+                crate_result("seiza-stacking", "0.5.0", Some("Stacking library")),
+                crate_result("light-account", "1.0.0", None),
+                crate_result("light-sdk", "2.0.0", None),
+                crate_result("serde", "1.0.0", Some("Serialization framework")),
+            ],
+        };
+        let found = filter_by_prefix(&remote.search("light", 30).expect("search"));
+        let names: Vec<&str> = found.iter().map(|r| r.name.as_str()).collect();
+        assert!(
+            names.contains(&"light"),
+            "`light` (CLI) должен пройти фильтр: {names:?}"
+        );
+        // Третьи стороны отсечены фильтром по имени (регрессия до фикса:
+        // `light` сам не проходил, и всё было «Ничего не найдено»).
+        assert!(!names.contains(&"light-account"));
+        assert!(!names.contains(&"light-sdk"));
+        assert!(!names.contains(&"seiza-stacking"));
+        assert!(!names.contains(&"serde"));
+        // Проверка версии из ТЗ.
+        let core = found
+            .iter()
+            .find(|r| r.name == "light")
+            .expect("found above");
+        assert_eq!(core.version, "0.21.0-alpha.1");
+    }
+
+    /// Регрессия FIX8 (до правки): `light search light` возвращал
+    /// «Ничего не найдено», т.к. ни один результат живого поиска не
+    /// начинался с `LIGHT_PREFIXES`.
+    #[test]
+    fn live_query_light_not_all_filtered_out() {
+        // Точный состав ответа crates.io `q=light&per_page=30` (проба
+        // fix8-t0-prefilter.txt); до фикса фильтр отбрасывал ВСЕ 30.
+        let results: Vec<CrateSearchResult> = [
+            "light",
+            "seiza-stacking",
+            "light-account",
+            "native-theme-gpui",
+            "light-sdk",
+            "tendermint-light-client",
+            "dark-light",
+            "terminal-light",
+            "bevy_voxel_world",
+            "tui-nuances",
+            "colorimetry",
+            "bevy_light_2d",
+            "flight-lighting",
+            "oxideav-gltf",
+            "light-client",
+            "seiza-calibration",
+            "light-curve-feature",
+            "light-batched-merkle-tree",
+            "arborium-theme",
+            "bevy_firefly",
+            "egui_bench",
+            "rs-matter",
+            "light-macros",
+            "light-poseidon-nostd",
+            "giallo",
+            "tendermint-light-client-detector",
+            "light-merkle-tree-metadata",
+            "light-curve-dmdt",
+            "light-event",
+            "hns-light-p2p",
+        ]
+        .iter()
+        .map(|name| result(name, None))
+        .collect();
+        let filtered = filter_by_prefix(&results);
+        assert_eq!(filtered.len(), 1, "только сам `light` должен пройти");
+        assert_eq!(filtered[0].name, "light");
+    }
+
+    /// ТЗ: запрос `light-fw` содержит `light-fw-element-form` и
+    /// `light-fw-behavior-validation`.
+    #[test]
+    fn search_light_fw_query_finds_published_components() {
+        let remote = MockRemote {
+            results: vec![
+                crate_result("light-fw-element-form", "0.17.0", Some("Элементы форм")),
+                crate_result("light-fw-behavior-validation", "0.17.0", Some("Валидация")),
+                crate_result("light", "0.21.0-alpha.1", Some("Утилита light")),
+                crate_result("light-account", "1.0.0", None),
+            ],
+        };
+        let found = filter_by_prefix(&remote.search("light-fw", 30).expect("search"));
+        let names: Vec<&str> = found.iter().map(|r| r.name.as_str()).collect();
+        // Регресс-условие приёмки: чужие `light-*` отсечены.
+        assert!(
+            !names.contains(&"light-account"),
+            "чужой light-* должен быть отсечён: {names:?}"
+        );
+        // Ядро `light` (опубликовано на crates.io) тоже проходит.
+        assert!(names.contains(&"light"));
+        // Обязательные компоненты ТЗ:
+        assert!(
+            names.contains(&"light-fw-element-form"),
+            "обязательный компонент отсутствует: {names:?}"
+        );
+        assert!(
+            names.contains(&"light-fw-behavior-validation"),
+            "обязательный компонент отсутствует: {names:?}"
+        );
+    }
+
+    /// Ровно `light` (ядро) и префиксы из [`LIGHT_PREFIXES`] (`light-fw-*`,
+    /// `light-widget-*`, ...) проходят; мета-крейт `light-fw` (без дефиса)
+    /// и чужие `light-*` — нет (условие приёмки №1).
+    #[test]
+    fn is_light_crate_name_exact_and_prefix() {
+        assert!(
+            is_light_crate_name("light"),
+            "ядро `light` должно проходить"
+        );
+        assert!(is_light_crate_name("light-fw-ui"));
+        assert!(is_light_crate_name("light-widget-datepicker"));
+        assert!(is_light_crate_name("light-element-form"));
+        assert!(is_light_crate_name("light-fw-element-form"));
+        assert!(is_light_crate_name("light-behavior-validation"));
+        // Не Light:
+        assert!(
+            !is_light_crate_name("light-fw"),
+            "мета-крейт без префикса — не компонент"
+        );
+        assert!(
+            !is_light_crate_name("light-account"),
+            "чужой light-* отсечён"
+        );
+        assert!(!is_light_crate_name("light-sdk"));
+        assert!(!is_light_crate_name("light-macros"));
+        assert!(!is_light_crate_name("flight-lighting"));
+        assert!(!is_light_crate_name("my-datepicker"));
+        assert!(!is_light_crate_name("serde"));
+    }
+
+    /// `light-fw-ui` (не опубликован) при запросе `light-fw` не появляется —
+    /// в реестре такого крейта просто нет; mock имитирует живой ответ.
+    #[test]
+    fn search_light_fw_ui_not_in_live_results() {
+        let remote = MockRemote {
+            results: vec![
+                crate_result("light-fw-html", "0.20.2", Some("HTML")),
+                crate_result("light-fw-macros", "0.20.2", Some("Макросы")),
+                crate_result("light-fw-core", "0.20.2", Some("Ядро")),
+                crate_result("light-fw-cli-core", "0.20.2", Some("CLI")),
+                crate_result("light-fw-element-form", "0.20.2", Some("Элементы форм")),
+                crate_result("light-fw-behavior-validation", "0.20.2", Some("Валидация")),
+                crate_result("light", "0.21.0-alpha.1", Some("Утилита")),
+                crate_result("light-fw-devtools-web", "0.20.2", Some("DevTools")),
+            ],
+        };
+        let found = filter_by_prefix(&remote.search("light-fw", 30).expect("search"));
+        let names: Vec<&str> = found.iter().map(|r| r.name.as_str()).collect();
+        assert!(
+            !names.contains(&"light-fw-ui"),
+            "`light-fw-ui` не опубликован на crates.io: {names:?}"
+        );
     }
 
     #[test]
