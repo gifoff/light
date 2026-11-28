@@ -150,7 +150,18 @@ fn check_project(
         let info = registry.by_name(&dep.name);
         let dep_version = resolve_dependency_version(project_root, &dep.name)?
             .or_else(|| info.map(|i| i.latest_version.clone()));
-        let compatible = match (info, &core_version) {
+        // Единое правило pre-release (FIX7, FIX8b): ядро 0.21.0-alpha.1
+        // считается 0.21.0 при проверке совместимости. Срезаем pre-release и
+        // build-метаданные у ТЕКУЩЕЙ версии ядра перед матчем (не у требования),
+        // как в `crate::metadata::installed::check_core` — иначе формальный
+        // semver 2.0 не матчит `^0.21` против `0.21.0-alpha.1` и doctor
+        // ложно помечает компонент «несовместим».
+        let mut effective_core = core_version.clone();
+        if let Some(v) = effective_core.as_mut() {
+            v.pre = semver::Prerelease::EMPTY;
+            v.build = semver::BuildMetadata::EMPTY;
+        }
+        let compatible = match (info, &effective_core) {
             (Some(info), Some(core)) => info.core_requirement.matches(core),
             _ => true,
         };

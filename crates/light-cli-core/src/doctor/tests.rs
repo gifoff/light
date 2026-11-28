@@ -212,6 +212,37 @@ mod tests {
         );
     }
 
+    /// FIX8b: проект с `light-fw-ui` (core = `^0.21`) на ядре
+    /// `0.21.0-alpha.1` обязан показывать компонент БЕЗ флага «несовместим».
+    /// До фикса `checks.rs` матчил requirement против сырой pre-release версии,
+    /// и формальный semver 2.0 исключал её из release-требования `^0.21`.
+    #[test]
+    fn doctor_accepts_prerelease_core_with_release_requirement() {
+        let dir = temp_dir("prerelease-core");
+        write_project(
+            &dir,
+            "[package]\nname = \"p\"\nversion = \"0.1.0\"\n[workspace]\n\n\
+             [dependencies]\nlight = \"0.21.0-alpha.1\"\nlight-fw-ui = \"0.21.0-alpha.1\"\n",
+            &[("app.html", "<dialog></dialog>")],
+        );
+        let report = doctor(&dir, &ok_probe()).expect("doctor");
+        assert_eq!(
+            report.project.core_version.as_deref(),
+            Some("0.21.0-alpha.1"),
+            "ядро должно распознаться как pre-release"
+        );
+        let ui = report
+            .components
+            .iter()
+            .find(|c| c.name == "light-fw-ui")
+            .unwrap_or_else(|| panic!("ожидался light-fw-ui: {:?}", report.components));
+        assert!(
+            ui.compatible,
+            "light-fw-ui обязан быть совместим с core 0.21.0-alpha.1 (единое правило pre-release)"
+        );
+        assert!(!report.has_errors(), "все в порядке: {:?}", report.issues);
+    }
+
     #[test]
     fn missing_cargo_toml_is_error() {
         let dir = temp_dir("no-manifest");
