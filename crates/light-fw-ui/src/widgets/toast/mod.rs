@@ -27,7 +27,7 @@
 //! цвета — через общий парсер (формат `0xAARRGGBB`, имён нет — только
 //! `#RRGGBB[AA]`/`0x…`; «black»-типы задаются как `#000000`).
 //!
-//! регистрация: подключение `light-ui` как зависимости автоматически делает
+//! регистрация: подключение `light-fw-ui` как зависимости автоматически делает
 //! тег `<toast-container>` доступным в runtime-шаблонах.
 
 use std::cell::RefCell;
@@ -287,7 +287,7 @@ impl CustomElement for ToastContainer {
 const TOAST_CONTAINER: CustomElementFactory = CustomElementFactory {
     tag: "toast-container",
     core_version_req: "^0.21",
-    crate_name: "light-ui",
+    crate_name: "light-fw-ui",
     provides: &["toast-container"],
     factory: || Box::new(ToastContainer),
 };
@@ -399,7 +399,7 @@ mod tests {
     }
 
     /// Регистрация в distributed-slice: `lookup("toast-container")`
-    /// возвращает фабрику light-ui (тег доступен в runtime-шаблонах).
+    /// возвращает фабрику light-fw-ui (тег доступен в runtime-шаблонах).
     #[test]
     fn toast_container_registered_in_distributed_slice() {
         let factory = lookup("toast-container");
@@ -408,7 +408,7 @@ mod tests {
             "tag \"toast-container\" must be registered"
         );
         let factory = factory.expect("checked");
-        assert_eq!(factory.crate_name, "light-ui");
+        assert_eq!(factory.crate_name, "light-fw-ui");
         assert_eq!(factory.provides, &["toast-container"]);
     }
 

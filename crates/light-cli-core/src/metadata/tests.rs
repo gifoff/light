@@ -369,7 +369,7 @@ elements = ["x"]
         assert!(parts.len() >= 2, "LIGHT_CORE_VERSION must have major.minor");
         let (major, minor) = (parts[0].to_string(), parts[1].to_string());
 
-        // 1. ^MAJOR.MINOR — совместимо (основной кейс light-ui: core = "^0.21").
+        // 1. ^MAJOR.MINOR — совместимо (основной кейс light-fw-ui: core = "^0.21").
         let current_caret = format!("^{major}.{minor}");
         if is_prerelease {
             // До FIX7 это было Fatal; после — Ok (или Warning, если provides пуст).
@@ -504,22 +504,22 @@ elements = ["x"]
         );
     }
 
-    /// Release-gate: реальный манифест `crates/light-ui/Cargo.toml` (с
+    /// Release-gate: реальный манифест `crates/light-fw-ui/Cargo.toml` (с
     /// `core = "^0.21"` и 4 элементами) должен проходить валидацию против
     /// текущей версии ядра (`LIGHT_CORE_VERSION`). До FIX7 это было
     /// `Fatal(IncompatibleCore)` из-за формального semver; после — `Ok`.
-    /// Тест падает, если кто-то изменит `core` в light-ui на несовместимое
+    /// Тест падает, если кто-то изменит `core` в light-fw-ui на несовместимое
     /// значение или сломает единственное правило pre-release в `check_core`.
     #[test]
-    fn own_light_ui_manifest_validates_against_current_core() {
-        let p = concat!(env!("CARGO_MANIFEST_DIR"), "/../light-ui/Cargo.toml");
+    fn own_light_fw_ui_manifest_validates_against_current_core() {
+        let p = concat!(env!("CARGO_MANIFEST_DIR"), "/../light-fw-ui/Cargo.toml");
         let text = std::fs::read_to_string(p).unwrap_or_else(|e| {
-            panic!("не удалось прочитать light-ui/Cargo.toml по пути {p}: {e}")
+            panic!("не удалось прочитать light-fw-ui/Cargo.toml по пути {p}: {e}")
         });
-        let result = validate_metadata(&text, "light-ui");
+        let result = validate_metadata(&text, "light-fw-ui");
         assert!(
             matches!(result, ValidationResult::Ok(_)),
-            "light-ui manifest (core = \"^0.21\") должен быть Ok на ядре {}, получен {result:?}",
+            "light-fw-ui manifest (core = \"^0.21\") должен быть Ok на ядре {}, получен {result:?}",
             crate::metadata::types::LIGHT_CORE_VERSION
         );
     }

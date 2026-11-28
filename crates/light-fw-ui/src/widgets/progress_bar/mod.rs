@@ -116,7 +116,7 @@ impl CustomElement for ProgressBar {
 /// (distributed-slice). `const`: все поля — `&'static`/`fn pointer`.
 ///
 /// `core_version_req: "^0.21"` — согласовано с tooltip/toast-container/dialog
-/// (одна линейка виджетов в light-ui). Кастомный матчер: для 0.x действует
+/// (одна линейка виджетов в light-fw-ui). Кастомный матчер: для 0.x действует
 /// minor-floor (`^0.N` совместимо при `cur_minor >= N`, patch игнорируется);
 /// pre-release/build-метаданные ядра (например `0.21.0-alpha.1`) игнорируются
 /// `parse_triple` — alpha-ядро считается своим release-триплетом. См.
@@ -124,7 +124,7 @@ impl CustomElement for ProgressBar {
 const PROGRESS_BAR: CustomElementFactory = CustomElementFactory {
     tag: "progress",
     core_version_req: "^0.21",
-    crate_name: "light-ui",
+    crate_name: "light-fw-ui",
     provides: &["progress"],
     factory: || Box::new(ProgressBar),
 };
@@ -157,7 +157,7 @@ fn parse_px(value: &str) -> Option<f32> {
 /// Разбирает цвет: CSS-имена (через lower-case) + общие VDOM-форматы
 /// `#RRGGBB[AA]`/`0x…` (порядок байт — **`0xRRGGBBAA`**, т.е. alpha в
 /// младшем байте; совпадает с VDOM-тестами: `#FF0000` → `0xFF0000FF`).
-/// light-ui поддерживает **наименования** для удобного HTML-авторинга,
+/// light-fw-ui поддерживает **наименования** для удобного HTML-авторинга,
 /// которые runtime-шаблоны тоже понимают: `black`, `white`, `red`, `green`,
 /// `blue`, `yellow`, `orange`, `purple`, `gray`/`grey`. Всё остальное
 /// делегируется общему VDOM-парсеру [`parse_color`].
@@ -289,14 +289,14 @@ mod tests {
     }
 
     /// Тег зарегистрирован в distributed-slice: `lookup("progress")` находит
-    /// фабрику light-ui с `provides == ["progress"]`.
+    /// фабрику light-fw-ui с `provides == ["progress"]`.
     #[test]
     fn progress_registered_in_distributed_slice() {
         let Some(factory) = lookup("progress") else {
             panic!("фабрика 'progress' не найдена в REGISTERED_COMPONENTS");
         };
         assert_eq!(factory.tag, "progress");
-        assert_eq!(factory.crate_name, "light-ui");
+        assert_eq!(factory.crate_name, "light-fw-ui");
         assert_eq!(factory.provides, &["progress"]);
         assert_eq!(factory.core_version_req, "^0.21");
     }

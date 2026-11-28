@@ -2400,6 +2400,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "light-fw-ui"
+version = "0.21.0-alpha.1"
+dependencies = [
+ "light-fw-core",
+ "light-gui",
+ "linkme",
+]
+
+[[package]]
 name = "light-gui"
 version = "0.21.0-alpha.1"
 dependencies = [
@@ -2438,15 +2447,6 @@ dependencies = [
  "light-gui",
  "pixels",
  "winit",
-]
-
-[[package]]
-name = "light-ui"
-version = "0.21.0-alpha.1"
-dependencies = [
- "light-fw-core",
- "light-gui",
- "linkme",
 ]
 
 [[package]]

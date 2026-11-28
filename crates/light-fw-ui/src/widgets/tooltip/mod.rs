@@ -30,7 +30,7 @@
 //! поведение совпадало со статическими элементами.
 //!
 //! Регистрация — через `linkme::distributed_slice(REGISTERED_COMPONENTS)`,
-//! поэтому подключение `light-ui` как зависимости автоматически делает тег
+//! поэтому подключение `light-fw-ui` как зависимости автоматически делает тег
 //! `<tooltip>` доступным в runtime-шаблонах.
 
 use std::str::FromStr;
@@ -196,7 +196,7 @@ impl CustomElement for Tooltip {
 const TOOLTIP: CustomElementFactory = CustomElementFactory {
     tag: "tooltip",
     core_version_req: "^0.21",
-    crate_name: "light-ui",
+    crate_name: "light-fw-ui",
     provides: &["tooltip"],
     factory: || Box::new(Tooltip),
 };
@@ -326,13 +326,13 @@ mod tests {
     }
 
     /// Регистрация в distributed-slice: `lookup("tooltip")` возвращает
-    /// фабрику light-ui (тег доступен в runtime-шаблонах без магии).
+    /// фабрику light-fw-ui (тег доступен в runtime-шаблонах без магии).
     #[test]
     fn tooltip_registered_in_distributed_slice() {
         let factory = lookup("tooltip");
         assert!(factory.is_some(), "tag \"tooltip\" must be registered");
         let factory = factory.expect("checked");
-        assert_eq!(factory.crate_name, "light-ui");
+        assert_eq!(factory.crate_name, "light-fw-ui");
         assert_eq!(factory.provides, &["tooltip"]);
     }
 

@@ -1,4 +1,4 @@
-//! # Light UI (0.21.0)
+//! # Light FW UI (0.21.0)
 //!
 //! Готовые виджеты поверх `light-fw-core` + `light-gui`: Toast, Tooltip,
 //! Dialog и ProgressBar.
@@ -25,7 +25,7 @@
 pub mod widgets;
 
 // Публичные реэкспорты: демо-приложения пишут
-// `use light_ui::{show_toast, ActiveToast, ToastContainer, ToastManager, Tooltip, Dialog};`.
+// `use light_fw_ui::{show_toast, ActiveToast, ToastContainer, ToastManager, Tooltip, Dialog};`.
 pub use widgets::{ActiveToast, Dialog, ToastContainer, ToastManager, Tooltip, show_toast};
 
 #[cfg(feature = "widget-progress")]

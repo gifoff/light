@@ -1,4 +1,4 @@
-//! Виджеты light-ui (0.21.0): Toast, Tooltip, Dialog, ProgressBar.
+//! Виджеты light-fw-ui (0.21.0): Toast, Tooltip, Dialog, ProgressBar.
 //!
 //! Toast — многозадачный: `show_toast(text, duration_ms)` добавляет toast в
 //! менеджер (`thread_local` [`toast::ToastManager`]), а `<toast-container>`
@@ -26,7 +26,7 @@ pub mod tooltip;
 pub mod progress_bar;
 
 // Публичные реэкспорты: демо-приложения пишут
-// `use light_ui::{show_toast, ToastContainer, Tooltip, ActiveToast, Dialog};`.
+// `use light_fw_ui::{show_toast, ToastContainer, Tooltip, ActiveToast, Dialog};`.
 pub use dialog::Dialog;
 pub use toast::{ActiveToast, ToastContainer, ToastManager, show_toast};
 pub use tooltip::Tooltip;

@@ -1,9 +1,9 @@
-## [0.21.0-alpha.1] - 2026-11-25
+﻿## [0.21.0-alpha.1] - 2026-11-25
 
 ### Added
 
-- **Tooltip и Toast виджеты** (`crates/light-ui/`).
-  Готовые элементы `light-ui` поверх `light-fw-core` + `light-gui`:
+- **Tooltip и Toast виджеты** (`crates/light-fw-ui/`).
+  Готовые элементы `light-fw-ui` поверх `light-fw-core` + `light-gui`:
   `<tooltip>` (позиционирование `position/top/right/bottom/left`, `z`,
   `pointer-events="none"` по умолчанию) и `<toast>` (аналогичная семантика).
   Зарегистрированы через Plugin API (`linkme::distributed_slice(REGISTERED_COMPONENTS)`),
@@ -17,26 +17,26 @@
   `pointer-events="none"` делает узел и его поддерево прозрачными для указателя
   (хит-тесты их пропускают), что позволяет вкладывать кликабельный текст внутрь
   неинтерактивного контейнера и наоборот.
-- **Dialog виджет** (`crates/light-ui/src/widgets/dialog/`). Готовый элемент
+- **Dialog виджет** (`crates/light-fw-ui/src/widgets/dialog/`). Готовый элемент
   `<dialog>` поверх `light-fw-core`: оверлей с `position=absolute`, по умолчанию
   отступ 50px от верхнего левого угла, белый фон, рамка 2px `#888888`, padding 16,
   z=5000 (явный `z="…"` переопределяет дефолт). Видимость через `v-if`.
   Позиционирование: `position/top/right/bottom/left` (явные атрибуты
   переопределяют дефолтное позиционирование). Зарегистрирован через Plugin API,
   подключается через `[package.metadata.light.provides] elements = ["dialog"]`.
-  Требует `use light_ui as _;` в бинарнике (linkme gotcha).
-- **ProgressBar виджет** (`crates/light-ui/src/widgets/progress_bar/`). Готовый
+  Требует `use light_fw_ui as _;` в бинарнике (linkme gotcha).
+- **ProgressBar виджет** (`crates/light-fw-ui/src/widgets/progress_bar/`). Готовый
   элемент `<progress>` с FLOW layout (fill растягивается на `value/max * 100%`
   ширины). Атрибуты: `value` (f32, дефолт 0.0), `max` (f32, дефолт 100.0),
   `color` (цвет fill, CSS-имена + hex, дефолт `#22C55E`), `background` (цвет
   трека, дефолт `#E5E7EB`), `height` (px, дефолт 10). Feature flag:
   `widget-progress` (включён по умолчанию). Зарегистрирован через Plugin API,
   подключается через `[package.metadata.light.provides] elements = ["progress"]`.
-  Требует `use light_ui as _;` в бинарнике.
+  Требует `use light_fw_ui as _;` в бинарнике.
 
 ### Changed
 
-- **`light-ui` теперь регистрирует 4 компонента** (Tooltip, Toast, Dialog,
+- **`light-fw-ui` теперь регистрирует 4 компонента** (Tooltip, Toast, Dialog,
   ProgressBar) вместо 2 (до 0.21.0-alpha.1).
 
 ### Fixed
@@ -47,12 +47,12 @@
   `0.21.0-alpha.1` считается своим release-триплетом `(0, 21, 0)`. До фикса
   `check_core_version` возвращал Err («не удалось разобрать версию ядра
   "0.21.0-alpha.1"») и runtime выбрасывал ВСЕ кастомные элементы (progress,
-  dialog, tooltip, toast). Ядро (`core`) в манифесте light-ui поднят до
+  dialog, tooltip, toast). Ядро (`core`) в манифесте light-fw-ui поднят до
   `"^0.21"`, все 4 фабрики (`tooltip`, `toast-container`, `dialog`,
   `progress`) теперь требуют `^0.21`. Семантика матчера не изменилась:
   формат требования остаётся `^MAJOR.MINOR[.PATCH]`, для 0.x действует
   minor-floor, настоящий semver — отдельный ticket.
-- **z-порядок для тултипов** (`crates/light-ui/src/widgets/tooltip/mod.rs`):
+- **z-порядок для тултипов** (`crates/light-fw-ui/src/widgets/tooltip/mod.rs`):
   корень `<tooltip>` получает `style.z = 1000` **только если атрибут `z` отсутствует**;
   явный `z="…"` переопределяет дефолт (фреймворк — механизм, пользователь — политика).
   `reorder_by_z` в `Layout::build` делает устойчивую сортировку братами по `style.z`,
@@ -308,7 +308,8 @@
 
 - **docs**: осстановлена кодировка UTF-8 в README.md, docs/README.md и docs/ARCHITECTURE.md (были повреждены при редактировании через PowerShell).
 - **docs**: бновлены версии до 0.17.7, исправлен namespace light → light-fw в таблице крейтов и примерах кода.
-- **docs**: quickstart.md, guide.md, cli.md актуализированы под текущие реалии (light-fw = 0.17, un_with_config, windows_subsystem).
+- **docs**: quickstart.md, guide.md, cli.md актуализированы под текущие реалии (light-fw = 0.17, 
+un_with_config, windows_subsystem).
 # Changelog
 
 Ð’ÑÐµ Ð·Ð°Ð¼ÐµÑ‚Ð½Ñ‹Ðµ Ð¸Ð·Ð¼ÐµÐ½ÐµÐ½Ð¸Ñ Ð¿Ñ€Ð¾ÐµÐºÑ‚Ð°. Ð¤Ð¾Ñ€Ð¼Ð°Ñ‚ Ð¾ÑÐ½Ð¾Ð²Ð°Ð½ Ð½Ð° [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), Ð²ÐµÑ€ÑÐ¸Ð¸ â€” Ð¿Ð¾ [Semantic Versioning](https://semver.org/lang/ru/).

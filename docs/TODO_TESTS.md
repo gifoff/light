@@ -112,7 +112,7 @@ DevTools-команды диспетчируют событие через `comp
   `create_dir_all` / `fs::write` → os error 5 (PermissionDenied) на macOS CI
   и локально под DSH sandbox. Фикс: skip-guard — при недоступности ФС тест
   логирует `note: skipping` и завершается без panic (`16b7dd0`, `fb1f825`).
-- **Clippy `derivable_impls`** — `crates/light-ui/src/widgets/toast/mod.rs:72`:
+- **Clippy `derivable_impls`** — `crates/light-fw-ui/src/widgets/toast/mod.rs:72`:
   ручной `impl Default for ToastManager` → `#[derive(Default)]`. Стало жёсткой
   ошибкой только после того, как все upstream-крейты закомпилились чисто.
   Фикс: `4beaf87`.
@@ -137,7 +137,7 @@ DevTools-команды диспетчируют событие через `comp
 
 **Причина:** те же 3 теста были красными **до** фикса `a090a2e`
 (runs 45796590578 от 09:56, 45780448198 от 08:06). Fails в крейте, который **не
-затрагивался** FIX1 (7 файлов: CHANGELOG.md, light-ui×5, light-vdom — ни одного
+затрагивался** FIX1 (7 файлов: CHANGELOG.md, light-fw-ui×5, light-vdom — ни одного
 ref'а на light-cli-core). Корневая причина: bump версий до `0.21.0-alpha.1`
 (commit `897e032`) не обновил захардкоженные `"0.20"`/`"0.20.0"` в тестах
 cli-core и логику `validate_metadata`, которая использует строгий `semver::VersionReq`

@@ -175,7 +175,7 @@ light-fw = "0.20" # default = ["elements-basic", "window", "softbuffer-backend",
 | `light-render-cpu`          | Программная отрисовка через `softbuffer` (CPU-бэкенд). Вынесен из `light-gui` (0.20.0, этап 5)        | фича `softbuffer-backend` |
 | `light-render-gpu`          | Аппаратная отрисовка через `pixels` (wgpu/naga). Вынесен из `light-gui` (0.20.0, этап 5)             | фича `wgpu-backend` |
 | `light-fw`                  | Мета-крейт: реэкспортирует ядро, макросы и подключённые компоненты                                    | обычная зависимость |
-| `light-ui`                  | Готовые виджеты: `<tooltip>`, `<toast-container>`, `<dialog>`, `<progress>` (Plugin API)                | фичи крейта (`async-runtime`, `widget-progress`) + `use light_ui as _;` |
+| `light-fw-ui`               | Готовые виджеты: `<tooltip>`, `<toast-container>`, `<dialog>`, `<progress>` (Plugin API)                | фичи крейта (`async-runtime`, `widget-progress`) + `use light_fw_ui as _;` |
 | `light-fw-element-form`      | Компонент-элемент: `<checkbox>`, `<radio>`, `<select>`/`<option>`                                      | фича `elements-form` или прямая зависимость |
 | `light-fw-behavior-validation` | Компонент-поведение: `required`, `:validator`, `@validate`                                             | фича `validation` или прямая зависимость |
 
@@ -902,7 +902,7 @@ if let Some(path) = light_fw::file_dialog::pick_image_file() {
 
 ## ProgressBar
 
-`<progress>` — горизонтальная полоса прогресса (FLOW layout: fill растягивается на `value/max * 100%` ширины). Виджет из крейта `light-ui`, включён по умолчанию (фича `widget-progress`).
+`<progress>` — горизонтальная полоса прогресса (FLOW layout: fill растягивается на `value/max * 100%` ширины). Виджет из крейта `light-fw-ui`, включён по умолчанию (фича `widget-progress`).
 
 ### Подключение
 
@@ -911,14 +911,14 @@ if let Some(path) = light_fw::file_dialog::pick_image_file() {
 ```toml
 [dependencies]
 light-fw = { path = "crates/light-fw", features = ["softbuffer-backend"] }
-light-ui = { version = "0.21" }
+light-fw-ui = { version = "0.21" }
 ```
 
 В `main.rs` (обязательно, иначе линкер вырежет registration из `distributed_slice`):
 
 ```rust
 use light_fw::prelude::*;
-use light_ui as _;  // ← linkme gotcha: без этой строки <progress> не зарегистрируется
+use light_fw_ui as _;  // ← linkme gotcha: без этой строки <progress> не зарегистрируется
 
 fn main() -> light_fw::Result<()> {
     run(App::new())
@@ -963,7 +963,7 @@ elements = ["progress"]
 
 ### Ограничения
 
-- Фича `widget-progress` включена по умолчанию; чтобы отключить — `light-ui = { version = "0.21", default-features = false, features = ["async-runtime"] }`.
+- Фича `widget-progress` включена по умолчанию; чтобы отключить — `light-fw-ui = { version = "0.21", default-features = false, features = ["async-runtime"] }`.
 
 ## Кнопки
 
@@ -1270,9 +1270,9 @@ struct App {}
 
 Пока модальный ребёнок открыт, **родительское окно не принимает ввод** (модальность логическая: события мыши и клавиатуры родителя игнорируются). Одновременно может быть открыто не более одного такого окна: повторный вызов `open_modal()` не делает ничего. Компонент дочернего окна создаётся заново на каждое открытие; если `modal()` не задан, `open_modal()` тоже ничего не делает.
 
-### Виджет `<dialog>` (light-ui)
+### Виджет `<dialog>` (light-fw-ui)
 
-В отличие от системного модального окна (отдельное окно с блокировкой ввода), виджет `<dialog>` из крейта `light-ui` — это **оверлей внутри текущего окна** (position=absolute). Он не блокирует ввод родителя и не создаёт новое окно.
+В отличие от системного модального окна (отдельное окно с блокировкой ввода), виджет `<dialog>` из крейта `light-fw-ui` — это **оверлей внутри текущего окна** (position=absolute). Он не блокирует ввод родителя и не создаёт новое окно.
 
 #### Подключение
 
@@ -1281,14 +1281,14 @@ struct App {}
 ```toml
 [dependencies]
 light-fw = { path = "crates/light-fw", features = ["softbuffer-backend"] }
-light-ui = { version = "0.21" }
+light-fw-ui = { version = "0.21" }
 ```
 
 В `main.rs` (обязательно):
 
 ```rust
 use light_fw::prelude::*;
-use light_ui as _;  // ← linkme gotcha
+use light_fw_ui as _;  // ← linkme gotcha
 
 fn main() -> light_fw::Result<()> {
     run(App::new())
@@ -1359,7 +1359,7 @@ elements = ["dialog"]
 
 Явный `z="…"` в HTML **переопределяет** дефолт для всех трёх оверлеев (фреймворк — механизм, пользователь — политика).
 
-См. также: [Tooltip](#tooltip), [Dialog](#виджет-dialog-light-ui), [ProgressBar](#progressbar).
+См. также: [Tooltip](#tooltip), [Dialog](#виджет-dialog-light-fw-ui), [ProgressBar](#progressbar).
 
 ## Второе главное окно и общее состояние
 

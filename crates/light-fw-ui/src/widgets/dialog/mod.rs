@@ -191,7 +191,7 @@ impl CustomElement for Dialog {
 const DIALOG: CustomElementFactory = CustomElementFactory {
     tag: "dialog",
     core_version_req: "^0.21",
-    crate_name: "light-ui",
+    crate_name: "light-fw-ui",
     provides: &["dialog"],
     factory: || Box::new(Dialog),
 };
@@ -338,13 +338,13 @@ mod tests {
     }
 
     /// Регистрация в distributed-slice: `lookup("dialog")` возвращает
-    /// фабрику light-ui (тег доступен в runtime-шаблонах без магии).
+    /// фабрику light-fw-ui (тег доступен в runtime-шаблонах без магии).
     #[test]
     fn dialog_registered_in_distributed_slice() {
         let factory = lookup("dialog");
         assert!(factory.is_some(), "tag \"dialog\" must be registered");
         let factory = factory.expect("checked");
-        assert_eq!(factory.crate_name, "light-ui");
+        assert_eq!(factory.crate_name, "light-fw-ui");
         assert_eq!(factory.provides, &["dialog"]);
     }
 }
