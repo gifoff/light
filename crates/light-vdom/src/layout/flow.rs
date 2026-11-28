@@ -179,6 +179,12 @@ impl super::base::Layout {
             let child_end = children.get(position + 1).copied().unwrap_or(end);
             let rect = self.nodes[child].rect;
             let style = self.nodes[child].style;
+            // Абсолютно позиционированные дети не участвуют в выравнивании
+            // потока: их координаты заданы явными смещениями
+            // (`top`/`right`/`bottom`/`left`) и уже применены в `place`.
+            if style.position == Position::Absolute {
+                continue;
+            }
             let final_x = aligned(
                 rect.x,
                 rect.w,

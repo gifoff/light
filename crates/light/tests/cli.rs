@@ -985,6 +985,54 @@ fn devtools_find_parses_flags() {
     );
 }
 
+/// ТЗ 0.21.0: clap парсит `move --key` (симуляция Mouseenter).
+#[test]
+fn devtools_move_parses_key() {
+    let output = light()
+        .arg("devtools")
+        .arg("move")
+        .arg("--key")
+        .arg("tip_trigger")
+        .arg("--port")
+        .arg("19229")
+        .output()
+        .expect("run light");
+    assert!(
+        !output.status.success(),
+        "ожидался отказ из-за незапущенного app, stdout={:?}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Приложение не запущено"),
+        "флаги move должны пройти парсинг, got: {stderr}"
+    );
+}
+
+/// ТЗ 0.21.0: clap парсит `move-leave --key` (симуляция Mouseleave).
+#[test]
+fn devtools_move_leave_parses_key() {
+    let output = light()
+        .arg("devtools")
+        .arg("move-leave")
+        .arg("--key")
+        .arg("tip_trigger")
+        .arg("--port")
+        .arg("19229")
+        .output()
+        .expect("run light");
+    assert!(
+        !output.status.success(),
+        "ожидался отказ из-за незапущенного app, stdout={:?}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Приложение не запущено"),
+        "флаги move-leave должны пройти парсинг, got: {stderr}"
+    );
+}
+
 /// ТЗ 0.16.0: неизвестный подаргумент → clap exit 2.
 #[test]
 fn devtools_unknown_subcommand_is_clap_error() {

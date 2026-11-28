@@ -89,6 +89,9 @@ mod menu;
 mod render;
 mod selects;
 
+#[cfg(test)]
+mod tests;
+
 pub(crate) use canvas::Canvas;
 pub use forms::Interaction;
 #[cfg(feature = "elements-select")]

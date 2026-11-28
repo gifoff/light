@@ -33,7 +33,7 @@ pub type Result<T> = std::io::Result<T>;
 #[derive(Debug, Clone)]
 pub struct DevtoolsRequest {
     /// Имя подкоманды: tree, layout, find, click, type, key, state, shot,
-    /// session.
+    /// move, move-leave, session.
     pub cmd: String,
     /// Строковое тело запроса после имени команды (может быть пустым).
     pub body: Option<String>,
@@ -52,6 +52,8 @@ impl DevtoolsRequest {
         // Специальный случай: CLI-подкоманда `state` → серверная SNAPSHOT.
         let name = if name == "STATE" {
             "SNAPSHOT".to_owned()
+        } else if name == "MOVE-LEAVE" {
+            "MOVE_LEAVE".to_owned()
         } else {
             name
         };

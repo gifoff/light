@@ -50,6 +50,16 @@ pub struct Style {
     pub padding: Edges,
     /// Внешние отступы (`margin`/`margin-*`), по умолчанию `0`.
     pub margin: Edges,
+    /// Смещения абсолютного позиционирования относительно content box родителя
+    /// (`top`/`right`/`bottom`/`left`). Действуют только при
+    /// [`Position::Absolute`]; в потоке игнорируются. По умолчанию `0`.
+    pub abs_top: f32,
+    /// Смещение справа (см. [`Self::abs_top`]).
+    pub abs_right: f32,
+    /// Смещение снизу (см. [`Self::abs_top`]).
+    pub abs_bottom: f32,
+    /// Смещение слева (см. [`Self::abs_top`]).
+    pub abs_left: f32,
     /// Цвет фона (`background`, `0xRRGGBBAA`).
     pub background: Option<u32>,
     /// Цвет текста (`font-color`, `0xRRGGBBAA`).
@@ -73,6 +83,13 @@ pub struct Style {
     pub required_indicator: RequiredIndicator,
     /// Порядок отрисовки и хит-теста (больше z — выше).
     pub z: i32,
+    /// Отклик на события мыши (`pointer-events`). `Some(false)` — узел и
+    /// все его потомки **не** участвуют в hit-тесте: «под курсором» он не
+    /// находится, поэтому не перехватывает `Mouseenter`/`Mousemove`/
+    /// `Mouseleave` (стандартное CSS-поведение: тултип поверх элемента не
+    /// вытесняет мышь с родителя). `None` (по умолчанию) / `Some(true)` —
+    /// обычный отклик.
+    pub pointer_events: Option<bool>,
 }
 
 impl Default for Style {
@@ -98,6 +115,10 @@ impl Default for Style {
             align_items: Align::Start,
             padding: Edges::ZERO,
             margin: Edges::ZERO,
+            abs_top: 0.0,
+            abs_right: 0.0,
+            abs_bottom: 0.0,
+            abs_left: 0.0,
             background: None,
             font_color: None,
             font_size: None,
@@ -108,6 +129,7 @@ impl Default for Style {
             invalid: false,
             required_indicator: RequiredIndicator::Asterisk,
             z: 0,
+            pointer_events: None,
         }
     }
 }

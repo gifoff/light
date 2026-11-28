@@ -1,3 +1,74 @@
+﻿## [0.21.0-alpha.1] - 2026-11-25
+
+### Added
+
+- **Tooltip и Toast виджеты** (`crates/light-fw-ui/`).
+  Готовые элементы `light-fw-ui` поверх `light-fw-core` + `light-gui`:
+  `<tooltip>` (позиционирование `position/top/right/bottom/left`, `z`,
+  `pointer-events="none"` по умолчанию) и `<toast>` (аналогичная семантика).
+  Зарегистрированы через Plugin API (`linkme::distributed_slice(REGISTERED_COMPONENTS)`),
+  подключаются в проекте через `[package.metadata.light.provides] elements = ["tooltip"]`.
+- **Флаг `light init --headless`**: порождает проект без GUI (зависимость только
+  `light-fw-core` с `default-features = false`), для чистой реактивной логики.
+- **Флаг `light dev --detach`**: фоновый запуск с DevTools-сессией; печатает JSON
+  `{ok, pid, devtools_port, web_port, log}` и возвращает терминал — агент может
+  затем использовать `light devtools` (shot / find / click / move / move-leave / state).
+- **Поддержка `pointer-events` в Layout** (`crates/light-vdom/`): атрибут
+  `pointer-events="none"` делает узел и его поддерево прозрачными для указателя
+  (хит-тесты их пропускают), что позволяет вкладывать кликабельный текст внутрь
+  неинтерактивного контейнера и наоборот.
+- **Dialog виджет** (`crates/light-fw-ui/src/widgets/dialog/`). Готовый элемент
+  `<dialog>` поверх `light-fw-core`: оверлей с `position=absolute`, по умолчанию
+  отступ 50px от верхнего левого угла, белый фон, рамка 2px `#888888`, padding 16,
+  z=5000 (явный `z="…"` переопределяет дефолт). Видимость через `v-if`.
+  Позиционирование: `position/top/right/bottom/left` (явные атрибуты
+  переопределяют дефолтное позиционирование). Зарегистрирован через Plugin API,
+  подключается через `[package.metadata.light.provides] elements = ["dialog"]`.
+  Требует `use light_fw_ui as _;` в бинарнике (linkme gotcha).
+- **ProgressBar виджет** (`crates/light-fw-ui/src/widgets/progress_bar/`). Готовый
+  элемент `<progress>` с FLOW layout (fill растягивается на `value/max * 100%`
+  ширины). Атрибуты: `value` (f32, дефолт 0.0), `max` (f32, дефолт 100.0),
+  `color` (цвет fill, CSS-имена + hex, дефолт `#22C55E`), `background` (цвет
+  трека, дефолт `#E5E7EB`), `height` (px, дефолт 10). Feature flag:
+  `widget-progress` (включён по умолчанию). Зарегистрирован через Plugin API,
+  подключается через `[package.metadata.light.provides] elements = ["progress"]`.
+  Требует `use light_fw_ui as _;` в бинарнике.
+
+### Changed
+
+- **`light-fw-ui` теперь регистрирует 4 компонента** (Tooltip, Toast, Dialog,
+  ProgressBar) вместо 2 (до 0.21.0-alpha.1).
+
+### Fixed
+
+- **Runtime-регистрация плагинов на pre-release ядре**
+  (`crates/light-vdom/src/plugins.rs`): `parse_triple` теперь игнорирует
+  pre-release (`-…`) и build-метаданные (`+…`) — alpha-ядро
+  `0.21.0-alpha.1` считается своим release-триплетом `(0, 21, 0)`. До фикса
+  `check_core_version` возвращал Err («не удалось разобрать версию ядра
+  "0.21.0-alpha.1"») и runtime выбрасывал ВСЕ кастомные элементы (progress,
+  dialog, tooltip, toast). Ядро (`core`) в манифесте light-fw-ui поднят до
+  `"^0.21"`, все 4 фабрики (`tooltip`, `toast-container`, `dialog`,
+  `progress`) теперь требуют `^0.21`. Семантика матчера не изменилась:
+  формат требования остаётся `^MAJOR.MINOR[.PATCH]`, для 0.x действует
+  minor-floor, настоящий semver — отдельный ticket.
+- **z-порядок для тултипов** (`crates/light-fw-ui/src/widgets/tooltip/mod.rs`):
+  корень `<tooltip>` получает `style.z = 1000` **только если атрибут `z` отсутствует**;
+  явный `z="…"` переопределяет дефолт (фреймворк — механизм, пользователь — политика).
+  `reorder_by_z` в `Layout::build` делает устойчивую сортировку братами по `style.z`,
+  поэтому плоский paint-цикл рисует элемент с высоким `z` последним — сверху.
+  Два unit-теста: `default_z_is_1000`, `explicit_z_overrides_default`.
+- **`v-if` не ломает соседние узлы** (`crates/light-vdom/src/runtime/`):
+  условие `v-if="false"` теперь убирает только узел, а не смещает ключи братьев
+  (стабильные ключи в runtime-режиме: имя обработчика `@click`/`@mouseenter` →
+  позиция; см. `normalize_click` в `runtime/custom.rs`).
+- **`light devtools move` / `move-leave` для runtime-обработчиков**
+  (`crates/light-fw-cli-core/src/cmd_devtools.rs` + `crates/light-vdom/src/runtime/`):
+  команды `move --key <K>` / `move-leave --key <K>` теперь работают в режиме
+  `runtime-templates` — триггерятся `@mouseenter`/`@mouseleave` через
+  `invoke_handler`, а не только через `dispatch_custom_event` (это было единственной
+  возможностью проверить тултипы headless'ом до этой правки).
+
 ## [0.20.2] - 2026-11-21
 
 ### Fixed
@@ -77,8 +148,36 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **vdom**: `v-if="false"` теперь **пропускает** узел, а не прерывает
+  построение всего списка детей. Соседи в Row/Column рендерятся независимо
+  от состояния v-if других детей. До фикса `<tooltip v-if="false">` внутри
+  колонки убивал весь остаток поддерева (включая toast-container). Тест:
+  `v_if_false_skips_siblings_stay_rendered`.
+- **ui/toast**: `show_toast` вызывает `WindowCommand::Invalidate` при
+  добавлении — UI перерисовывается сразу после клика, без ожидания
+  внешнего события (hover, resize).
+- **ui/tooltip**: tooltip принудительно ставит `pointer-events: none` —
+  больше не перехватывает события мыши и не вызывает flicker
+  (показать → перехватить → скрыть → показать…).
+- **ci (pre-existing)**: `std::io::Error::other()` вместо `Error::new(ErrorKind::Other, …)`
+  в `crates/light-gui/src/devtools/server.rs:89` (clippy::io_other_error,
+  `16b7dd0`).
+- **ci (pre-existing)**: image-тест
+  `runtime_image_decodes_and_lays_out` — skip-guard: при недоступности
+  файловой системы (sandbox / CI macOS) тест логирует `note: skipping`
+  и завершается без panic (`16b7dd0`, `fb1f825`).
+- **ci (pre-existing)**: `#[derive(Default)]` для `ToastManager`
+  (clippy::derivable_impls, `4beaf87`).
+
 ### Added
 
+- **vdom/style**: новое свойство `pointer-events` (`auto` / `none`) и
+  динамическая привязка `:pointer-events`. Узлы с `pointer-events="none"`
+  исключаются из hit-test (hit_test.rs, query.rs) — они рендерятся, но не
+  получают события мыши. Полезно для тултипов, прогресс-баров и других
+  оверлеев.
 - **cli / cli-core**: Настраиваемый реестр (`registry` в `light.config.json`:
   `url`, `download_url`, `docs_url`; дефолты — crates.io). Новые файлы
   `registry_config.rs`, `metadata.rs`; расширен trait `RemoteRegistry`
@@ -91,8 +190,28 @@
 - **cli-core**: модуль `metadata` — извлечение и валидация метаданных из
   скачанного `.crate` (NoMetadata/IncompatibleCore — фатальные; EmptyProvides/
   Conflict — предупреждение с подтверждением).
-- **docs**: docs/cli.md (флаги `light search`), docs/guide.md (раздел
-  «Настраиваемый реестр»), README.md (примеры `light search --yes`/`--json`).
+- **docs**: docs/guide.md (строки `pointer-events` / `:pointer-events` в
+  таблице стилей, подраздел «Оверлеи, которые не перехватывают мышь»,
+  уточнение семантики `v-if` в разделе «Директивы»), docs/ARCHITECTURE.md
+  (упоминание v-if skip в описании слоя `vdom`), docs/TODO_TESTS.md
+  (записи о pre-existing CI-фиксах).
+
+### Known limitations
+
+- **devtools**: `light devtools move` / `move-leave` могут возвращать
+  `ok:false` для элементов с `@mouseenter`/`@mouseleave` при включённой
+  фиче `runtime-templates`: команды диспетчируют событие по статическому
+  дереву, а runtime-хэндлеры живут в динамическом. Ограничение инструмента,
+  не баг фреймворка — реальное наведение мышью работает корректно. Обход:
+  программный вызов обработчика через `light devtools click`. Задокументировано
+  в `docs/guide.md` и `docs/TODO_TESTS.md` (цель — 0.22.0).
+
+### Docs (E2E 0.21.0)
+
+- docs/guide.md: примечания об ограничениях `light devtools move`
+  (runtime-templates) и `find` (статическое дерево) в разделе DevTools.
+- docs/TODO_TESTS.md: запись про известное ограничение `move` как
+  known issue для 0.22.0.
 
 <!-- Этап 6: Modularity-буллеты этапов 1 и 4 перенесены в [0.20.0] выше. -->
 
@@ -189,7 +308,8 @@
 
 - **docs**: осстановлена кодировка UTF-8 в README.md, docs/README.md и docs/ARCHITECTURE.md (были повреждены при редактировании через PowerShell).
 - **docs**: бновлены версии до 0.17.7, исправлен namespace light → light-fw в таблице крейтов и примерах кода.
-- **docs**: quickstart.md, guide.md, cli.md актуализированы под текущие реалии (light-fw = 0.17, un_with_config, windows_subsystem).
+- **docs**: quickstart.md, guide.md, cli.md актуализированы под текущие реалии (light-fw = 0.17, 
+un_with_config, windows_subsystem).
 # Changelog
 
 Ð’ÑÐµ Ð·Ð°Ð¼ÐµÑ‚Ð½Ñ‹Ðµ Ð¸Ð·Ð¼ÐµÐ½ÐµÐ½Ð¸Ñ Ð¿Ñ€Ð¾ÐµÐºÑ‚Ð°. Ð¤Ð¾Ñ€Ð¼Ð°Ñ‚ Ð¾ÑÐ½Ð¾Ð²Ð°Ð½ Ð½Ð° [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), Ð²ÐµÑ€ÑÐ¸Ð¸ â€” Ð¿Ð¾ [Semantic Versioning](https://semver.org/lang/ru/).

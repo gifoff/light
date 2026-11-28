@@ -10,6 +10,9 @@ use crate::{
     vdom::{Align, NodeKind, Overflow, VElement, intern_key},
 };
 
+#[cfg(feature = "image-support")]
+use crate::vdom::ImageData;
+
 #[cfg(feature = "runtime-templates")]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "runtime-templates")]
@@ -18,8 +21,8 @@ use std::time::SystemTime;
 use super::custom::{build_children, store_custom_instance};
 use super::fields::{ROOT_KEY, build_checkbox, build_radio, build_select, build_text_field};
 use super::style::{
-    attr_value, build_style, build_window_config, collect_meta, is_unsupported_directive,
-    resolve_button_type, resolve_disabled,
+    attr_value, build_style, build_window_config, collect_meta, eval_simple,
+    interpolate_attr_value, is_unsupported_directive, resolve_button_type, resolve_disabled,
 };
 
 #[cfg_attr(not(feature = "runtime-templates"), allow(dead_code))]
@@ -61,6 +64,24 @@ pub(crate) fn parse_fail(element: &str, attr_name: &str, attr_value: &str) {
 /// Внутренний: диагностика ошибки разбора (release — тихо).
 #[cfg(not(debug_assertions))]
 pub(crate) fn parse_fail(_element: &str, _attr_name: &str, _attr_value: &str) {}
+
+/// Имя обработчика события для runtime-диспетчеризации по имени.
+///
+/// Убирает скобки вызова (`"show_tip()"` → `"show_tip"`), пробельные
+/// символы вокруг и ведущее `this.` — макрос-генерированный
+/// [`Component::invoke_handler`](crate::component::Component::invoke_handler)
+/// сопоставляет именно это имя. Аналог `normalize_click` в `custom.rs`,
+/// но для мышиных событий (0.21.0: `@mouseenter`/`@mouseleave` на
+/// контейнерах в runtime-шаблонах).
+fn normalize_event_handler(handler: &str) -> String {
+    let trimmed = handler.trim();
+    let trimmed = trimmed.strip_prefix("this.").unwrap_or(trimmed);
+    trimmed
+        .strip_suffix("()")
+        .map(str::trim)
+        .unwrap_or(trimmed)
+        .to_owned()
+}
 
 /// Читает HTML-шаблон с диска и разбирает его в [`VElement`], используя mtime-кэш.
 ///
@@ -205,6 +226,60 @@ enum ElementKind {
     Checkbox,
     Radio,
     Select,
+    /// Изображение (`<image>`): PNG-данные и `alt`.
+    #[cfg(feature = "image-support")]
+    Image(ImageData, String),
+}
+
+/// Эвалюирует директиву `v-if` в runtime-режиме.
+///
+/// Поддерживаются два синтаксиса (как и в compile-time макро):
+/// 1. **Простое булево поле** (`v-if="show"`, `v-if="!show"`): значение
+///    читается через [`Component::eval_field`] / [`eval_simple`](super::style::eval_simple),
+///    нормализуется булевыми токенами `true/1/yes/on` по правилу
+///    [`parse_bool`](crate::vdom::parse::parse_bool). Пустая строка или
+///    нераспознанное слово → «показать» (compile-time семантика).
+/// 2. **Метод-геттер без аргументов** (`v-if="is_home"`, `v-if="!is_home"`):
+///    если имя не совпадает с полем, но совпадает с именем ноль-аргументного
+///    метода, возвращающего `bool`, он вызывается через
+///    [`Component::eval_bool_field`]. Это позволяет использовать пользовательские
+///    методы для условной видимости в runtime.
+///
+/// Любой более сложный синтаксис (точки, аргументы, логические операторы)
+/// **не** распознаётся — трактуется как «показать», чтобы узел не исчезал из-за
+/// неподдерживаемой записи. Возвращаем `false` (скрыть) только когда условие
+/// **явно** ложно.
+#[cfg_attr(not(feature = "runtime-templates"), allow(dead_code))]
+pub(crate) fn eval_v_if<C: Component + ?Sized>(component: &C, value: &str) -> bool {
+    let v = value.trim();
+    let (negate, name) = match v.strip_prefix('!') {
+        Some(rest) => (true, rest.trim()),
+        None => (false, v),
+    };
+    // 1) Простое булево поле (`eval_field`) — базовый путь.
+    let raw = eval_simple(component, name).unwrap_or_default();
+    if !raw.is_empty() {
+        let recognized = matches!(
+            raw.to_ascii_lowercase().as_str(),
+            "true" | "1" | "yes" | "on" | "false" | "0"
+        );
+        let value_bool = if recognized {
+            crate::vdom::parse::parse_bool(&raw)
+        } else {
+            true
+        };
+        return if negate { !value_bool } else { value_bool };
+    }
+    // 2) Метод-геттер (`v-if="is_home"`, `v-if="!is_home"`): `eval_field`
+    //    возвращает None для методов (пустая строка в `eval_simple`), поэтому
+    //    пробуем `eval_bool_field` — он вызвает ноль-аргументный метод, если
+    //    имя совпадает с именем такого метода на компоненте.
+    if let Some(value_bool) = component.eval_bool_field(name) {
+        return if negate { !value_bool } else { value_bool };
+    }
+    // 3) Не удалось ни как поле, ни как метод → «показывай» (compile-time
+    //    семантика: статическое дерево уже содержит правильную видимость).
+    true
 }
 
 /// Строит один элемент (контейнер или лист) вместе со стилем, тегом, атрибутами
@@ -216,7 +291,22 @@ pub(crate) fn build_element<C: Component + ?Sized>(
     window_config: Option<WindowConfig>,
     component: &C,
 ) -> Option<VElement> {
+    // Директива `v-if` (compile-time и runtime): если условие явно ложно — узел
+    // не строится вообще (видимость «скрываем»). Поддерживается простое поле
+    // (`v-if="is_maximized"`) либо его инверсия (`v-if="!is_maximized"`); см.
+    // [`eval_v_if`]. Если `v-if` задан — он **не** считается «неподдерживаемой»
+    // директивой ниже (в отличие от `v-else-if`/`v-else`/`v-for`/`:attr`/
+    // `@focus` и т.п. — их по-прежнему нельзя использовать в runtime).
+    if let Some(cond) = attr_value(&element.attrs, "v-if")
+        && !eval_v_if(component, cond)
+    {
+        return None;
+    }
     for attr in &element.attrs {
+        // `v-if` уже обработан выше — пропускаем его здесь.
+        if attr.name == "v-if" {
+            continue;
+        }
         if is_unsupported_directive(&attr.name) {
             parse_fail(&element.name, &attr.name, &attr.value);
             return None;
@@ -260,6 +350,52 @@ pub(crate) fn build_element<C: Component + ?Sized>(
         "checkbox" => (ElementKind::Checkbox, None),
         "radio" => (ElementKind::Radio, None),
         "select" => (ElementKind::Select, None),
+        // `<image>`: PNG читается с диска в runtime; `width`/`height` обрабатываются
+        // общим путём стилей ниже (layout берёт их против intrinsic-размера).
+        #[cfg(feature = "image-support")]
+        "image" => {
+            let src = attr_value(&element.attrs, "src")
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            // Атрибут обязателен (тот же контракт, что в compile-time макросе).
+            let Some(src) = src else {
+                parse_fail(&element.name, "src", "");
+                return None;
+            };
+            // Слэш-направление допускаем: шаблон может писать `assets\x.png`.
+            let src = src.replace('\\', "/");
+            let alt = attr_value(&element.attrs, "alt")
+                .unwrap_or_default()
+                .to_owned();
+            // Файл читается относительно CWD — `light dev` работает в каталоге
+            // проекта (как и macro: путь из `src` относителен к Cargo.toml).
+            let bytes = match std::fs::read(&src) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    eprintln!("light: <image> не удалось прочитать файл {src:?}: {e}");
+                    return None;
+                }
+            };
+            let image = match ImageData::from_png(bytes) {
+                Ok(image) => image,
+                Err(e) => {
+                    eprintln!("light: <image> не удалось декодировать PNG {src:?}: {e}");
+                    return None;
+                }
+            };
+            (ElementKind::Image(image, alt), None)
+        }
+        #[cfg(not(feature = "image-support"))]
+        "image" => {
+            // Явное сообщение вместо «неподдерживаемый тег»: тег известен, но
+            // фича выключена. Формулировка как в compile-time макросе.
+            eprintln!(
+                "light: тег <image> недоступен: Cargo-фича `image-support` выключена\n \
+                 help: включите её в зависимости, например \
+                 `light-fw = {{ features = [\"image-support\"] }}`"
+            );
+            return None;
+        }
         // Нестандартный тег: ищем зарегистрированную фабрику плагина (Plugin API,
         // Этап 3). Если плагин подключён — строим кастомный элемент через его
         // render(); если нет — это неподдерживаемый тег (откат как раньше).
@@ -280,6 +416,17 @@ pub(crate) fn build_element<C: Component + ?Sized>(
         ElementKind::Checkbox => build_checkbox(element, key, component)?,
         ElementKind::Radio => build_radio(element, key, component)?,
         ElementKind::Select => build_select(element, key, component)?,
+        #[cfg(feature = "image-support")]
+        ElementKind::Image(image, alt) => {
+            // `ImageData` — дешёвый clone (Arc-подложка), alt — короткий String.
+            VElement::leaf(
+                intern_key(key),
+                NodeKind::RuntimeImage {
+                    image: image.clone(),
+                    alt: alt.clone(),
+                },
+            )
+        }
     };
     let style = build_style(&element.name, &element.attrs, default_font, component)?;
     let (raw_tag, raw_attrs) = collect_meta(&element.attrs, &element.name);
@@ -299,6 +446,30 @@ pub(crate) fn build_element<C: Component + ?Sized>(
         && let Some(val) = attr_value(&element.attrs, "value")
     {
         attrs.push(("data-value", val.to_owned()));
+    }
+    // Runtime-обработчики мыши (`@mouseenter`/`@mouseleave`, 0.21.0): имена ВСЕХ
+    // существующих сохраняются в узле через ОТДЕЛЬНЫЕ атрибуты
+    // `data-event-enter="name"` / `data-event-leave="name"`. Общий атрибут
+    // `data-event` не работает: `VElement::attr` возвращает ПЕРВУЮ совпадающую
+    // пару, и второй обработчик (например `@mouseleave`) оставался невидимым
+    // (баг 6-го раунда E2E). Окно доставляет событие через
+    // `Component::invoke_handler` (devtools.rs L454–483), где сгенерированные
+    // ветки читают оба атрибута и вызывают СВОЙ метод по каждому варианту
+    // независимо от ключа узла. Два разных обработчика на одном элементе
+    // больше не конфликтуют: каждый вариант события идёт в свой атрибут.
+    // `@click` не сохраняется: для кнопок работает существующий путь
+    // `dispatch_by_name` по имени.
+    if let Some(handler) = attr_value(&element.attrs, "@mouseenter") {
+        let name = normalize_event_handler(handler);
+        if !name.is_empty() {
+            attrs.push((intern_key("data-event-enter"), name));
+        }
+    }
+    if let Some(handler) = attr_value(&element.attrs, "@mouseleave") {
+        let name = normalize_event_handler(handler);
+        if !name.is_empty() {
+            attrs.push((intern_key("data-event-leave"), name));
+        }
     }
     let mut elem = leaf.with_style(style).with_tag(tag).with_attrs(attrs);
     if let Some(cfg) = window_config {
@@ -356,20 +527,33 @@ pub(crate) fn build_custom_element<C: Component + ?Sized>(
     key: &str,
     component: &C,
 ) -> Option<VElement> {
-    let factory = plugins::lookup(&element.name)?;
+    let factory = match plugins::lookup(&element.name) {
+        Some(f) => f,
+        None => {
+            parse_fail(&element.name, "<custom-element>", "");
+            return None;
+        }
+    };
     if let Err(msg) = plugins::check_core_version(factory.core_version_req) {
         parse_fail(&element.name, "core-version", &msg.to_string());
         return None;
     }
-    // Атрибуты тега (имя + значение) передаются плагину как есть. Директивы
-    // (`@click`/`:attr`/`v-if`) не поддерживаются в runtime-шаблонах и уже
-    // отсеяны вызывающим кодом — сюда доходят только простые атрибуты.
-    // `v-model` (если задан) уже присутствует в списке — плагин может
-    // использовать его как имя поля в `on_event` (Этап 5).
+    // Атрибуты тега (имя + значение) передаются плагину; значения с
+    // `{{ поле }}` интерполируются через [`interpolate_attr_value`] (BUG 0e,
+    // 0.21.0) — кастомные атрибуты обязаны обновляться так же, как нативные
+    // (инвариант ТЗ). Директивы (`@click`/`:attr`/`v-if`) не поддерживаются
+    // в runtime-шаблонах и уже отсеяны вызывающим кодом — сюда доходят только
+    // простые атрибуты. `v-model` (если задан) уже присутствует в списке —
+    // плагин может использовать его как имя поля в `on_event` (Этап 5).
     let attrs: Vec<(&'static str, String)> = element
         .attrs
         .iter()
-        .map(|a| (intern_key(&a.name), a.value.clone()))
+        .map(|a| {
+            (
+                intern_key(&a.name),
+                interpolate_attr_value(component, &a.value),
+            )
+        })
         .collect();
     // Дочерние узлы разбираем с обычным компонентом: тексты с `{{ }}`
     // интёрполируются геттером компонента, элементы — рекурсивно. Кастомный

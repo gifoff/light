@@ -4,7 +4,9 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{Ident, LitStr};
 
-use super::tokens::{collect_interpolations, collect_v_for_items, is_primitive_serde, to_ident};
+use super::tokens::{
+    collect_interpolations, collect_v_for_items, collect_v_if_names, is_primitive_serde, to_ident,
+};
 use super::types::TemplateArgs;
 use super::validation::{attr_value, hex_id};
 use light_fw_html::{Element, Node};
@@ -13,6 +15,10 @@ pub(super) struct BuiltMethods {
     pub(super) invoke_handler: TokenStream,
     pub(super) dispatch_vmodel: TokenStream,
     pub(super) eval_field: TokenStream,
+    /// `eval_bool_field` для runtime `v-if="method()"`: сгенерировано только
+    /// если в шаблоне есть `v-if`/`v-else-if` на имена, которые **не** поля
+    /// (то есть методы-геттеры, возвращающие `bool`).
+    pub(super) eval_bool_field: TokenStream,
     pub(super) validate_field: TokenStream,
     pub(super) validate_form: TokenStream,
     pub(super) modal: TokenStream,
@@ -30,6 +36,7 @@ pub(super) fn build_methods(
     field_fields: &Vec<(Ident, &syn::Type)>,
     _arms: &Vec<TokenStream>,
     click_handlers: &[(TokenStream, (TokenStream, String))],
+    mouse_handlers: &[(String, TokenStream)],
     vmodel_bindings: &Vec<(String, String, Option<String>)>,
     field_validators: &[(String, TokenStream)],
     form_validators: &[(String, TokenStream)],
@@ -65,11 +72,56 @@ pub(super) fn build_methods(
         } });
     }
 
-    let invoke_handler_method = if click_handlers.is_empty() {
+    // Runtime-доставка мышиных событий (`@mouseenter`/`@mouseleave`, 0.21.0):
+    // runtime-парсер хранит имена ВСЕХ обработчиков в ОТДЕЛЬНЫХ атрибутах узла
+    // `data-event-enter="NAME"` / `data-event-leave="NAME"` (один общий
+    // `data-event` не работает — `VElement::attr` читает только первую пару,
+    // см. баг 4-го раунда E2E). Каждая ветка: проверяем соответствие варианта
+    // события атрибуту и вызываем метод; если ветка не совпала (другой вариант
+    // или узла нет) — продолжаем обход.
+    //
+    // Источник — отдельный список `mouse_handlers` (codegen.rs регистрирует
+    // `@mouseenter`/`@mouseleave` независимо от `@click`): чисто-мышиный
+    // шаблон (tooltip при onhover, без единого клика) тоже получает ветку,
+    // иначе `light devtools move/move-leave` молча игнорируется. Два разных
+    // обработчика на одном элементе больше не конфликтуют: каждый вариант
+    // идёт в СВОЙ атрибут и вызывает СВОЙ метод.
+    let mut mouse_arms: Vec<TokenStream> = Vec::new();
+    for (name, call_tokens) in mouse_handlers.iter() {
+        let call = call_tokens.clone();
+        for (variant, attr) in [
+            ("Mouseenter", "data-event-enter"),
+            ("Mouseleave", "data-event-leave"),
+        ] {
+            let variant_ident = syn::Ident::new(variant, Span::call_site());
+            mouse_arms.push(quote! {
+                if let ::light_fw::vdom::Event::#variant_ident = __event_ref
+                    && let Some(node) = __root.get(__handler)
+                    && node.attr(#attr).is_some_and(|n| n == #name)
+                {
+                    #call();
+                    return true;
+                }
+            });
+        }
+    }
+    // Генерация метода: нужны ЛИБО кликовые (имена/ключи), ЛИБО мышиные
+    // обработчики — чисто-мышиные шаблоны тоже должны дотягиваться до
+    // обработчиков через invoke_handler.
+    let invoke_handler_method = if click_handlers.is_empty() && mouse_handlers.is_empty() {
         quote! {}
     } else {
         quote! {
             fn invoke_handler(&self, __handler: &str, __event: ::light_fw::vdom::Event) -> bool {
+                // Runtime-доставка мыши (`@mouseenter`/`@mouseleave` на
+                // контейнерах, 0.21.0): активна только при включённой
+                // runtime-шаблонизации (флаг — из light-fw, без cfg-фичи
+                // макросного крейта). Без data-атрибута обход инертен.
+                if ::light_fw::FEATURE_RUNTIME_TEMPLATES {
+                    let __root = self.render();
+                    let __event_ref = &__event;
+                    #(#mouse_arms)*
+                }
                 match __handler {
                     #(#invoke_arms)*
                     _ => false,
@@ -78,7 +130,6 @@ pub(super) fn build_methods(
         }
     };
 
-    // Runtime-writeback для v-model: obходит текущий render-дерево (возвращённый
     // из `render()`), находит узел с данным ключом, читает атрибут `data-v-model`
     // и применяет writeback. Нужен только при runtime-templates (иначе статические
     // ветки `dispatch` уже обрабатывают v-model по ключу). Без привязок — пустой.
@@ -190,11 +241,17 @@ pub(super) fn build_methods(
     // см. выше), а не сырые `nodes`, иначе в шаблоне с `<window>` интерполяции
     // лежат в детях окна и на верхнем уровне их нет.
     let v_for_vars: std::collections::HashSet<String> = collect_v_for_items(content);
-    let used_idents: Vec<String> = collect_interpolations(content)
+    // Имена из `v-if`/`v-else-if` тоже попадают в `eval_field`: поле, используемое
+    // только в `v-if="flag"` (без `{{ flag }}`), иначе не получит ветку и
+    // runtime-рендер дефолтит его к «показать» (eval_v_if → true), что держит
+    // узел видимым. Добавляем их к интерполяциям (дедупликация через HashSet).
+    let mut used_set: std::collections::HashSet<String> = collect_interpolations(content)
         .into_iter()
         .filter(|raw| !raw.contains('.') && !raw.is_empty())
         .filter(|raw| !v_for_vars.contains(raw))
         .collect();
+    used_set.extend(collect_v_if_names(content));
+    let used_idents: Vec<String> = used_set.into_iter().collect();
     let eval_arms: Vec<proc_macro2::TokenStream> = {
         let mut arms: Vec<proc_macro2::TokenStream> = used_idents
             .iter()
@@ -234,6 +291,44 @@ pub(super) fn build_methods(
             match __name {
                 #(#eval_arms)*
                 _ => None,
+            }
+        }
+    };
+
+    // `eval_bool_field` для runtime `v-if="is_home"` / `v-else-if="!is_home"`:
+    // имена из `v-if`/`v-else-if`, которые **не** поля структуры, считаются
+    // методами-геттерами. Если пользователь назовёт несуществующее имя —
+    // компилятор укажет на опечатку (метод не найден). Возврат `bool`
+    // проверяется компилятором: если метод возвращает не `bool`, ошибка
+    // типизации в сгенерированном коде.
+    let v_if_names: std::collections::HashSet<String> = collect_v_if_names(content);
+    let mut bool_arms: Vec<TokenStream> = Vec::new();
+    for name in &v_if_names {
+        // `to_ident` может вернуть Err для невалидных имён — в этом случае
+        // пропускаем: компилятор укажет на опечатку в шаблоне.
+        let ident = match to_ident(name) {
+            Ok(id) => id,
+            Err(_) => continue,
+        };
+        if field_idents.contains(&ident) {
+            // Поле уже обработано в `eval_field`; дублировать не нужно.
+            continue;
+        }
+        // Не поле → метод. Генерируем вызов `self.name()` и приводим к `bool`.
+        // Если метод принимает аргументы или не возвращает `bool` — ошибка
+        // типизации компилятора (это правильно: v-if требует zero-arg bool).
+        let call = quote! { self.#ident() };
+        bool_arms.push(quote! { #name => ::std::option::Option::Some(#call), });
+    }
+    let eval_bool_field_method = if bool_arms.is_empty() {
+        TokenStream::new()
+    } else {
+        quote! {
+            fn eval_bool_field(&self, __name: &str) -> ::std::option::Option<bool> {
+                match __name {
+                    #(#bool_arms)*
+                    _ => ::std::option::Option::None,
+                }
             }
         }
     };
@@ -352,6 +447,7 @@ pub(super) fn build_methods(
         invoke_handler: invoke_handler_method,
         dispatch_vmodel: dispatch_vmodel_method,
         eval_field: eval_field_method,
+        eval_bool_field: eval_bool_field_method,
         validate_field: validate_field_method,
         validate_form: validate_form_method,
         modal: modal_method,

@@ -1,0 +1,49 @@
+[package]
+name = "light-fw-ui"
+version = "0.21.0-alpha.1"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Light FW UI: готовые виджеты (Tooltip, Toast, Dialog, Progress) поверх light-fw-core + light-gui (0.21.0)"
+
+[lib]
+name = "light_fw_ui"
+
+# Манифест light: `kind`/`display-name` обязательны для парсинга
+# `[package.metadata.light]` (иначе `light check`/`light dev` пропускают
+# пакет и считают кастомные теги «неизвестными»). `provides.elements` —
+# список тегов, разрешённых потребителю; макрос `#[template]` берёт их из
+# манифеста ЗАВИСИМОСТИ (см. docs/cli.md, «Кастомные элементы»).
+[package.metadata.light]
+kind = "widget"
+display-name = "Light UI Widgets"
+core = "^0.21"
+
+[package.metadata.light.provides]
+elements = ["tooltip", "toast-container", "dialog", "progress"]
+
+[features]
+# Асинхронный рантайм (spawn/post_to_ui) — используется `show_toast` для
+# автоскрытия через 3 секунды. Без него виджет Toast мёртв, поэтому
+# `async-runtime` остаётся в `default`. Для headless-сборок можно отключить
+# через `default-features = false` (тогда `show_toast` будет no-op).
+default = ["async-runtime", "widget-progress"]
+async-runtime = ["light-fw-core/async-runtime"]
+# ProgressBar: виджет `<progress>`. Гейтится фичей (инвариант ТЗ 0.21.0:
+# только используемый код в бинарнике), но включён в `default` — тег
+# доступен в типичных сборках. Отключение: `light-fw-ui = { version = "0.21",
+# default-features = false, features = ["async-runtime"] }`.
+widget-progress = []
+
+[dependencies]
+# Базовый фреймворк: элементы/поведения/VDOM, на которых строятся виджеты.
+# Фича `async-runtime` активизируется опционально через `[features]` выше.
+light-fw-core = { workspace = true }
+# Окно winit, события ввода и рендер-бэкенды — слой, над которым живут виджеты.
+light-gui = { workspace = true }
+# Регистрация кастомных элементов через distributed-slice (как в examples/plugin-demo).
+linkme = "0.3"
+
+[lints]
+workspace = true

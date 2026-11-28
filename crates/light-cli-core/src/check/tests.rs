@@ -372,4 +372,20 @@ mod tests {
         assert_eq!(json["unknown"][0], "custom");
         assert_eq!(json["installed"].as_array().unwrap().len(), 0);
     }
+
+    // Регрессия 0.20.2: `<image>` — ядро (фича `image-support`), а не внешний
+    // компонент, поэтому обязан быть в STANDARD_TAGS. До фикса `light dev`/
+    // `light check` объявляли его «неизвестным тегом».
+    #[test]
+    fn standard_tags_include_image_and_core_virtual_tags() {
+        use crate::check::helpers::is_standard_tag;
+        assert!(is_standard_tag("image"));
+        assert!(is_standard_tag("window"));
+        assert!(is_standard_tag("text"));
+        assert!(is_standard_tag("password"));
+        assert!(is_standard_tag("div"));
+        // А вот эти действительно требуют компонента — стандартными не являются.
+        assert!(!is_standard_tag("datepicker"));
+        assert!(!is_standard_tag("chart"));
+    }
 }

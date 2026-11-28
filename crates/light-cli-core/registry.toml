@@ -41,3 +41,18 @@ display-name = "Date Picker"
 version = "0.1.0"
 core = "^0.18"
 elements = ["datepicker"]
+
+# Готовые виджеты (Tooltip, Toast, Dialog, Progress) поверх light-fw-core +
+# light-gui. Входит в workspace; публикуется на crates.io как часть 0.21.0.
+# `light doctor` обязан видеть его в «Компоненты (N)»: без записи здесь
+# `analyze_project().installed` (фильтр по `ComponentRegistry::builtin()`)
+# пропускал бы зависимость, и doctor показывал 0 компонентов, тогда как
+# `light check` (читает `[package.metadata.light]` из Cargo.toml) находил
+# её — рассинхронизация, которую чинит эта запись (FIX8 / N2).
+[[components]]
+name = "light-fw-ui"
+kind = "widget"
+display-name = "UI Widgets"
+version = "0.21.0-alpha.1"
+core = "^0.21"
+elements = ["tooltip", "toast-container", "dialog", "progress"]

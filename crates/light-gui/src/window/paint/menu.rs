@@ -92,6 +92,10 @@ mod tests {
     #[test]
     fn text_fits_vertical_line_box() {
         let Ok(metrics) = crate::window::font::FontMetrics::load() else {
+            eprintln!(
+                "SKIP: system font unavailable ({}); vertical line-box test not run",
+                std::env::consts::OS
+            );
             return;
         };
         let size = 20.0;
@@ -125,6 +129,10 @@ mod tests {
     #[test]
     fn ellipsized_text_fits_width() {
         let Ok(metrics) = crate::window::font::FontMetrics::load() else {
+            eprintln!(
+                "SKIP: system font unavailable ({}); ellipsis-width test not run",
+                std::env::consts::OS
+            );
             return;
         };
         let size = 16.0;

@@ -79,11 +79,23 @@ pub fn render(
             match &node.kind {
                 light_vdom::NodeKind::Column
                 | light_vdom::NodeKind::Row
-                | light_vdom::NodeKind::Window => {}
+                | light_vdom::NodeKind::Window => {
+                    if style.border_size > 0.0
+                        && let Some(color) = style.border_color
+                    {
+                        canvas.stroke_rect(color, rect, thickness);
+                    }
+                }
                 // Кастомный элемент плагина: фон (background) уже отрисован выше,
                 // содержимое — как у Column (отдельные children в своём цикле),
-                // дополнительная обводка/рамка не нужна.
-                light_vdom::NodeKind::Custom(_) => {}
+                // рамка (border-size + border-color) рисуется по аналогии с контейнерами.
+                light_vdom::NodeKind::Custom(_) => {
+                    if style.border_size > 0.0
+                        && let Some(color) = style.border_color
+                    {
+                        canvas.stroke_rect(color, rect, thickness);
+                    }
+                }
                 light_vdom::NodeKind::TitleBar => {
                     if style.border_size > 0.0 {
                         if let Some(color) = style.border_color {

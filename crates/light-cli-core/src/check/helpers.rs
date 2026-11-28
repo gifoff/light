@@ -12,8 +12,11 @@ pub(crate) fn is_interactive() -> bool {
 /// реестром.
 pub(crate) const STANDARD_TAGS: &[&str] = &[
     // Виртуальные теги Light (корневые, не из стандартного HTML, но
-    // поддерживаются ядром без какого-либо компонента).
-    "window", "text", "password", // HTML5-строка.
+    // поддерживаются ядром без какого-либо компонента). `image` — PNG-изображение
+    // (фича `image-support`); это **ядро**, а не внешний компонент, поэтому его
+    // отсутствие из списка приводило к ложному «неизвестный тег» в `light dev`/
+    // `light check` (регрессия 0.20.2).
+    "window", "text", "password", "image", // HTML5-строка.
     "html", "head", "body", "div", "span", "p", "a", "ul", "ol", "li", "h1", "h2", "h3", "h4",
     "h5", "h6", "button", "input", "label", "form", "table", "tr", "td", "th", "img", "video",
     "audio", "canvas", "svg", "section", "article", "header", "footer", "nav", "main", "aside",

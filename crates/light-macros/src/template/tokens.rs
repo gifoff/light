@@ -297,6 +297,31 @@ pub(super) fn is_plain_click_handler(handler: &str) -> bool {
 /// ключом узла, а статический код макроса дотягивается до него через
 /// [`Component::invoke_handler`](crate::component::Component).
 pub(super) fn normalize_click_name(handler: &str) -> String {
+    normalize_event_handler(handler)
+}
+
+/// Обработчик мышиного события, подходящий для runtime-диспетчеризации:
+/// то же определение, что [`is_plain_click_handler`] (простой идентификатор
+/// без аргументов/`::`/пробелов, опционально с `this.` и/или пустыми
+/// скобками). Вынесено отдельно, потому что `@mouseenter`/`@mouseleave`
+/// регистрируются в `mouse_handlers`, а не в `click_handlers`.
+pub(super) fn is_plain_mouse_handler(handler: &str) -> bool {
+    is_plain_click_handler(handler)
+}
+
+/// Имя мышиного обработчика для runtime-диспетчеризации.
+///
+/// Точная нормализация, как в `light-vdom::runtime`
+/// (`data-event-enter="NAME"`/`data-event-leave="NAME"`):
+/// `"this.show_tip()"` → `"show_tip"`. Совпадение нормализации с парсером
+/// критично: ветка `invoke_handler` сопоставляет имя из атрибута узла
+/// runtime-дерева с этим именем.
+pub(super) fn normalize_mouse_name(handler: &str) -> String {
+    normalize_event_handler(handler)
+}
+
+/// Общая нормализация имени обработчика (`@click`, `@mouseenter`, …).
+fn normalize_event_handler(handler: &str) -> String {
     let trimmed = handler.trim();
     let trimmed = trimmed.strip_prefix("this.").unwrap_or(trimmed);
     trimmed
@@ -317,6 +342,14 @@ pub(super) fn collect_interpolations(nodes: &[Node]) -> std::collections::HashSe
     for node in nodes {
         match node {
             Node::Element(element) => {
+                // BUG 0e: интерполяции в атрибутах кастомных элементов
+                // (`<progress value="{{val}}">`) тоже должны попадать в
+                // `eval_field`, иначе runtime не сможет их разрешить.
+                for attr in &element.attrs {
+                    if let Some(field) = extract_attr_interpolation(&attr.value) {
+                        out.insert(field);
+                    }
+                }
                 out.extend(collect_interpolations(&element.children));
             }
             Node::Text(segments) => {
@@ -329,6 +362,31 @@ pub(super) fn collect_interpolations(nodes: &[Node]) -> std::collections::HashSe
         }
     }
     out
+}
+
+/// Извлекает простое имя поля из значения атрибута, если оно содержит ровно
+/// один `{{ … }}`-блок (BUG 0e). Возвращает `None` для статических значений
+/// и сложных выражений (с точками, несколькими блоками, не-идентификаторами
+/// и т.п.).
+fn extract_attr_interpolation(value: &str) -> Option<String> {
+    let (start, end) = match (value.find("{{"), value.find("}}")) {
+        (Some(s), Some(e)) if s < e && !value[e + 2..].contains("{{") => (s, e),
+        _ => return None,
+    };
+    let field = value[start + 2..end].trim();
+    if field.is_empty() || field.contains('.') {
+        return None;
+    }
+    // D4: только валидные идентификаторы Rust: [A-Za-z0-9_], не начинаются
+    // с цифры. Это синхронизирует extractor с runtime `interpolate_attr_value`,
+    // который передаёт поле в `eval_field` — методы с пробелами/знаками
+    // не должны доходить до runtime.
+    if !field.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        || field.starts_with(|c: char| c.is_ascii_digit())
+    {
+        return None;
+    }
+    Some(field.to_owned())
 }
 
 /// Все имена переменных `v-for` в шаблоне. Эти идентификаторы — локальные
@@ -344,6 +402,35 @@ pub(super) fn collect_v_for_items(nodes: &[Node]) -> std::collections::HashSet<S
                 out.insert(item);
             }
             out.extend(collect_v_for_items(&element.children));
+        }
+    }
+    out
+}
+
+/// Все имена, используемые в атрибутах `v-if` / `v-else-if` (без `!`-префикса).
+/// Эти имена могут быть полями **или** методами-геттерами (`is_home()`),
+/// поэтому их нужно собирать отдельно от интерполяций `{{ … }}`, чтобы
+/// макрос мог сгенерировать ветку `eval_bool_field` для методов.
+pub(super) fn collect_v_if_names(nodes: &[Node]) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    for node in nodes {
+        if let Node::Element(element) = node {
+            for attr in &element.attrs {
+                let tag = &attr.name;
+                if tag == "v-if" || tag == "v-else-if" {
+                    let value = attr.value.trim().trim_start_matches('!');
+                    // Берём только простые идентификаторы (без точек, скобок).
+                    let name = value.trim();
+                    if !name.is_empty()
+                        && !name.contains('.')
+                        && !name.contains('(')
+                        && !name.contains(|c: char| c.is_whitespace())
+                    {
+                        out.insert(name.to_string());
+                    }
+                }
+            }
+            out.extend(collect_v_if_names(&element.children));
         }
     }
     out
@@ -434,4 +521,90 @@ pub(super) fn text_segments(children: &[Node], element: &str) -> syn::Result<Vec
         }
     }
     Ok(segments)
+}
+
+#[cfg(test)]
+mod extract_attr_interpolation_tests {
+    use super::extract_attr_interpolation;
+
+    #[test]
+    fn single_block_extracts_field() {
+        assert_eq!(
+            extract_attr_interpolation("{{ val }}").as_deref(),
+            Some("val"),
+            "один {{ поле }} → имя"
+        );
+    }
+
+    #[test]
+    fn static_value_returns_none() {
+        assert_eq!(
+            extract_attr_interpolation("green"),
+            None,
+            "статическое значение без {{ }} → None"
+        );
+    }
+
+    #[test]
+    fn empty_braces_returns_none() {
+        assert_eq!(
+            extract_attr_interpolation("{{ }}"),
+            None,
+            "пустые скобки → None"
+        );
+    }
+
+    #[test]
+    fn dotted_path_returns_none() {
+        assert_eq!(
+            extract_attr_interpolation("{{ a.b }}"),
+            None,
+            "путь с точками → None (сложное выражение)"
+        );
+    }
+
+    #[test]
+    fn multi_block_returns_none() {
+        assert_eq!(
+            extract_attr_interpolation("{{ a }}{{ b }}"),
+            None,
+            "два блока в одном атрибуте → None"
+        );
+    }
+
+    #[test]
+    fn space_in_field_returns_none() {
+        assert_eq!(
+            extract_attr_interpolation("{{ foo bar }}"),
+            None,
+            "пробел внутри идентификатора → None"
+        );
+    }
+
+    #[test]
+    fn plus_sign_returns_none() {
+        assert_eq!(
+            extract_attr_interpolation("{{ x+1 }}"),
+            None,
+            "знак арифметики внутри блока → None"
+        );
+    }
+
+    #[test]
+    fn digit_start_returns_none() {
+        assert_eq!(
+            extract_attr_interpolation("{{ 1foo }}"),
+            None,
+            "идентификатор, начинающийся с цифры → None"
+        );
+    }
+
+    #[test]
+    fn valid_identifier_with_underscore() {
+        assert_eq!(
+            extract_attr_interpolation("{{ my_val_2 }}"),
+            Some("my_val_2".to_owned()),
+            "валидный идентификатор с подчёркиваниями и цифрами → Some"
+        );
+    }
 }

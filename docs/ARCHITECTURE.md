@@ -50,10 +50,10 @@ Component::render() → VElement (новое дерево)
 Основные слои `light-fw-core` (реэкспорт под прежними именами 0.19.x):
 
 - **`reactive`** (`light-reactivity`) — свойства `Property`/`Proxy`, наблюдатели и запрос перерисовки.
-- **`vdom`** (`light-vdom`) — `VElement`, `NodeKind`, стили, события и `diff`. Ключи узлов стабильны между отрисовками.
+- **`vdom`** (`light-vdom`) — `VElement`, `NodeKind`, стили, события и `diff`. Ключи узлов стабильны между отрисовками. `v-if="false"` в `build_children` **пропускает** узел, а не прерывает список: соседние элементы рендерятся независимо (тест `v_if_false_skips_siblings_stay_rendered`).
 - **`layout`** (`light-vdom`) — вычисление `Rect` для каждого узла.
 - **`window`** (`light-gui`) — цикл `winit`, управление окнами. Подмодуль `devtools` (фича `devtools`) — TCP-сервер на 127.0.0.1:9229.
-- **`window::paint`** (`light-render-cpu` / `light-render-gpu`) — программная либо аппаратная растеризация.
+- **`window::paint`** (`light-gui/src/window/paint/`) — программная растеризация (render.rs, canvas.rs, mod.rs).
 - **`a11y`** (`light-gui`) — построение дерева AccessKit.
 - **`validation`** — `required`, пользовательские валидаторы.
 
@@ -94,7 +94,7 @@ light-reactivity   # сигналы, состояние (из light-core/src/rea
 light-html         # парсер HTML (уже существует, light-fw-html)
 light-vdom         # виртуальный DOM, layout, diff (из vdom.rs, layout.rs, dom.rs)
 light-gui          # окно winit, события, a11y, async-runtime (из window/, a11y/, async_runtime.rs, devtools/, file_dialog.rs)
-light-render-cpu   # программная отрисовка (из render/softbuffer.rs, window/paint.rs)
+light-render-cpu   # программная отрисовка (из render/softbuffer.rs); paint-модуль остался в light-gui/src/window/paint/
 light-render-gpu   # аппаратная отрисовка (из render/wgpu.rs)
 light-fw           # фасад GUI-first: re-export, run(), run_with_config()
                    # (default-фичи: elements-basic, window, softbuffer-backend, a11y-winit)
@@ -119,8 +119,8 @@ light-fw           # фасад GUI-first: re-export, run(), run_with_config()
    `async_runtime.rs` → `light-gui`. Публичный API 0.19.x сохранён через реэкспорт.
    Headless-режим (`cargo check -p light-fw-core --no-default-features`) не тянет
    winit/softbuffer/pixels/rfd/accesskit/futures. ✅
-4. **Перенос рендера** (этап 5): `render/softbuffer.rs`, `window/paint.rs` → `light-render-cpu`;
-   `render/wgpu.rs` → `light-render-gpu`. ✅
+4. **Перенос рендера** (этап 5): `render/softbuffer.rs` → `light-render-cpu`;
+    `render/wgpu.rs` → `light-render-gpu`. Paint-модуль остался в `light-gui/src/window/paint/`. ✅
 5. **Headless by default** (этап 6, 0.20.0): default-фичи `light-fw-core`
    сокращены до `["elements-basic"]`; breaking change в payload'ах
    `light_fw_core::error::Error` (String вместо типизированных `winit`/`pixels`/

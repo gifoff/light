@@ -16,7 +16,6 @@
 //! --test check_integration`.
 
 use std::collections::BTreeMap;
-use std::path::Path;
 
 use light_fw_cli_core::check::{
     AvailableComponent, CheckReport, ComponentInfo, Conflict, build_check_report, compare_tags,
@@ -224,10 +223,11 @@ fn load_installed_json_skips_non_light_and_keeps_light() {
     // со статическим fixture-директорием. Путь не существует на диске —
     // парсеру не нужно его читать, он просто передаёт дальше.
     // Но load_installed_from_json читает manifest_path, поэтому создаём
-    // фиксированный каталог в C:\Temp (стабильный путь, не tempdir).
-    let root = Path::new(r"C:\Temp\light-check-fixture");
-    let _ = std::fs::remove_dir_all(root);
-    std::fs::create_dir_all(root).expect("mkdir root");
+    // фиксированный каталог в std::env::temp_dir() (уважает $TMP/$TEMP,
+    // не ломается под AV-блокировкой C:\Temp).
+    let root = std::env::temp_dir().join("light-check-fixture");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("mkdir root");
     for (name, is_light) in [("light-widget-datepicker", true), ("serde", false)] {
         let d = root.join(name);
         std::fs::create_dir_all(&d).unwrap();
@@ -239,13 +239,29 @@ edition = "2021"
 "#
         );
         if is_light {
-            toml.push_str(
+            // Фикстура core-версии выводится из версии крейта (env! CARGO_PKG_VERSION):
+            // pre-release (0.21.0-alpha.1) → ^0.21-0, stable (0.21.0) → ^0.21.
+            let crate_version = env!("CARGO_PKG_VERSION");
+            let core_req = if crate_version.contains('-') {
+                // Pre-release: базовая часть до первого `-` + `-0`.
+                let base = crate_version.split('-').next().unwrap_or(crate_version);
+                format!("{base}-0")
+            } else {
+                // Stable: major.minor (caret).
+                let parts: Vec<&str> = crate_version.split('.').collect();
+                if parts.len() >= 2 {
+                    format!("^{}.{}", parts[0], parts[1])
+                } else {
+                    crate_version.to_string()
+                }
+            };
+            toml.push_str(&format!(
                 r#"
 
 [package.metadata.light]
 kind = "widget"
 display-name = "Datepicker"
-core = "^0.20"
+core = "{core_req}"
 
 [package.metadata.light.provides]
 elements = ["datepicker"]
@@ -254,8 +270,8 @@ directives = []
 
 [package.metadata.light.requires]
 components = []
-"#,
-            );
+"#
+            ));
         }
         std::fs::write(d.join("Cargo.toml"), toml).unwrap();
     }

@@ -353,14 +353,22 @@ fn read_workspace_package_version(workspace_root: &Path) -> Result<Option<semver
     Ok(version)
 }
 
-/// Минимальная версия, удовлетворяющая требованию (нижняя граница первого компаратора).
+/// Минимальная версия, удовлетворяющая требованию (нижняя граница первого
+/// компаратора), **включая pre-release-метку** (`0.21.0-alpha.1` → `0.21.0-alpha.1`).
+///
+/// Без этой правки `light publish` для alpha/beta/rc версий падало с ошибкой
+/// «версии должны совпадать», потому что `min_version("^0.21.0-alpha.1")`
+/// возвращала `0.21.0` и сравнивалась с фактической `0.21.0-alpha.1` как
+/// неравные.
 pub fn min_version(req: &semver::VersionReq) -> Option<semver::Version> {
     let c = req.comparators.first()?;
-    Some(semver::Version::new(
-        c.major,
-        c.minor.unwrap_or(0),
-        c.patch.unwrap_or(0),
-    ))
+    Some(semver::Version {
+        major: c.major,
+        minor: c.minor.unwrap_or(0),
+        patch: c.patch.unwrap_or(0),
+        pre: semver::Prerelease::new(c.pre.as_str()).ok()?,
+        build: semver::BuildMetadata::EMPTY,
+    })
 }
 
 /// Разрешает версию зависимости `name` в проекте `project_dir`.
@@ -504,5 +512,23 @@ mod tests {
         );
         assert_eq!(by_name("serde").version.as_deref(), Some("1"));
         assert!(by_name("local").version.is_none());
+    }
+
+    #[test]
+    fn min_version_preserves_pre_release_tag() {
+        // Regression: `light publish` для alpha/beta/rc версий падало с
+        // «версии должны совпадать», потому что `min_version("^0.21.0-alpha.1")`
+        // возвращала `0.21.0` (без pre-release), а не `0.21.0-alpha.1`.
+        let req = semver::VersionReq::parse("^0.21.0-alpha.1").unwrap();
+        let got = min_version(&req).unwrap();
+        assert_eq!(got.to_string(), "0.21.0-alpha.1");
+    }
+
+    #[test]
+    fn min_version_plain_semver_unchanged() {
+        let req = semver::VersionReq::parse("^0.3").unwrap();
+        assert_eq!(min_version(&req).unwrap().to_string(), "0.3.0");
+        let req = semver::VersionReq::parse("1").unwrap();
+        assert_eq!(min_version(&req).unwrap().to_string(), "1.0.0");
     }
 }

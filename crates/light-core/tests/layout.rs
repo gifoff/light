@@ -1625,3 +1625,165 @@ fn plain_div_with_centered_text_is_not_max_content_sized() {
         "текст по центру div"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Абсолютное позиционирование (top / left / right)
+// ---------------------------------------------------------------------------
+
+/// Строит div с абсолютным позиционированием и заданными смещениями.
+fn abs_div(
+    key: &'static str,
+    width: f32,
+    height: f32,
+    top: f32,
+    left: Option<f32>,
+    right: Option<f32>,
+) -> VElement {
+    let style = Style {
+        position: Position::Absolute,
+        width: Size::Px(width),
+        height: Size::Px(height),
+        abs_top: top,
+        abs_left: left.unwrap_or(0.0),
+        abs_right: right.unwrap_or(0.0),
+        ..Style::default()
+    };
+    VElement::container(key, NodeKind::Column, vec![text("t", "hi")]).with_style(style)
+}
+
+#[test]
+fn absolute_left_top_places_at_exact_offset() {
+    // Контейнер 600×400; absolute-дочерник left=230 top=130 w=140 h=40.
+    let child = abs_div("tip", 140.0, 40.0, 130.0, Some(230.0), None);
+    let root = column("", vec![child]);
+    let layout = Layout::build(&root, (600.0, 400.0), &StubMetrics);
+
+    let rect = layout.rect_of("tip").expect("absolute div");
+    assert!(
+        (rect.x - 230.0).abs() < 0.5,
+        "x должен быть 230, получено {}",
+        rect.x
+    );
+    assert!(
+        (rect.y - 130.0).abs() < 0.5,
+        "y должен быть 130, получено {}",
+        rect.y
+    );
+    assert!(
+        (rect.w - 140.0).abs() < 0.5,
+        "w должен быть 140, получено {}",
+        rect.w
+    );
+    assert!(
+        (rect.h - 40.0).abs() < 0.5,
+        "h должен быть 40, получено {}",
+        rect.h
+    );
+}
+
+#[test]
+fn absolute_right_positions_from_right_edge() {
+    // Контейнер 600×400; absolute-дочерник right=10 w=180 → x = 600−10−180 = 410.
+    let child = abs_div("toast", 180.0, 50.0, 10.0, None, Some(10.0));
+    let root = column("", vec![child]);
+    let layout = Layout::build(&root, (600.0, 400.0), &StubMetrics);
+
+    let rect = layout.rect_of("toast").expect("absolute div");
+    assert!(
+        (rect.x - 410.0).abs() < 0.5,
+        "x должен быть 410 (600-10-180), получено {}",
+        rect.x
+    );
+    assert!(
+        (rect.y - 10.0).abs() < 0.5,
+        "y должен быть 10, получено {}",
+        rect.y
+    );
+}
+
+#[test]
+fn absolute_child_does_not_participate_in_flow() {
+    // Два потока + один absolute: absolute не влияет на y второго потока.
+    let flow1 = text("a", "AA");
+    let flow2 = text("b", "BB");
+    let abs = abs_div("ov", 100.0, 100.0, 0.0, Some(0.0), None);
+    let root = column("", vec![flow1, flow2, abs]);
+    let layout = Layout::build(&root, (400.0, 300.0), &StubMetrics);
+
+    let a = layout.rect_of("a").unwrap();
+    let b = layout.rect_of("b").unwrap();
+    assert!(
+        (b.y - (a.y + a.h + SPACING)).abs() < 0.5,
+        "второй поток идёт сразу за первым (absolute не участвует)"
+    );
+
+    let ov = layout.rect_of("ov").unwrap();
+    assert!((ov.x - 0.0).abs() < 0.5 && (ov.y - 0.0).abs() < 0.5);
+}
+
+#[test]
+fn absolute_container_shifts_descendants_with_it() {
+    // Регрессия: текст внутри absolute-контейнера не должен остаться в (0,0)
+    // окна после того, как сам контейнер смещён явными top/right.
+    let abs_child = abs_div("card", 180.0, 50.0, 10.0, None, Some(10.0));
+    let root = column("", vec![abs_child]);
+    let layout = Layout::build(&root, (640.0, 480.0), &StubMetrics);
+
+    let card = layout.rect_of("card").expect("absolute container");
+    // right=10 → x = 640 - 10 - 180 = 450
+    assert!((card.x - 450.0).abs() < 0.5, "x={}", card.x);
+    assert!((card.y - 10.0).abs() < 0.5, "y={}", card.y);
+
+    // Внутренний текст (ключ "t" из abs_div) должен быть внутри карточки,
+    // а не в (0,0) окна.
+    let txt = layout
+        .rect_of("t")
+        .expect("text child of absolute container");
+    assert!(
+        (txt.x - card.x).abs() < 1.0,
+        "текст должен быть у левого края карточки (x≈{}), получено {}",
+        card.x,
+        txt.x
+    );
+    assert!(
+        (txt.y - card.y).abs() < 1.0,
+        "текст должен быть у верхнего края карточки (y≈{}), получено {}",
+        card.y,
+        txt.y
+    );
+    // Текст должен быть СТРОГО ВНУТРИ прямоугольника карточки.
+    assert!(
+        txt.x + txt.w <= card.x + card.w + 0.5,
+        "текст выходит за правый край"
+    );
+    assert!(
+        txt.y + txt.h <= card.y + card.h + 0.5,
+        "текст выходит за нижний край"
+    );
+}
+
+#[test]
+fn absolute_left_top_shifts_descendants() {
+    // Аналогично, но через left/top (не right/bottom).
+    let abs_child = abs_div("tip", 140.0, 40.0, 130.0, Some(230.0), None);
+    let root = column("", vec![abs_child]);
+    let layout = Layout::build(&root, (600.0, 400.0), &StubMetrics);
+
+    let tip = layout.rect_of("tip").expect("absolute div");
+    assert!((tip.x - 230.0).abs() < 0.5, "x={}", tip.x);
+    assert!((tip.y - 130.0).abs() < 0.5, "y={}", tip.y);
+
+    let txt = layout.rect_of("t").expect("text child");
+    assert!(
+        (txt.x - tip.x).abs() < 1.0,
+        "текст должен быть у левого края (x≈{}), получено {}",
+        tip.x,
+        txt.x
+    );
+    assert!(
+        (txt.y - tip.y).abs() < 1.0,
+        "текст должен быть у верхнего края (y≈{}), получено {}",
+        tip.y,
+        txt.y
+    );
+}

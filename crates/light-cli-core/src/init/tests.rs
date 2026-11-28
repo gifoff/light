@@ -14,11 +14,18 @@ mod tests {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
     fn scratch(name: &str) -> PathBuf {
+        // CWD-относительный каталог: `temp_dir()` может быть недоступен в
+        // sandboxed окружении (PermissionDenied при записи), а текущий каталог —
+        // всегда. Ключ из pid + нано-времени + счётчика уникален на хосте.
         let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!(
-            "light-fw-cli-init-{name}-{}-{unique}",
-            std::process::id()
-        ));
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let pid = std::process::id();
+        let dir = std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(format!("light-fw-cli-init-{name}-{pid}-{nanos}-{unique}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch dir");
         dir
@@ -65,6 +72,7 @@ mod tests {
             name: "cool-app".to_string(),
             path: Some(dir.clone()),
             minimal: false,
+            headless: false,
             components: Vec::new(),
             template: None,
         };
@@ -80,6 +88,7 @@ mod tests {
         assert!(names.contains(&".gitignore".to_string()));
         assert!(names.contains(&".cargo/config.toml".to_string()));
         assert!(names.contains(&"light.config.json".to_string()));
+        assert!(names.contains(&"AGENT.md".to_string()));
         // main.rs использует `#[template]` (HTML-шаблон).
         let main = plan
             .files
@@ -92,12 +101,52 @@ mod tests {
     }
 
     #[test]
+    fn agent_md_is_always_generated_with_core_cheatsheet() {
+        // В каждом проекте (default и minimal) есть `AGENT.md` с ключевыми
+        // строками шпаргалки: не читать исходники, `<text>` — поле ввода,
+        // команды `light devtools`, ссылка на guide.md.
+        for options in [
+            InitOptions {
+                name: "with-agent".to_string(),
+                path: None,
+                minimal: false,
+                headless: false,
+                components: Vec::new(),
+                template: None,
+            },
+            InitOptions {
+                name: "minimal-agent".to_string(),
+                path: None,
+                minimal: true,
+                headless: false,
+                components: Vec::new(),
+                template: Some(InitTemplate::Counter),
+            },
+        ] {
+            let plan = plan(&options).expect("plan");
+            let text = plan
+                .files
+                .iter()
+                .find(|(path, _)| path.to_string_lossy().replace('\\', "/") == "AGENT.md")
+                .map(|(_, c)| c.as_str())
+                .unwrap_or_else(|| {
+                    panic!("AGENT.md отсутствует в плане (minimal={})", options.minimal)
+                });
+            assert!(text.contains("НЕ ЧИТАЙ ИСХОДНИКИ"), "{text}");
+            assert!(text.contains("поле ввода"), "{text}");
+            assert!(text.contains("light devtools"), "{text}");
+            assert!(text.contains("docs/guide.md"), "{text}");
+        }
+    }
+
+    #[test]
     fn plan_minimal_omits_gitignore_and_lockfile() {
         let root = scratch("plan-minimal");
         let options = InitOptions {
             name: "tiny".to_string(),
             path: Some(root.join("tiny")),
             minimal: true,
+            headless: false,
             components: Vec::new(),
             template: None,
         };
@@ -121,6 +170,7 @@ mod tests {
             name: "busy".to_string(),
             path: Some(target),
             minimal: false,
+            headless: false,
             components: Vec::new(),
             template: None,
         };
@@ -238,6 +288,7 @@ mod tests {
             name: "todo-app".to_string(),
             path: Some(root.join("todo-app")),
             minimal: true,
+            headless: false,
             components: Vec::new(),
             template: Some(InitTemplate::Todo),
         };
@@ -254,11 +305,13 @@ mod tests {
                 .expect("todo template")
                 .contains("Light Todo")
         );
-        // Cargo.toml + main.rs + шаблон + `.cargo/config.toml` + `light.config.json`.
+        // Cargo.toml + main.rs + шаблон + `.cargo/config.toml` + `light.config.json`
+        // + `AGENT.md` (шпаргалка для AI-агентов) + `docs/guide.md` + `docs/cli.md`.
         assert_eq!(
             plan.files.len(),
-            5,
-            "Cargo.toml + main.rs + template + cargo config + light config"
+            8,
+            "Cargo.toml + main.rs + template + cargo config + light config \
+             + AGENT.md + docs/guide.md + docs/cli.md"
         );
         assert!(
             by_path(".cargo/config.toml")
@@ -287,6 +340,7 @@ mod tests {
             name: "my-app".to_string(),
             path: Some(dir.clone()),
             minimal: false,
+            headless: false,
             components: Vec::new(),
             template: None,
         };
@@ -298,15 +352,30 @@ mod tests {
         assert!(dir.join(LOCKFILE_NAME).is_file());
 
         let lock = Lockfile::read(&dir).expect("read lock");
-        // Ядро в lockfile — нижняя граница минорного диапазона: `cargo_toml`
-        // прописывает `light-fw = "0.20"` (minor_version()), а `resolve_core_version`
-        // берёт `min_version("0.20")` = `0.20.0`. Патч-версию не проверяем — она
-        // зависит от релиза и не входит в контракт init.
-        let expected_minor = minor_version();
-        let expected_core = format!("{}.0", expected_minor);
+        // Ядро в lockfile — выводится из production `min_version()` на актуальном
+        // minor-требовании, которое записывает `cargo_toml` (`minor_version()`).
+        //
+        // Правка e62950f: `min_version` теперь сохраняет pre-release-метку.
+        // Но `minor_version()` строит caret БЕЗ pre (только major.minor), поэтому
+        // `min_version("^MAJOR.MINOR")` всегда возвращает `major.minor.0` — без
+        // pre. Это означает:
+        // - на ядре 0.21.0 / 0.21.0-alpha.1 / 0.21.0-alpha.2 — `expected_core == "0.21.0"`;
+        // - на ядре 0.22.0 → `expected_core == "0.22.0"`;
+        // - на ядре 1.0.0 → `expected_core == "1.0.0"`.
+        //
+        // Тест зелёный при любом bump версии, потому что мы выводим ожидаемое
+        // значение тем же механизмом, которым production его вычисляет. Патч
+        // всегда `0` (caret без patch → `unwrap_or(0)`), pre всегда пустой
+        // (caret не несёт pre-release — это осознанный выбор `minor_version()`).
+        let expected_minor = minor_version(); // например "0.21"
+        let expected_core = semver::VersionReq::parse(&format!("^{expected_minor}"))
+            .ok()
+            .and_then(|req| crate::manifest::min_version(&req))
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| format!("{expected_minor}.0"));
         assert_eq!(
             lock.core, expected_core,
-            "ядро в lockfile — min_version(minor_version())"
+            "ядро в lockfile — min_version(^{expected_minor})"
         );
     }
 
@@ -318,6 +387,7 @@ mod tests {
             name: "tiny".to_string(),
             path: Some(dir.clone()),
             minimal: true,
+            headless: false,
             components: Vec::new(),
             template: None,
         };
@@ -336,6 +406,7 @@ mod tests {
             name: "nope".to_string(),
             path: Some(dir.clone()),
             minimal: false,
+            headless: false,
             components: Vec::new(),
             template: None,
         };

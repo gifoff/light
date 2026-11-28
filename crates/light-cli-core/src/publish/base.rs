@@ -407,8 +407,12 @@ pub fn check_version_consistency(workspace: &Workspace, plan: &PublishPlan) -> R
                 dep.req.matches(&target.version) && min.as_ref() == Some(&target.version);
             if !consistent {
                 return Err(Error::Publish(format!(
-                    "`{name}` зависит от `{} = \"{}\"`, а версия workspace — {}; версии должны совпадать",
-                    dep.name, dep.req_raw, target.version
+                    "`{name}` зависит от `{} = \"{}\"` (min {}), а версия workspace — {}; версии должны совпадать",
+                    dep.name,
+                    dep.req_raw,
+                    min.map(|v| v.to_string())
+                        .unwrap_or_else(|| "<none>".into()),
+                    target.version
                 )));
             }
         }

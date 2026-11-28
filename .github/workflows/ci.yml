@@ -26,9 +26,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: peaceiris/actions-mdbook@v2
-        with:
-          mdbook-version: '0.5.4'
+      - name: Install mdBook
+        # v0.4.52: архив содержит бинарник `mdbook` в корне (без подкаталога).
+        # GitHub Release Assets периодически 403-ит runners'ов (rate-limit Azure
+        # Blob на общий IP-пул); --retry не покрывает окно >25s.
+        run: |
+          set -euo pipefail
+          MDBOOK_VERSION="0.4.52"
+          FILE="mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          URL="https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/${FILE}"
+          mkdir -p "$HOME/.local/bin"
+          if ! curl -fsSL --retry 5 --retry-delay 5 -o "/tmp/${FILE}" "$URL"; then
+            echo "[error] mdbook download failed from $URL" >&2
+            exit 1
+          fi
+          SIZE=$(stat -c%s "/tmp/${FILE}")
+          if [ "$SIZE" -lt 1000000 ]; then
+            echo "[error] downloaded file too small ($SIZE bytes), likely error page" >&2
+            head -c 1024 "/tmp/${FILE}" || true
+            exit 1
+          fi
+          tar -xzf "/tmp/${FILE}" -C /tmp
+          # v0.4.52: бинарник лежит в корне архива, без подкаталога
+          mv "/tmp/mdbook" "$HOME/.local/bin/mdbook"
+          chmod +x "$HOME/.local/bin/mdbook"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          mdbook --version
       - name: Build book
         run: mdbook build
 

@@ -1,7 +1,7 @@
 use super::base::*;
 #[cfg(debug_assertions)]
 use super::regions::debug_trace;
-use super::regions::flex_weight;
+use super::regions::{aligned, flex_weight};
 use crate::vdom::{Align, NodeKind, Position, Size, VElement, WhiteSpace};
 
 impl super::base::Layout {
@@ -676,11 +676,22 @@ impl super::base::Layout {
                     );
                 }
                 // Абсолютные дети не участвуют в потоке и раскладываются после
-                // того, как известен итоговый content box родителя.
+                // того, как известен итоговый content box родителя. Смещения
+                // `top`/`right`/`bottom`/`left` (px) отсчитываются от краёв
+                // content box: `top`/`left` — от левого верхнего угла,
+                // `right`/`bottom` — прижимают соответствующий край элемента к
+                // указанной дистанции от края content box.
+                //
+                // Смещения применяются ДО `align_children`: выравнивание потока
+                // (`Align::Start/Center/End`) не должно перезаписывать координаты
+                // абсолютно позиционированного узла — его позиция задана явными
+                // смещениями, а не потоком.
+                let mut abs_nodes: Vec<usize> = Vec::new();
                 for child in &vnode.children {
                     if !child.style.visible || child.style.position != Position::Absolute {
                         continue;
                     }
+                    let before = self.nodes.len();
                     self.place(
                         child,
                         Point::new(content.left, content.top),
@@ -700,6 +711,72 @@ impl super::base::Layout {
                             white_space,
                         },
                     );
+                    // `place()` дописывает узел (и его потомков) в `self.nodes`.
+                    // Первый дописанный индекс — сам контейнер; он и получает
+                    // абсолютное смещение.
+                    debug_assert!(self.nodes.len() > before);
+                    abs_nodes.push(before);
+                }
+                for &idx in &abs_nodes {
+                    let old_x = self.nodes[idx].rect.x;
+                    let old_y = self.nodes[idx].rect.y;
+                    let node = &mut self.nodes[idx];
+                    let s = &node.style;
+                    let has_explicit = s.abs_left != 0.0
+                        || s.abs_right != 0.0
+                        || s.abs_top != 0.0
+                        || s.abs_bottom != 0.0;
+                    if has_explicit {
+                        // Явные смещения: позиция от краёв content box.
+                        if s.abs_left != 0.0 {
+                            node.rect.x = content.left + s.abs_left;
+                        }
+                        if s.abs_top != 0.0 {
+                            node.rect.y = content.top + s.abs_top;
+                        }
+                        if s.abs_right != 0.0 {
+                            node.rect.x =
+                                (content.left + content.width - s.abs_right) - node.rect.w;
+                        }
+                        if s.abs_bottom != 0.0 {
+                            node.rect.y =
+                                (content.top + content.height - s.abs_bottom) - node.rect.h;
+                        }
+                    } else {
+                        // Без явных смещений — legacy: выравнивание по
+                        // align_x / align_y внутри content box (назад-совместимо).
+                        let final_x = aligned(
+                            node.rect.x,
+                            node.rect.w,
+                            content.left,
+                            content.width,
+                            s.align_x,
+                            s.offset_x,
+                        );
+                        let final_y = aligned(
+                            node.rect.y,
+                            node.rect.h,
+                            content.top,
+                            content.height,
+                            s.align_y,
+                            s.offset_y,
+                        );
+                        node.rect.x = final_x;
+                        node.rect.y = final_y;
+                    }
+                    // Потоковые потомки уже расложены относительно старой
+                    // позиции контейнера (origin = content.left/top). Сдвигаем
+                    // всё поддерево (кроме самого узла) на разницу, чтобы текст
+                    // и другие дети не остались в (0,0) окна.
+                    let dx = self.nodes[idx].rect.x - old_x;
+                    let dy = self.nodes[idx].rect.y - old_y;
+                    if dx != 0.0 || dy != 0.0 {
+                        let end = self.subtree_end(idx);
+                        for n in &mut self.nodes[idx + 1..end] {
+                            n.rect.x += dx;
+                            n.rect.y += dy;
+                        }
+                    }
                 }
                 self.nodes[index].scroll_width = (content_w + inset.horizontal()).max(w);
                 self.nodes[index].scroll_height = (content_h + inset.vertical()).max(h);
@@ -741,5 +818,20 @@ impl super::base::Layout {
             self.nodes[start].style.font_color = Some(color);
         }
         (w + step_w, h + step_h)
+    }
+
+    /// Возвращает индекс, следующий за поддеревом узла `start` (глубинами).
+    fn subtree_end(&self, start: usize) -> usize {
+        let mut end = start + 1;
+        let mut stack = vec![start];
+        while let Some(idx) = stack.pop() {
+            for &child in &self.nodes[idx].children {
+                if child >= end {
+                    end = child + 1;
+                }
+                stack.push(child);
+            }
+        }
+        end
     }
 }

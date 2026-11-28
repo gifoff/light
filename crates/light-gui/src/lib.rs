@@ -22,10 +22,15 @@ pub mod a11y;
 #[cfg(not(feature = "async-runtime"))]
 pub mod stub {
     //! Заглушка асинхронного рантайма без `async-runtime`.
-    use std::future::Future;
 
     /// Контекст задачи (заглушка).
     pub struct TaskContext;
+    impl TaskContext {
+        /// Отмена не запрашивалась (заглушка: всегда `false`).
+        pub fn is_cancelled(&self) -> bool {
+            false
+        }
+    }
     /// Ручка задачи (заглушка).
     pub struct TaskHandle;
     /// Ошибка запуска задачи (заглушка; не может быть порождена).
@@ -41,12 +46,17 @@ pub mod stub {
     /// Отправка замыкания в UI-поток (заглушка: всегда ошибка).
     pub fn post_to_ui<F>(f: F) -> Result<(), TaskError>
     where
-        F: Future<Output = ()> + Send + 'static,
+        F: FnOnce() + Send + 'static,
     {
-        // Явно дропаем без `await`: фьючер не выполняется, мы только
-        // проверяем сигнатуру в headless-режиме.
         std::mem::drop(f);
         Err(TaskError::Never)
+    }
+    /// Запуск фоновой задачи (заглушка: паникует, т.к. UI-потока нет).
+    pub fn spawn<F>(_f: F) -> TaskHandle
+    where
+        F: FnOnce(TaskContext) + Send + 'static,
+    {
+        panic!("stub::spawn: async-runtime feature is not enabled");
     }
     /// Обновление UI (заглушка: всегда ошибка).
     pub fn post_update<C>(f: impl FnOnce(&mut C)) -> Result<(), TaskError> {

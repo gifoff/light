@@ -134,6 +134,24 @@ pub(super) fn style_token(
     let font_color = color_attr(generator, element, "font-color")?;
     let border_color = color_attr(generator, element, "border-color")?;
     let z = generator.z_token(element)?;
+    // Абсолютные смещения (`top`/`right`/`bottom`/`left`): число в пикселях
+    // или динамическая привязка. По умолчанию 0.0.
+    let abs_top = match px_attr(generator, element, "top")? {
+        Some(value) => quote!(#value),
+        None => quote!(0.0f32),
+    };
+    let abs_right = match px_attr(generator, element, "right")? {
+        Some(value) => quote!(#value),
+        None => quote!(0.0f32),
+    };
+    let abs_bottom = match px_attr(generator, element, "bottom")? {
+        Some(value) => quote!(#value),
+        None => quote!(0.0f32),
+    };
+    let abs_left = match px_attr(generator, element, "left")? {
+        Some(value) => quote!(#value),
+        None => quote!(0.0f32),
+    };
     Ok(quote!(::light_fw::vdom::Style {
         width: #width,
         height: #height,
@@ -155,6 +173,10 @@ pub(super) fn style_token(
         align_items: #align_items,
         padding: #padding,
         margin: #margin,
+        abs_top: #abs_top,
+        abs_right: #abs_right,
+        abs_bottom: #abs_bottom,
+        abs_left: #abs_left,
         background: #background,
         font_color: #font_color,
         font_size: #font_size,

@@ -39,6 +39,10 @@ pub enum DevtoolsCmd {
     State(Shell),
     /// Скриншот (base64 PNG); при `--path` сохраняет файл.
     Shot(ShotArgs),
+    /// Симулировать наведение курсора на элемент (Mouseenter).
+    Move(MoveArgs),
+    /// Симулировать уход курсора с элемента (Mouseleave).
+    MoveLeave(MoveArgs),
     /// Управление session recorder: start / stop.
     Session(SessionArgs),
 }
@@ -143,6 +147,19 @@ pub struct SessionArgs {
     /// Действие: start / stop.
     #[arg(value_enum)]
     action: SessionAction,
+}
+
+#[derive(Args, Debug)]
+pub struct MoveArgs {
+    /// Порт DevTools (по умолчанию 9229).
+    #[arg(long, default_value_t = DEFAULT_PORT)]
+    port: u16,
+    /// Выдавать JSON как есть.
+    #[arg(long, default_value_t = false)]
+    json: bool,
+    /// Ключ узла, к которому применяется событие.
+    #[arg(long, required = true)]
+    key: String,
 }
 
 #[derive(Clone, Copy, ValueEnum, Debug)]
@@ -317,6 +334,26 @@ fn build_request(cmd: &DevtoolsCmd) -> anyhow::Result<(u16, bool, DevtoolsReques
                 body: None,
                 save_path: s.path.clone(),
                 json: s.json,
+            },
+        ),
+        DevtoolsCmd::Move(m) => (
+            m.port,
+            m.json,
+            DevtoolsRequest {
+                cmd: "move".into(),
+                body: Some(m.key.clone()),
+                save_path: None,
+                json: m.json,
+            },
+        ),
+        DevtoolsCmd::MoveLeave(m) => (
+            m.port,
+            m.json,
+            DevtoolsRequest {
+                cmd: "move-leave".into(),
+                body: Some(m.key.clone()),
+                save_path: None,
+                json: m.json,
             },
         ),
         DevtoolsCmd::Session(_) => unreachable!("handled earlier"),

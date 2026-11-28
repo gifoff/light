@@ -43,6 +43,18 @@ pub const LIGHT_CONFIG: &str = r#"{
 }
 "#;
 
+/// Шпаргалка для AI-агентов, создаваемых в корне каждого нового проекта
+/// (`light init`). Напоминает агентам не читать исходники фреймворка, а опираться
+/// на документацию и команды `light devtools`, и фиксирует частые грабли
+/// (`<text>` — поле ввода, `<image>` требует `image-support`).
+pub const AGENT_MD: &str = include_str!("../../assets/templates/AGENT.md");
+
+/// Руководство пользователя, встраиваемое в новый проект как `docs/guide.md`.
+pub const GUIDE_MD: &str = include_str!("../../assets/templates/guide.md");
+
+/// Справка по CLI, встраиваемая в новый проект как `docs/cli.md`.
+pub const CLI_MD: &str = include_str!("../../assets/templates/cli.md");
+
 pub(crate) const COUNTER_MAIN: &str = include_str!("../../assets/counter/src/main.rs");
 pub(crate) const COUNTER_HTML: &str = include_str!("../../assets/counter/templates/counter.html");
 pub(crate) const TODO_MAIN: &str = include_str!("../../assets/todo/src/main.rs");

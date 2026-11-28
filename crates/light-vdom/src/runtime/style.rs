@@ -38,6 +38,10 @@ pub(crate) fn build_style<C: Component + ?Sized>(
     let mut align_items = Align::Start;
     let mut padding = Edges::ZERO;
     let mut margin = Edges::ZERO;
+    let mut abs_top = 0.0f32;
+    let mut abs_right = 0.0f32;
+    let mut abs_bottom = 0.0f32;
+    let mut abs_left = 0.0f32;
     let mut background = None;
     let mut font_color = None;
     let mut border_color = None;
@@ -47,6 +51,7 @@ pub(crate) fn build_style<C: Component + ?Sized>(
     let mut required = false;
     let mut required_indicator = RequiredIndicator::Asterisk;
     let mut z = 0i32;
+    let mut pointer_events = None;
 
     for attr in attrs {
         let name = attr.name.as_str();
@@ -136,6 +141,18 @@ pub(crate) fn build_style<C: Component + ?Sized>(
             "margin-top" | "margin-right" | "margin-bottom" | "margin-left" => {
                 set_edge_side(&mut margin, name, strict(parse_px_strict(value))?)
             }
+            "top" => {
+                abs_top = strict(parse_px_strict(value))?;
+            }
+            "right" => {
+                abs_right = strict(parse_px_strict(value))?;
+            }
+            "bottom" => {
+                abs_bottom = strict(parse_px_strict(value))?;
+            }
+            "left" => {
+                abs_left = strict(parse_px_strict(value))?;
+            }
             "border-size" => border_size = strict(parse_px_strict(value))?,
             "font-size" => font_size = strict(parse_px_strict(value)),
             "background" => background = strict_color(name, value, parse_color(value)),
@@ -145,6 +162,16 @@ pub(crate) fn build_style<C: Component + ?Sized>(
             "required" => required = !matches!(value, "false" | "0" | "no"),
             "required-indicator" => required_indicator = parse_required_indicator(value),
             "z" => z = strict_i32(name, value, value.trim().parse::<i32>().ok()).unwrap_or(0),
+            // `pointer-events="none"` — узел не перехватывает мышь (hit-тест
+            // его пропускает). `auto`/другое значение — обычный отклик. Не
+            // «строгий» атрибут: неизвестное значение не ошибка, а просто
+            // значит «обычный» (CSS-семантика).
+            "pointer-events" => {
+                pointer_events = Some(!matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "none" | "false" | "0"
+                ))
+            }
             other if other.starts_with(':') => {
                 parse_fail(tag, other, value);
                 return None;
@@ -175,6 +202,10 @@ pub(crate) fn build_style<C: Component + ?Sized>(
         align_items,
         padding,
         margin,
+        abs_top,
+        abs_right,
+        abs_bottom,
+        abs_left,
         background,
         font_color,
         border_color,
@@ -185,6 +216,7 @@ pub(crate) fn build_style<C: Component + ?Sized>(
         invalid: false,
         required_indicator,
         z,
+        pointer_events,
     })
 }
 
@@ -251,10 +283,23 @@ pub(crate) fn attr_value<'a>(attrs: &'a [light_fw_html::Attr], name: &str) -> Op
         .map(|a| a.value.as_str())
 }
 
+/// Поддерживаемые в runtime обработчики событий (`@...`-атрибуты).
+///
+/// 0.21.0: `@mouseenter`/`@mouseleave` на контейнерах (`div`/`span`) —
+/// имена сохраняются в узле (см. [`crate::vdom::VElement`]) и доставляются
+/// через [`Component::invoke_handler`](crate::component::Component::invoke_handler);
+/// `@click` — как и раньше, по имени обработчика.
+pub(crate) const RUNTIME_EVENT_ATTRS: [&str; 3] = ["@click", "@mouseenter", "@mouseleave"];
+
 /// Является ли имя атрибута конструкцией, не поддерживаемой во время выполнения
-/// (директива `v-*` или обработчик, кроме простого `@click`).
+/// (директива `v-*` или обработчик, кроме простых `v-if`, `v-model` и
+/// `@click`/`@mouseenter`/`@mouseleave` — см. [`RUNTIME_EVENT_ATTRS`]).
+///
+/// `v-if` поддерживается в runtime с 0.21.0 (см. [`eval_v_if`](super::parse::eval_v_if)):
+/// она эвалюируется **до** попадания сюда, поэтому здесь тоже исключена.
 pub(crate) fn is_unsupported_directive(name: &str) -> bool {
-    name.starts_with("v-") && name != "v-model" || (name.starts_with('@') && name != "@click")
+    (name.starts_with("v-") && name != "v-model" && name != "v-if")
+        || (name.starts_with('@') && !RUNTIME_EVENT_ATTRS.contains(&name))
 }
 
 /// Текстовое содержимое элемента (все текстовые дети склеены).
@@ -280,6 +325,45 @@ pub(crate) fn text_content(children: &[light_fw_html::Node]) -> Option<String> {
         }
     }
     Some(out)
+}
+
+/// Интерполирует `{{ поле }}` в значении атрибута кастомного элемента
+/// (BUG 0e, 0.21.0).
+///
+/// Если значение содержит ровно один `{{ … }}`-блок (простой идентификатор
+/// без точек), подставляет результат [`Component::eval_field`]. Иначе
+/// возвращает значение как есть — статические атрибуты и сложные выражения
+/// проходят транзитом, что сохраняет обратную совместимость с существующими
+/// плагинами.
+///
+/// Инвариант: кастомные атрибуты интерполируются так же, как текстовые узлы
+/// (см. `render_segments` для text-сегментов). Нативные атрибуты (`bg`,
+/// `text` и т.п. в `<div>`/`<button>`) НЕ интерполируются — они обрабатываются
+/// отдельно через `collect_meta`, который клонирует сырое значение без
+/// интерполяции. Это осознанное ограничение, зафиксированное в known-issues.
+pub(crate) fn interpolate_attr_value<C: Component + ?Sized>(component: &C, value: &str) -> String {
+    let (start, end) = match (value.find("{{"), value.find("}}")) {
+        (Some(s), Some(e)) if s < e => (s, e),
+        _ => return value.to_owned(),
+    };
+    // D2: если после первого `}}` есть ещё один `{{` — много-блок → raw.
+    // Макрос отклоняет такие значения на этапе компиляции; runtime должен
+    // вести себя идентично, иначе factory получит RESOLVED-значения,
+    // которых не было в compile-time.
+    if value[end + 2..].contains("{{") {
+        return value.to_owned();
+    }
+    let field = value[start + 2..end].trim();
+    if field.is_empty() || field.contains('.') {
+        return value.to_owned();
+    }
+    match component.eval_field(field) {
+        Some(v) => {
+            let placeholder = &value[start..=end + 1];
+            value.replacen(placeholder, &v, 1)
+        }
+        None => value.to_owned(),
+    }
 }
 
 /// Запрашивает строковое значение поля через [`Component::eval_field`];
